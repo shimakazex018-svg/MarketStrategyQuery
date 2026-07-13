@@ -464,6 +464,53 @@ button { color: inherit; }
 .allocation-card .range { margin: 6px 0; font-size: 26px; line-height: 1.1; letter-spacing: -.04em; }
 .allocation-card p { margin: 0; color: var(--text-soft); font-size: 12px; }
 
+.adjacent-grid { display: grid; gap: 10px; margin-top: 18px; }
+.adjacent-grid > div { padding: 14px; border: 1px solid var(--line); border-radius: 13px; background: var(--surface-muted); }
+.adjacent-grid span, .asset-rule-card dt, .guidance-group > span, .risk-boundary-grid span, .option-leg-grid > div > span, .performance-grid span {
+  display: block;
+  color: var(--text-soft);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+.adjacent-grid strong { display: block; margin-top: 4px; }
+.adjacent-grid p { margin: 6px 0 0; color: var(--text-soft); font-size: 13px; }
+
+.asset-rule-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-top: 18px; }
+.asset-rule-card { min-width: 0; padding: 18px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface-muted); }
+.asset-rule-card header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.asset-rule-card header strong { font-size: 17px; }
+.asset-rule-card header span { color: var(--accent-strong); font-size: 20px; font-weight: 800; }
+.asset-rule-card > p { margin: 8px 0 16px; color: var(--text-soft); }
+.asset-rule-card dl { display: grid; gap: 8px; margin: 0; }
+.asset-rule-card dl > div { padding: 11px 12px; border-radius: 11px; background: var(--surface); }
+.asset-rule-card dd { margin: 4px 0 0; overflow-wrap: anywhere; }
+
+.card-heading-row { display: flex; align-items: flex-end; justify-content: space-between; gap: 18px; }
+.card-heading-row p { margin: 6px 0 0; color: var(--text-soft); }
+.guidance-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-top: 18px; }
+.guidance-group { min-width: 0; padding: 14px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface-muted); }
+.guidance-group > div { display: grid; gap: 6px; margin-top: 9px; }
+.guidance-group strong { overflow-wrap: anywhere; font-size: 13px; }
+.guidance-group.recommended { background: var(--positive-soft); border-color: color-mix(in srgb, var(--positive) 38%, transparent); }
+.guidance-group.optional { background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 38%, transparent); }
+.guidance-group.cautious { background: var(--warning-soft); border-color: color-mix(in srgb, var(--warning) 38%, transparent); }
+.guidance-group.avoid { background: var(--danger-soft); border-color: color-mix(in srgb, var(--danger) 38%, transparent); }
+.guidance-note { grid-column: 1 / -1; margin: 2px 0 0; color: var(--text-soft); }
+
+.scenario-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-top: 18px; }
+.scenario-grid > section { min-width: 0; padding: 16px; border: 1px solid var(--line); border-radius: 15px; background: var(--surface-muted); }
+.scenario-grid h3 { margin: 0; font-size: 16px; }
+.scenario-grid ul { margin-top: 12px; }
+
+.risk-boundary { border-color: color-mix(in srgb, var(--danger) 34%, var(--line)); }
+.risk-boundary-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 18px; }
+.risk-boundary-grid > div { min-width: 0; padding: 15px; border-radius: 14px; background: var(--surface-muted); }
+.risk-boundary-grid p { margin: 7px 0 0; overflow-wrap: anywhere; }
+.critical-notice { margin-top: 14px; padding: 16px; border-left: 4px solid var(--danger); border-radius: 0 13px 13px 0; background: var(--danger-soft); }
+.critical-notice p { margin: 5px 0 0; }
+
 .strategy-tags { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
 .strategy-tag { padding: 7px 10px; border-radius: 999px; background: var(--surface-muted); color: var(--text-soft); font-size: 12px; }
 .strategy-tag.recommended { background: var(--positive-soft); color: var(--positive); }
@@ -477,20 +524,36 @@ button { color: inherit; }
 .data-table tbody tr:hover { background: var(--accent-soft); }
 .data-table td strong { display: block; font-size: 14px; }
 
-.option-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
-.option-card { padding: 24px; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--surface); box-shadow: 0 10px 36px rgba(24,43,74,.06); }
+.option-grid { display: grid; grid-template-columns: 1fr; gap: 22px; }
+.option-card { min-width: 0; overflow: hidden; padding: 26px; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--surface); box-shadow: 0 10px 36px rgba(24,43,74,.06); }
 .option-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
 .option-card h2 { margin: 0; font-size: 23px; letter-spacing: -.025em; }
 .option-card h2 small { display: block; margin-top: 4px; color: var(--text-soft); font-size: 12px; font-weight: 500; }
 .option-purpose { display: inline-flex; padding: 6px 9px; border-radius: 999px; background: var(--accent-soft); color: var(--accent-strong); font-size: 11px; font-weight: 800; }
+.option-purpose.muted { background: var(--surface-muted); color: var(--text-soft); }
+.option-badges { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 7px; }
 .option-structure { margin: 18px 0; padding: 14px; border-left: 3px solid var(--accent); background: var(--surface-muted); border-radius: 0 12px 12px 0; font-weight: 700; }
-.option-facts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.option-structure span { display: block; margin-bottom: 4px; color: var(--text-soft); font-size: 10px; letter-spacing: .08em; text-transform: uppercase; }
+.option-facts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
 .option-fact { padding: 12px; border-radius: 12px; background: var(--surface-muted); }
 .option-fact span { display: block; color: var(--text-soft); font-size: 10px; }
-.option-fact strong { display: block; margin-top: 4px; font-size: 12px; }
-.option-card details { margin-top: 16px; border-top: 1px solid var(--line); padding-top: 14px; }
-.option-card summary { cursor: pointer; font-weight: 750; }
+.option-fact strong { display: block; margin-top: 4px; overflow-wrap: anywhere; font-size: 12px; }
+.option-leg-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 14px; }
+.option-leg-grid > div { min-width: 0; padding: 14px; border: 1px solid var(--line); border-radius: 13px; }
+.compact-list { display: grid; gap: 6px; margin: 9px 0 0; padding-left: 18px; color: var(--text-soft); font-size: 13px; }
+.option-planning-grid, .management-grid, .option-risk-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 14px; }
+.option-planning-grid section, .management-grid section, .option-risk-grid section, .performance-grid section { min-width: 0; padding: 15px; border: 1px solid var(--line); border-radius: 13px; background: var(--surface-muted); }
+.option-planning-grid h3, .management-grid h3, .option-risk-grid h3 { margin: 0; font-size: 14px; }
+.option-planning-grid p, .management-grid p, .option-risk-grid p, .performance-grid p { margin: 6px 0 0; color: var(--text-soft); overflow-wrap: anywhere; }
+.performance-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 14px; }
+.option-risk-grid section:first-child { border-color: color-mix(in srgb, var(--danger) 34%, var(--line)); background: var(--danger-soft); }
+.formula-details { margin-top: 16px; border-top: 1px solid var(--line); padding-top: 14px; }
+.option-card summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; font-weight: 750; }
 .option-card details p { color: var(--text-soft); }
+.variable-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 10px 0; }
+.variable-grid > div { min-width: 0; padding: 10px; border-radius: 10px; background: var(--surface-muted); }
+.variable-grid strong, .variable-grid span { display: block; overflow-wrap: anywhere; }
+.variable-grid span { margin-top: 3px; color: var(--text-soft); font-size: 12px; }
 
 .indicator-list { display: grid; gap: 14px; }
 .indicator-row { display: grid; grid-template-columns: 220px 1fr 1fr; gap: 18px; padding: 20px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); }
@@ -520,6 +583,9 @@ button { color: inherit; }
   .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .allocation-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .stage-summary-grid { grid-template-columns: 1fr; }
+  .guidance-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .risk-boundary-grid { grid-template-columns: 1fr; }
+  .option-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (max-width: 760px) {
@@ -534,12 +600,15 @@ button { color: inherit; }
   .hero-panel { padding: 18px; }
   .section-heading { align-items: flex-start; flex-direction: column; }
   .cycle-shell { border-radius: 20px; }
-  .metric-grid, .content-grid, .option-grid { grid-template-columns: 1fr; }
+  .metric-grid, .content-grid, .option-grid, .asset-rule-grid, .scenario-grid, .option-leg-grid, .option-planning-grid, .management-grid, .option-risk-grid, .performance-grid { grid-template-columns: 1fr; }
   .metric-card { min-height: 310px; }
   .page-title { align-items: flex-start; flex-direction: column; }
   .stage-meta { grid-template-columns: 1fr; }
   .allocation-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .indicator-row { grid-template-columns: 1fr; }
+  .card-heading-row, .option-header { align-items: flex-start; flex-direction: column; }
+  .option-badges { justify-content: flex-start; }
+  .variable-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .site-footer { width: calc(100% - 28px); flex-direction: column; }
   .site-footer p { text-align: left; }
 }

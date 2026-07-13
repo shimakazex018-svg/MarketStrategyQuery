@@ -23,6 +23,41 @@ function escapeHtml(value = '') {
   })[char]);
 }
 
+function valueOr(value, fallback = '待补充') {
+  return value === undefined || value === null || value === '' ? fallback : value;
+}
+
+function listOr(value, fallback = '待补充') {
+  return Array.isArray(value) && value.length ? value : [fallback];
+}
+
+function renderList(items, className = 'condition-list') {
+  return `<ul class="${className}">${listOr(items).map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul>`;
+}
+
+function optionGuidanceFor(stage) {
+  if (stage.optionGuidance) return stage.optionGuidance;
+  const guidance = { recommended: [], optional: [], cautious: [], avoid: [], note: '请结合期权工具页核对完整风险。' };
+  listOr(stage.options, null).filter(Boolean).forEach(item => {
+    const level = ['recommended', 'optional', 'cautious', 'avoid'].includes(item.level) ? item.level : 'cautious';
+    guidance[level].push(item.name || item.label);
+  });
+  return guidance;
+}
+
+function optionGuidanceMarkup(stage) {
+  const guidance = optionGuidanceFor(stage);
+  const groups = [
+    ['recommended', '推荐'], ['optional', '可选'], ['cautious', '谨慎'], ['avoid', '不建议']
+  ];
+  return `${groups.map(([level, label]) => `
+    <div class="guidance-group ${level}">
+      <span>${label}</span>
+      <div>${listOr(guidance[level], '暂无').map(name => `<strong>${escapeHtml(name)}</strong>`).join('')}</div>
+    </div>`).join('')}
+    <p class="guidance-note">${escapeHtml(valueOr(guidance.note))}</p>`;
+}
+
 function seedFrom(text) {
   return [...text].reduce((acc, char) => (acc * 31 + char.charCodeAt(0)) >>> 0, 2166136261);
 }
@@ -198,7 +233,10 @@ function homeTemplate() {
 function stageTemplate(stage) {
   if (!stage) return notFoundTemplate();
   state.activeStageId = stage.id;
-  const options = stage.options.map(item => `<span class="strategy-tag ${item.level}">${escapeHtml(item.label)}</span>`).join('');
+  const previous = stage.adjacentStages?.previous;
+  const next = stage.adjacentStages?.next;
+  const allocations = listOr(stage.allocations, {}).filter(item => item && typeof item === 'object');
+  const actionPlan = stage.actionPlan || { initial: stage.actions };
   return `
     <div class="page">
       <div class="breadcrumb"><a href="#/">市场周期</a><span>/</span><span>${escapeHtml(stage.name)}</span></div>
@@ -209,41 +247,73 @@ function stageTemplate(stage) {
 
       <section class="stage-summary-grid">
         <article class="summary-card reveal">
-          <h2>阶段定位</h2>
-          <p>${escapeHtml(stage.mode)}</p>
+          <h2>市场状态定义</h2>
+          <p>${escapeHtml(valueOr(stage.marketDefinition, stage.mode))}</p>
           <div class="stage-meta">
-            <div class="meta-cell"><span>方向</span><strong>${escapeHtml(stage.direction)}</strong></div>
-            <div class="meta-cell"><span>风险等级</span><strong>${escapeHtml(stage.risk)}</strong></div>
-            <div class="meta-cell"><span>阶段类型</span><strong>${escapeHtml(stage.category)}</strong></div>
+            <div class="meta-cell"><span>市场方向</span><strong>${escapeHtml(valueOr(stage.direction))}</strong></div>
+            <div class="meta-cell"><span>风险等级</span><strong>${escapeHtml(valueOr(stage.risk))}</strong></div>
+            <div class="meta-cell"><span>策略属性</span><strong>${escapeHtml(valueOr(stage.strategyProfile, stage.mode))}</strong></div>
           </div>
         </article>
         <article class="summary-card reveal">
-          <h2>期权策略分级</h2>
-          <p>绿色为推荐，橙色为谨慎，红色为不建议。点击期权工具库查看完整盈亏结构。</p>
-          <div class="strategy-tags">${options}</div>
-          <div class="hero-actions"><a class="button ghost" href="#/options">打开期权工具库</a></div>
+          <h2>相邻阶段区别</h2>
+          <div class="adjacent-grid">
+            <div><span>与前一阶段</span><strong>${escapeHtml(valueOr(state.stages.find(item => item.id === previous?.id)?.name, '周期前序'))}</strong><p>${escapeHtml(valueOr(previous?.difference))}</p></div>
+            <div><span>与后一阶段</span><strong>${escapeHtml(valueOr(state.stages.find(item => item.id === next?.id)?.name, '周期后序'))}</strong><p>${escapeHtml(valueOr(next?.difference))}</p></div>
+          </div>
         </article>
       </section>
 
       <section class="content-grid">
         <article class="content-card full reveal">
+          <h2>典型识别条件</h2>
+          ${renderList(stage.conditions)}
+        </article>
+        <article class="content-card full reveal">
           <h2>允许仓位区间</h2>
           <p>各资产区间相互独立，不要求上下限合计为100%，也不代表应同时取上限或下限。</p>
           <div class="allocation-grid">
-            ${stage.allocations.map(item => `<div class="allocation-card"><span class="ticker">${escapeHtml(item.ticker)}</span><div class="range">${escapeHtml(item.range)}</div><p>${escapeHtml(item.role)}</p></div>`).join('')}
+            ${allocations.map(item => `<div class="allocation-card"><span class="ticker">${escapeHtml(valueOr(item.ticker))}</span><div class="range">${escapeHtml(valueOr(item.range))}</div><p>${escapeHtml(valueOr(item.role))}</p></div>`).join('')}
           </div>
         </article>
-        <article class="content-card reveal">
-          <h2>识别条件</h2>
-          <ul class="condition-list">${stage.conditions.map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul>
-        </article>
-        <article class="content-card reveal">
-          <h2>执行动作</h2>
-          <ol class="action-list">${stage.actions.map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ol>
+        <article class="content-card full reveal">
+          <h2>各资产配置逻辑</h2>
+          <div class="asset-rule-grid">
+            ${allocations.map(item => {
+              const rule = stage.assetRules?.[item.ticker] || {};
+              return `<section class="asset-rule-card"><header><strong>${escapeHtml(valueOr(item.ticker))}</strong><span>${escapeHtml(valueOr(item.range))}</span></header><p>${escapeHtml(valueOr(item.role))}</p><dl><div><dt>增配条件</dt><dd>${escapeHtml(valueOr(rule.increaseWhen))}</dd></div><div><dt>减配条件</dt><dd>${escapeHtml(valueOr(rule.reduceWhen))}</dd></div><div><dt>禁止条件</dt><dd>${escapeHtml(valueOr(rule.avoidWhen))}</dd></div><div><dt>主要风险</dt><dd>${escapeHtml(valueOr(rule.risk))}</dd></div></dl></section>`;
+            }).join('')}
+          </div>
         </article>
         <article class="content-card full reveal">
-          <h2>收益、潜在亏损与策略风险</h2>
-          <ul class="risk-list">${stage.risks.map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul>
+          <div class="card-heading-row"><div><h2>期权策略分级</h2><p>阶段分级只说明用途优先级；建仓前仍需核对完整损益与管理规则。</p></div><a class="button ghost" href="#/options">打开期权工具库</a></div>
+          <div class="guidance-grid">${optionGuidanceMarkup(stage)}</div>
+        </article>
+        <article class="content-card full reveal">
+          <h2>执行动作</h2>
+          <div class="scenario-grid">
+            <section><h3>初始执行</h3>${renderList(actionPlan.initial, 'action-list')}</section>
+            <section><h3>继续恶化</h3>${renderList(actionPlan.worsening, 'risk-list')}</section>
+            <section><h3>维持不变</h3>${renderList(actionPlan.unchanged, 'condition-list')}</section>
+            <section><h3>市场改善</h3>${renderList(actionPlan.improving, 'action-list')}</section>
+          </div>
+        </article>
+        <article class="content-card full reveal">
+          <h2>阶段切换条件</h2>
+          ${renderList(stage.transitionConditions, 'condition-list')}
+        </article>
+        <article class="content-card reveal">
+          <h2>潜在收益来源</h2>
+          ${renderList(stage.returnSources, 'action-list')}
+        </article>
+        <article class="content-card reveal">
+          <h2>潜在亏损来源</h2>
+          ${renderList(stage.lossSources, 'risk-list')}
+        </article>
+        <article class="content-card full reveal risk-boundary">
+          <h2>风险边界与机会成本</h2>
+          <div class="risk-boundary-grid"><div><span>最大不利情景</span><p>${escapeHtml(valueOr(stage.worstCase))}</p></div><div><span>策略失效条件</span><p>${escapeHtml(valueOr(stage.invalidation))}</p></div><div><span>机会成本</span><p>${escapeHtml(valueOr(stage.opportunityCost))}</p></div></div>
+          <div class="critical-notice"><strong>风险提示</strong><p>${escapeHtml(valueOr(stage.riskNotice, listOr(stage.risks).join('；')))}</p></div>
         </article>
       </section>
     </div>`;
@@ -267,24 +337,32 @@ function compareTemplate() {
 }
 
 function optionTemplate(option) {
+  const performance = option.performance || {};
+  const example = option.formulaExample || {};
   return `
     <article class="option-card reveal">
       <div class="option-header">
         <h2>${escapeHtml(option.name)}<small>${escapeHtml(option.english)}</small></h2>
-        <span class="option-purpose">${escapeHtml(option.purpose)}</span>
+        <div class="option-badges"><span class="option-purpose">${escapeHtml(valueOr(option.category))}</span><span class="option-purpose muted">${escapeHtml(valueOr(option.purpose))}</span></div>
       </div>
-      <div class="option-structure">${escapeHtml(option.structure)}</div>
+      <div class="option-structure"><span>交易结构</span>${escapeHtml(valueOr(option.structure))}</div>
       <div class="option-facts">
-        <div class="option-fact"><span>初始现金流</span><strong>${escapeHtml(option.cashflow)}</strong></div>
-        <div class="option-fact"><span>市场判断</span><strong>${escapeHtml(option.bias)}</strong></div>
-        <div class="option-fact"><span>适用阶段</span><strong>${option.idealStages.map(escapeHtml).join(' / ')}</strong></div>
+        <div class="option-fact"><span>建仓现金流</span><strong>${escapeHtml(valueOr(option.cashflow))}</strong></div>
+        <div class="option-fact"><span>市场方向判断</span><strong>${escapeHtml(valueOr(option.bias))}</strong></div>
+        <div class="option-fact"><span>适用标的</span><strong>${listOr(option.underlyings).map(escapeHtml).join(' / ')}</strong></div>
+        <div class="option-fact"><span>适用阶段</span><strong>${listOr(option.idealStages).map(escapeHtml).join(' / ')}</strong></div>
       </div>
+      <div class="option-leg-grid"><div><span>买入腿</span>${renderList(listOr(option.buyLegs, '无独立买入期权腿'), 'compact-list')}</div><div><span>卖出腿</span>${renderList(listOr(option.sellLegs, '无独立卖出期权腿'), 'compact-list')}</div><div><span>不适用阶段</span>${renderList(option.unsuitableStages, 'compact-list')}</div></div>
       <ul class="formula-list">
-        <li><strong>最大收益：</strong>${escapeHtml(option.maxGain)}</li>
-        <li><strong>最大亏损：</strong>${escapeHtml(option.maxLoss)}</li>
-        <li><strong>盈亏平衡：</strong>${escapeHtml(option.breakeven)}</li>
+        <li><strong>最大收益：</strong>${escapeHtml(valueOr(option.maxGain))}</li>
+        <li><strong>最大亏损：</strong>${escapeHtml(valueOr(option.maxLoss))}</li>
+        <li><strong>盈亏平衡：</strong>${escapeHtml(valueOr(option.breakeven))}</li>
       </ul>
-      <details><summary>作用、管理与主要风险</summary><p>${escapeHtml(option.details)}</p><p><strong>主要风险：</strong>${escapeHtml(option.risk)}</p><p>公式默认1张美股期权对应100股，未计佣金、税费、提前行权、指派和实际滑点。</p></details>
+      <div class="option-planning-grid"><section><h3>DTE选择逻辑</h3><p>${escapeHtml(valueOr(option.dteLogic))}</p></section><section><h3>行权价逻辑</h3><p>${escapeHtml(valueOr(option.strikeLogic))}</p></section></div>
+      <div class="performance-grid"><section><span>标的上涨</span><p>${escapeHtml(valueOr(performance.up))}</p></section><section><span>标的横盘</span><p>${escapeHtml(valueOr(performance.sideways))}</p></section><section><span>标的下跌</span><p>${escapeHtml(valueOr(performance.down))}</p></section></div>
+      <div class="management-grid"><section><h3>时间价值</h3><p>${escapeHtml(valueOr(option.thetaImpact))}</p></section><section><h3>隐含波动率</h3><p>${escapeHtml(valueOr(option.ivImpact))}</p></section><section><h3>提前退出</h3><p>${escapeHtml(valueOr(option.earlyExit))}</p></section><section><h3>到期处理</h3><p>${escapeHtml(valueOr(option.expiration))}</p></section></div>
+      <div class="option-risk-grid"><section><h3>主要风险</h3><p>${escapeHtml(valueOr(option.risk))}</p></section><section><h3>机会成本</h3><p>${escapeHtml(valueOr(option.opportunityCost))}</p></section></div>
+      <details class="formula-details"><summary role="button" tabindex="0" aria-expanded="false">变量说明与公式示例</summary><div class="variable-grid">${listOr(option.variables, {}).filter(item => item && typeof item === 'object').map(item => `<div><strong>${escapeHtml(valueOr(item.symbol))}</strong><span>${escapeHtml(valueOr(item.meaning))}</span></div>`).join('')}</div><p><strong>示例假设：</strong>${escapeHtml(valueOr(example.scenario))}</p><p><strong>计算：</strong>${escapeHtml(valueOr(example.calculation))}</p><p><strong>解释：</strong>${escapeHtml(valueOr(example.conclusion))}</p><p>公式默认1张美股期权对应100股，未计佣金、税费、提前行权、指派和实际滑点。</p></details>
     </article>`;
 }
 
@@ -292,7 +370,7 @@ function optionsTemplate() {
   return `
     <div class="page">
       <div class="breadcrumb"><a href="#/">首页</a><span>/</span><span>期权工具</span></div>
-      <header class="page-title"><div><p class="eyebrow">Option Toolkit</p><h1>八类期权工具</h1><p>每种策略说明买卖结构、策略目的、最大收益、最大亏损、盈亏平衡点和主要失效方式。</p></div></header>
+      <header class="page-title"><div><p class="eyebrow">Option Toolkit</p><h1>八类期权工具</h1><p>逐项核对交易腿、适用场景、损益边界、期限与行权价、行情表现、退出和到期处理。</p></div></header>
       <div class="notice" style="margin-bottom:18px"><strong>计算口径</strong><span>示例公式按每股权利金表达，乘数按100计算。组合内现货成本、净权利金的正负方向必须在实际建仓时重新核对。</span></div>
       <section class="option-grid">${state.options.map(optionTemplate).join('')}</section>
     </div>`;
@@ -343,6 +421,21 @@ function bindCommonEvents() {
       render();
       requestAnimationFrame(() => document.querySelector(`[data-indicator-id="${button.dataset.indicatorId}"][data-range="${button.dataset.range}"]`)?.focus());
     });
+  });
+
+  document.querySelectorAll('.formula-details').forEach(details => {
+    const summary = details.querySelector('summary');
+    if (!summary) return;
+    const syncExpanded = () => summary.setAttribute('aria-expanded', String(details.open));
+    details.addEventListener('toggle', syncExpanded);
+    summary.addEventListener('keydown', event => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        details.open = !details.open;
+        syncExpanded();
+      }
+    });
+    syncExpanded();
   });
 
   const revealObserver = new IntersectionObserver(entries => {

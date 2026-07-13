@@ -34,12 +34,19 @@ Hash 不会发送给服务器，因此服务器无需为缺失静态路径回退
 
 ## JSON 数据模型
 
-- 阶段：`id/order/name/category/direction/risk/mode/summary/conditions/allocations/options/actions/risks`。
-- 仓位项：`ticker/range/role`；每阶段固定包含四类标的。
-- 期权：`id/name/english/purpose/bias/structure/cashflow/maxGain/maxLoss/breakeven/idealStages/details/risk`。
+- 阶段基础字段：`id/order/name/category/direction/risk/mode/summary/marketDefinition/strategyProfile/conditions`。
+- 阶段结构字段：`adjacentStages/allocations/assetRules/optionGuidance/actionPlan/transitionConditions/returnSources/lossSources/worstCase/invalidation/opportunityCost/riskNotice`。
+- 仓位项：`ticker/range/role`；每阶段固定包含四类标的。`assetRules` 按 ticker 提供 `increaseWhen/reduceWhen/avoidWhen/risk`。
+- 阶段期权分级：`optionGuidance` 将固定八策略完整分入 `recommended/optional/cautious/avoid`，并保留旧 `options` 引用以兼容既有数据。
+- 期权基础字段：`id/name/english/category/purpose/bias/structure/buyLegs/sellLegs/underlyings/idealStages/unsuitableStages`。
+- 期权损益与管理：`cashflow/maxGain/maxLoss/breakeven/dteLogic/strikeLogic/performance/thetaImpact/ivImpact/earlyExit/expiration/risk/opportunityCost/variables/formulaExample`。
 - 指标：`id/name/subtitle/value/unit/percentile/status/explain/meaning/limits`。
 
-新增字段必须保持现有字段兼容，并在渲染处提供缺省处理。金融内容的进一步结构化应先确定字段契约，再改 JSON 与模板。
+渲染层通过 `valueOr()`、`listOr()` 和结构回退处理缺失字段，单个新字段缺失不会让整页崩溃。`scripts/check-data.js` 对完整生产数据执行严格字段与引用检查。
+
+## 长内容页面结构
+
+阶段详情依次展示状态定义、相邻阶段、识别条件、仓位、资产规则、期权分级、四种情景动作、切换条件、收益亏损和风险边界。期权工具页按单策略宽卡片展示交易腿、损益、DTE、行权价、三种行情表现、Theta、IV、退出与到期；只有变量说明和静态公式示例使用原生 `details` 折叠，最大亏损和主要风险始终可见。
 
 ## 市场周期图
 
