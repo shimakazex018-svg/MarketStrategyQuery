@@ -1,0 +1,13 @@
+{
+  "name": "market-cycle-strategy-site",
+  "version": "0.1.0",
+  "private": true,
+  "description": "市场周期、仓位与期权策略静态原型",
+  "scripts": {
+    "start": "node server.js",
+    "check": "node --check server.js && node --check public/app.js && node scripts/check-data.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

@@ -1,0 +1,407 @@
+[
+  {
+    "id": "high-consolidation",
+    "order": 1,
+    "name": "高位震荡",
+    "category": "震荡",
+    "direction": "中性偏多",
+    "risk": "中高",
+    "mode": "保护利润，等待方向选择",
+    "summary": "指数处于相对高位，趋势尚未明确破坏，但上涨动能减弱，价格在有限区间内反复。",
+    "conditions": [
+      "指数横盘或反复测试前高，突破持续性不足",
+      "20日均线趋平，价格仍大多位于50日线之上",
+      "VIX与VXN处于低至中等区间，但可能开始抬升",
+      "PE、前瞻PE处于中高或偏高历史分位",
+      "恐慌贪婪指数偏乐观，基金经理仓位较高",
+      "SOXX相对QQQ强弱不再持续扩大"
+    ],
+    "allocations": [
+      {"ticker":"QQQ","range":"50%–60%","role":"核心仓，部分保护或收租"},
+      {"ticker":"SOXX","range":"15%–30%","role":"降低过高行业集中度"},
+      {"ticker":"SOXL","range":"0%–5%","role":"仅用于短线突破，不重仓隔夜"},
+      {"ticker":"现金/SGOV","range":"10%–25%","role":"缓冲破位并保留调整空间"}
+    ],
+    "options": [
+      {"name":"Collar","level":"recommended","label":"推荐：部分仓位保护"},
+      {"name":"Put Debit Spread","level":"recommended","label":"推荐：覆盖向下区间风险"},
+      {"name":"Covered Call","level":"recommended","label":"推荐：震荡收取时间价值"},
+      {"name":"Put Credit Spread","level":"cautious","label":"谨慎：只做小仓短期限"},
+      {"name":"Cash-Secured Put","level":"cautious","label":"谨慎：仅在关键支撑明确时"}
+    ],
+    "actions": [
+      "保留QQQ核心仓，不因短期横盘频繁清仓",
+      "SOXX位于区间上限时分批锁定部分利润",
+      "SOXL控制在战术仓位，突破失败立即退出",
+      "对部分QQQ或SOXX使用Collar、Put Debit Spread或Covered Call",
+      "若跌破50日线且反抽失败，切换到震荡下跌或单边下跌策略",
+      "若放量突破并恢复动能，切换到震荡上涨或单边上涨策略"
+    ],
+    "risks": [
+      "Covered Call会封顶被覆盖仓位的上涨收益",
+      "低波动环境可能迅速切换为高波动，保护建立过晚时成本上升",
+      "高位横盘既可能向上突破，也可能成为趋势破坏前的派发阶段",
+      "SOXX与QQQ同时保持高仓位会放大科技和半导体集中风险"
+    ]
+  },
+  {
+    "id": "oscillating-decline",
+    "order": 2,
+    "name": "震荡下跌",
+    "category": "下跌",
+    "direction": "偏空",
+    "risk": "高",
+    "mode": "降低增强仓，保留核心仓与防守弹药",
+    "summary": "市场反弹仍然存在，但高点和低点逐步下移，整体重心下降，尚未进入连续恐慌抛售。",
+    "conditions": [
+      "高点和低点逐步下移，反弹难以突破前高",
+      "价格反复跌破20日线，50日线趋平或转向下",
+      "VIX、VXN缓慢抬升，但未进入极端区间",
+      "恐慌贪婪指数从贪婪回落至中性或恐慌",
+      "基金经理仓位开始下降",
+      "SOXX相对QQQ走弱，行业增强失效"
+    ],
+    "allocations": [
+      {"ticker":"QQQ","range":"40%–55%","role":"保留核心敞口，必要时保护"},
+      {"ticker":"SOXX","range":"0%–15%","role":"相对强弱转弱时降低"},
+      {"ticker":"SOXL","range":"0%","role":"停止新增并退出杠杆仓"},
+      {"ticker":"现金/SGOV","range":"30%–50%","role":"降低组合波动，等待右侧信号"}
+    ],
+    "options": [
+      {"name":"Protective Put","level":"recommended","label":"推荐：限制核心仓下行"},
+      {"name":"Collar","level":"recommended","label":"推荐：降低保护成本"},
+      {"name":"Put Debit Spread","level":"recommended","label":"推荐：防中等幅度回撤"},
+      {"name":"Covered Call","level":"cautious","label":"谨慎：防止反弹卖飞"},
+      {"name":"Put Credit Spread","level":"avoid","label":"不建议：增加下跌暴露"}
+    ],
+    "actions": [
+      "暂停增加SOXL，并检查已有杠杆仓是否需要退出",
+      "将SOXX控制在允许区间下半部，弱于QQQ时继续降低",
+      "保留QQQ核心仓，通过减仓或保护性期权降低左尾风险",
+      "提高现金或SGOV比例，避免在下降通道内连续补仓",
+      "若重新站回关键均线且市场广度改善，切换到右侧反转",
+      "若跌破200日线或下跌加速，切换到单边下跌或恐慌暴跌"
+    ],
+    "risks": [
+      "下降通道中的反弹可能快速且幅度较大，过度卖Call会限制恢复收益",
+      "Put Debit Spread在跌破低行权价后保护封顶",
+      "仅依赖低估值或情绪恐慌抄底，可能遭遇趋势继续恶化",
+      "SOXL在震荡下跌中同时承受方向损失和波动损耗"
+    ]
+  },
+  {
+    "id": "one-way-decline",
+    "order": 3,
+    "name": "单边下跌",
+    "category": "下跌",
+    "direction": "空头",
+    "risk": "很高",
+    "mode": "优先控制账户波动，等待趋势重新确认",
+    "summary": "价格持续下行，均线结构恶化，反弹力度弱且持续时间短，市场风险敞口需要明显收缩。",
+    "conditions": [
+      "指数跌破50日线且反抽失败，或跌破200日线",
+      "20日、50日均线向下，价格处于均线下方",
+      "反弹高点持续降低，市场广度恶化",
+      "VIX和VXN处于高位或持续上升",
+      "基金经理仓位下降，风险资产去杠杆",
+      "SOXX明显弱于QQQ"
+    ],
+    "allocations": [
+      {"ticker":"QQQ","range":"30%–45%","role":"仅保留可承受的长期核心仓"},
+      {"ticker":"SOXX","range":"0%–10%","role":"大幅降低行业增强"},
+      {"ticker":"SOXL","range":"0%","role":"禁止持有趋势性杠杆仓"},
+      {"ticker":"现金/SGOV","range":"45%–70%","role":"控制回撤并等待重新确认"}
+    ],
+    "options": [
+      {"name":"Protective Put","level":"recommended","label":"推荐：核心仓尾部保护"},
+      {"name":"Collar","level":"recommended","label":"推荐：限制下跌并降低成本"},
+      {"name":"Put Debit Spread","level":"cautious","label":"谨慎：极端下跌保护会封顶"},
+      {"name":"Covered Call","level":"cautious","label":"谨慎：熊市反弹速度快"},
+      {"name":"Put Credit Spread","level":"avoid","label":"不建议：风险收益不匹配"}
+    ],
+    "actions": [
+      "先降低SOXL和高波动SOXX仓位，再考虑增加期权保护",
+      "根据可接受回撤决定QQQ核心仓保留比例",
+      "避免在每次小反弹中重复增加杠杆",
+      "现金比例提高后，使用明确的右侧条件重新投入",
+      "保护性期权临近管理线时提前展期或平仓",
+      "只有重新站回关键均线且市场广度改善后，才切换到右侧反转"
+    ],
+    "risks": [
+      "恐慌阶段隐含波动率高，临时追买Put可能成本昂贵",
+      "Covered Call在猛烈反弹中容易被动调整或限制收益",
+      "Put Spread无法覆盖低行权价以下的全部极端损失",
+      "长期核心仓比例过高会使账户继续承受显著回撤"
+    ]
+  },
+  {
+    "id": "panic-crash",
+    "order": 4,
+    "name": "恐慌暴跌",
+    "category": "极端下跌",
+    "direction": "急速空头",
+    "risk": "极端",
+    "mode": "保护流动性，避免被迫去杠杆",
+    "summary": "市场在短时间内快速下跌，波动率与相关性同时上升，流动性收缩，常规技术信号可能暂时失真。",
+    "conditions": [
+      "指数连续大幅下跌或出现跳空缺口",
+      "VIX与VXN进入极端高位并快速变化",
+      "恐慌贪婪指数接近极度恐慌",
+      "市场广度急剧恶化，多数资产同时下跌",
+      "基金经理仓位快速下降，去杠杆加速",
+      "价格显著偏离短期均线"
+    ],
+    "allocations": [
+      {"ticker":"QQQ","range":"25%–40%","role":"保留有限核心仓，防止流动性压力"},
+      {"ticker":"SOXX","range":"0%–5%","role":"只保留极小观察仓"},
+      {"ticker":"SOXL","range":"0%","role":"禁止抄底与隔夜持有"},
+      {"ticker":"现金/SGOV","range":"50%–75%","role":"优先保证流动性与后续加仓能力"}
+    ],
+    "options": [
+      {"name":"Protective Put","level":"recommended","label":"已有保护：优先管理兑现"},
+      {"name":"Collar","level":"cautious","label":"谨慎：高IV下结构成本复杂"},
+      {"name":"Put Debit Spread","level":"cautious","label":"谨慎：新开成本高且保护封顶"},
+      {"name":"Cash-Secured Put","level":"avoid","label":"不建议：避免接入快速下跌资产"},
+      {"name":"Put Credit Spread","level":"avoid","label":"禁止：容易迅速接近最大亏损"}
+    ],
+    "actions": [
+      "先确认账户不存在保证金或流动性风险",
+      "退出SOXL并降低SOXX，避免杠杆和行业集中叠加",
+      "已有Put盈利时按预设规则分批兑现或滚动",
+      "不因单日超跌直接判断底部，等待下跌速度放缓",
+      "避免同时进行多项复杂期权调整",
+      "当波动率从极端高位回落且不再创新低时，转入底部震荡观察"
+    ],
+    "risks": [
+      "高波动率会使新买期权价格昂贵，随后IV回落可能造成损失",
+      "市场可能出现巨大反弹，过度降低核心仓会产生机会成本",
+      "流动性恶化可能扩大买卖价差，理论最大损益与实际成交不同",
+      "试图用SOXL抢反弹可能在再次下跌时快速放大亏损"
+    ]
+  },
+  {
+    "id": "bottom-consolidation",
+    "order": 5,
+    "name": "底部震荡",
+    "category": "震荡",
+    "direction": "中性",
+    "risk": "高",
+    "mode": "观察止跌质量，不提前假设趋势反转",
+    "summary": "市场下跌速度放缓，在低位反复波动，恐慌有所缓解，但右侧趋势尚未完成确认。",
+    "conditions": [
+      "指数不再连续创新低，但反弹尚未形成上升趋势",
+      "VIX和VXN从高位回落，仍明显高于常态",
+      "恐慌贪婪指数处于恐慌或中性偏低",
+      "基金经理仓位位于低位或停止下降",
+      "PE和前瞻PE较高位明显压缩",
+      "市场广度出现初步改善但持续性不足"
+    ],
+    "allocations": [
+      {"ticker":"QQQ","range":"40%–55%","role":"逐步恢复核心观察仓"},
+      {"ticker":"SOXX","range":"5%–15%","role":"仅在相对强弱改善时试仓"},
+      {"ticker":"SOXL","range":"0%","role":"等待右侧反转后再考虑"},
+      {"ticker":"现金/SGOV","range":"30%–50%","role":"保留应对二次探底的能力"}
+    ],
+    "options": [
+      {"name":"Cash-Secured Put","level":"cautious","label":"谨慎：愿意接货且仓位受控"},
+      {"name":"Call Debit Spread","level":"cautious","label":"谨慎：限制反转试错成本"},
+      {"name":"Long Call","level":"avoid","label":"不建议：趋势确认不足"},
+      {"name":"Put Credit Spread","level":"avoid","label":"不建议：二次探底风险仍高"},
+      {"name":"Protective Put","level":"cautious","label":"可选：保护已恢复的核心仓"}
+    ],
+    "actions": [
+      "使用分批试仓代替一次性抄底",
+      "优先恢复QQQ，再观察SOXX相对强弱",
+      "不使用SOXL预判底部",
+      "记录指数是否形成更高低点及是否重新站上短期均线",
+      "若再次放量跌破前低，返回单边下跌或恐慌暴跌策略",
+      "若站回20日、50日线且广度改善，切换到右侧反转"
+    ],
+    "risks": [
+      "底部形态可能持续较长时间，过早买入长期Call会承受时间价值损耗",
+      "第二次探底可能跌破前低，卖Put策略仍有较大接货风险",
+      "波动率回落会降低Long Call的IV价值，即使方向判断部分正确",
+      "低估值和极度恐慌不能单独证明趋势已反转"
+    ]
+  },
+  {
+    "id": "right-side-reversal",
+    "order": 6,
+    "name": "右侧反转",
+    "category": "反转",
+    "direction": "转多",
+    "risk": "中高",
+    "mode": "分批恢复风险仓，保留假突破保护",
+    "summary": "价格重新站回关键均线，市场广度与相对强弱改善，趋势从防守阶段转向逐步恢复上涨敞口。",
+    "conditions": [
+      "指数重新站回20日和50日线并能够维持",
+      "成交量、市场广度和上涨参与度改善",
+      "VIX和VXN继续从高位回落",
+      "恐慌贪婪指数由恐慌向中性恢复",
+      "基金经理仓位停止下降并开始回升",
+      "SOXX重新强于QQQ"
+    ],
+    "allocations": [
+      {"ticker":"QQQ","range":"50%–65%","role":"分批恢复核心仓"},
+      {"ticker":"SOXX","range":"15%–30%","role":"相对强势确认后恢复增强"},
+      {"ticker":"SOXL","range":"0%–10%","role":"小仓试错，盈利后再加"},
+      {"ticker":"现金/SGOV","range":"10%–25%","role":"保留假突破后的回撤空间"}
+    ],
+    "options": [
+      {"name":"Call Debit Spread","level":"recommended","label":"推荐：有限成本参与反转"},
+      {"name":"Long Call","level":"cautious","label":"谨慎：控制权利金与期限"},
+      {"name":"Put Debit Spread","level":"cautious","label":"保留部分：防止假突破"},
+      {"name":"Covered Call","level":"avoid","label":"不建议：避免压制反转收益"},
+      {"name":"Put Credit Spread","level":"cautious","label":"可选：支撑明确且IV合理"}
+    ],
+    "actions": [
+      "优先恢复QQQ核心仓，再恢复SOXX增强仓",
+      "SOXL从小仓位开始，只有盈利和趋势继续确认后才增加",
+      "逐步减少此前Collar或Put保护的覆盖比例",
+      "避免刚完成右侧确认时大量卖出Covered Call",
+      "若再次跌回关键均线下方且反抽失败，立即降低新增仓位",
+      "若高低点持续抬升并形成稳定趋势，切换到单边上涨"
+    ],
+    "risks": [
+      "右侧信号可能是假突破，新增仓位必须分批",
+      "Long Call对方向、期限和隐含波动率同时敏感",
+      "SOXL会放大确认错误造成的损失",
+      "过早解除全部保护会使组合重新暴露于二次下跌"
+    ]
+  },
+  {
+    "id": "one-way-rise",
+    "order": 7,
+    "name": "单边上涨",
+    "category": "上涨",
+    "direction": "多头",
+    "risk": "中等",
+    "mode": "保留趋势敞口，避免过早封顶",
+    "summary": "市场高点和低点持续抬升，均线向上，回调短而浅，趋势收益优先于频繁收租。",
+    "conditions": [
+      "指数稳定处于20日和50日线之上",
+      "20日、50日均线斜率向上",
+      "回调后快速恢复，高低点持续抬升",
+      "VIX和VXN处于低至中等区间且未急升",
+      "基金经理仓位逐步增加但尚未极端拥挤",
+      "SOXX相对QQQ走强"
+    ],
+    "allocations": [
+      {"ticker":"QQQ","range":"50%–70%","role":"长期核心收益来源"},
+      {"ticker":"SOXX","range":"20%–35%","role":"半导体相对强势时增强"},
+      {"ticker":"SOXL","range":"0%–10%","role":"右侧确认后的战术进攻"},
+      {"ticker":"现金/SGOV","range":"5%–15%","role":"维持基础流动性"}
+    ],
+    "options": [
+      {"name":"Call Debit Spread","level":"recommended","label":"推荐：控制成本参与上涨"},
+      {"name":"Long Call","level":"cautious","label":"可选：严格控制权利金"},
+      {"name":"Put Debit Spread","level":"cautious","label":"低IV时提前布置保护"},
+      {"name":"Covered Call","level":"avoid","label":"不建议大比例覆盖"},
+      {"name":"Collar","level":"avoid","label":"不建议过早封顶趋势收益"}
+    ],
+    "actions": [
+      "保持QQQ核心仓，避免因短期超买频繁清仓",
+      "SOXX仅在相对QQQ强势有效时提高",
+      "SOXL维持账户级上限并使用明确退出条件",
+      "低IV环境可少量提前配置Put Debit Spread",
+      "Covered Call只覆盖极小部分仓位或暂不使用",
+      "若上涨斜率显著加快且估值情绪拥挤，切换到加速上涨／过热"
+    ],
+    "risks": [
+      "过度使用Covered Call或Collar会牺牲趋势阶段的主要收益",
+      "SOXL长期收益不等于指数累计收益的三倍，波动路径会影响结果",
+      "低波动率不等于低风险，快速风险重定价可能造成跳跃式回撤",
+      "半导体相对强势反转时，SOXX和SOXL可能快速拖累组合"
+    ]
+  },
+  {
+    "id": "oscillating-rise",
+    "order": 8,
+    "name": "震荡上涨",
+    "category": "上涨",
+    "direction": "中性偏多",
+    "risk": "中等",
+    "mode": "利用回调调整增强仓，控制追高",
+    "summary": "市场在反复回调中继续创新高，整体重心向上，但趋势不如单边上涨流畅。",
+    "conditions": [
+      "回调后能够恢复并刷新阶段高点",
+      "价格大部分时间位于50日线之上，20日线附近反复",
+      "VIX、VXN处于低至中等区间并周期性抬升",
+      "恐慌贪婪指数偏乐观但并非持续极端",
+      "基金经理仓位处于中高水平",
+      "SOXX相对QQQ强弱在区间内波动"
+    ],
+    "allocations": [
+      {"ticker":"QQQ","range":"55%–70%","role":"保持核心仓并利用回调调整"},
+      {"ticker":"SOXX","range":"15%–30%","role":"相对强势时提高，转弱时降低"},
+      {"ticker":"SOXL","range":"0%–8%","role":"只在回调后重新确认时使用"},
+      {"ticker":"现金/SGOV","range":"10%–20%","role":"用于回调加仓和降低波动"}
+    ],
+    "options": [
+      {"name":"Covered Call","level":"cautious","label":"可选：小比例、远虚值"},
+      {"name":"Put Debit Spread","level":"recommended","label":"推荐：覆盖中等回撤"},
+      {"name":"Call Debit Spread","level":"recommended","label":"推荐：回调后参与上涨"},
+      {"name":"Cash-Secured Put","level":"cautious","label":"可选：关键支撑附近接仓"},
+      {"name":"Long Call","level":"cautious","label":"谨慎：避免追高和时间损耗"}
+    ],
+    "actions": [
+      "核心仓保持稳定，增强仓随相对强弱调整",
+      "回调至关键均线并重新确认时才增加SOXL",
+      "用Put Debit Spread保护可能的10%–20%回撤区间",
+      "Covered Call只覆盖小部分仓位并选择较远行权价",
+      "若回调结构转为高低点下移，切换到震荡下跌",
+      "若上涨斜率和情绪估值同时极端，切换到加速上涨／过热"
+    ],
+    "risks": [
+      "回调可能从正常波动演变为趋势破坏",
+      "反复使用短期期权会增加交易成本和管理复杂度",
+      "Covered Call可能在下一轮突破时限制收益",
+      "SOXL在震荡路径中存在明显波动损耗"
+    ]
+  },
+  {
+    "id": "accelerating-overheat",
+    "order": 9,
+    "name": "加速上涨／过热",
+    "category": "上涨末期",
+    "direction": "强多但脆弱",
+    "risk": "高",
+    "mode": "锁定部分峰值收益，降低杠杆与拥挤风险",
+    "summary": "上涨斜率明显加快，估值、情绪和机构仓位同时偏高，继续上涨仍可能发生，但收益回吐风险增加。",
+    "conditions": [
+      "短期涨幅明显高于常态，价格远离短期均线",
+      "PE与前瞻PE处于高历史分位",
+      "VIX处于低位，市场对风险定价不足",
+      "恐慌贪婪指数接近极度贪婪",
+      "基金经理仓位处于高位或极端拥挤",
+      "龙头集中度上升，市场内部出现分化"
+    ],
+    "allocations": [
+      {"ticker":"QQQ","range":"50%–60%","role":"保留核心仓并增加部分保护"},
+      {"ticker":"SOXX","range":"20%–30%","role":"逐步锁定部分行业利润"},
+      {"ticker":"SOXL","range":"0%–5%","role":"分批减持，禁止追高"},
+      {"ticker":"现金/SGOV","range":"10%–25%","role":"提高回撤缓冲与再配置能力"}
+    ],
+    "options": [
+      {"name":"Collar","level":"recommended","label":"推荐：锁定峰值利润"},
+      {"name":"Put Debit Spread","level":"recommended","label":"推荐：防止中等回撤吞掉利润"},
+      {"name":"Covered Call","level":"cautious","label":"可选：只覆盖部分仓位"},
+      {"name":"Put Credit Spread","level":"avoid","label":"不建议：急跌时额外受损"},
+      {"name":"Long Call","level":"avoid","label":"不建议：追高且权利金风险高"}
+    ],
+    "actions": [
+      "停止新增SOXL并分批降低已有杠杆敞口",
+      "SOXX位于区间上限时逐步锁定部分利润",
+      "对部分QQQ或SOXX建立Collar或Put Debit Spread",
+      "Covered Call不得覆盖全部核心仓，避免继续上涨时收益被完全封顶",
+      "提高现金或SGOV比例，但不因过热判断直接清空长期核心仓",
+      "若动能恢复正常可返回单边上涨或震荡上涨；若破位则进入高位震荡或震荡下跌"
+    ],
+    "risks": [
+      "过热状态可能持续较长时间，过早全面防守会产生显著机会成本",
+      "Collar和Covered Call会封顶部分上涨收益",
+      "低VIX环境中风险可能被低估，波动率上升会同时压低股票并改变期权定价",
+      "高估值和拥挤度不构成精确的短期卖出时点"
+    ]
+  }
+]
