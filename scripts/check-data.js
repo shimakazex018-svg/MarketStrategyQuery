@@ -36,7 +36,7 @@ const appSource = fs.readFileSync(path.join(ROOT, 'public/app.js'), 'utf8');
 
 const stageNames = ['高位震荡', '震荡下跌', '单边下跌', '恐慌暴跌', '底部震荡', '右侧反转', '单边上涨', '震荡上涨', '加速上涨／过热'];
 const optionNames = ['Protective Put', 'Collar', 'Put Debit Spread', 'Put Credit Spread', 'Covered Call', 'Cash-Secured Put', 'Call Debit Spread', 'Long Call'];
-const indicatorNames = ['PE', '前瞻PE', 'VIX', 'VXN', '恐慌贪婪指数', '基金经理仓位指数'];
+const indicatorNames = ['QQQ组合TTM PE', 'Forward PE', 'VIX', 'VXN', '恐慌贪婪指数', '基金经理仓位指数'];
 const allocationTickers = ['QQQ', 'SOXX', 'SOXL', '现金/SGOV'];
 const rangeLabels = ['1个月', '3个月', '6个月', '1年', '3年', '5年', '10年'];
 const rangeKeys = ['1M', '3M', '6M', '1Y', '3Y', '5Y', '10Y'];
@@ -104,6 +104,11 @@ options.forEach(option => {
 
 indicators.forEach(indicator => {
   ['definition', 'interpretation', 'marketRelation', 'limitations'].forEach(field => assertText(indicator[field], `${indicator.name}.${field}`));
+  assert(['demo', 'unavailable'].includes(indicator.dataMode), `${indicator.name}.dataMode必须为demo或unavailable`);
+  if (indicator.dataMode === 'demo') {
+    assertText(indicator.demoSource, `${indicator.name}.demoSource`);
+    assertText(indicator.demoMessage, `${indicator.name}.demoMessage`);
+  } else assertText(indicator.unavailableMessage, `${indicator.name}.unavailableMessage`);
 });
 
 rangeLabels.forEach(label => assert(appSource.includes(`'${label}'`), `前端时间范围缺少：${label}`));

@@ -8,17 +8,76 @@ const state = {
   activeStageId: null,
   optionCategory: '全部',
   ranges: {},
+  marketData: {},
   route: ''
 };
 
 const RANGE_LABELS = ['1个月', '3个月', '6个月', '1年', '3年', '5年', '10年'];
 const RANGE_KEYS = ['1M', '3M', '6M', '1Y', '3Y', '5Y', '10Y'];
+const DATA_STATUS = Object.freeze({
+  loading: { label: '加载中', tone: 'loading' },
+  fresh: { label: '最新数据', tone: 'fresh' },
+  stale: { label: '数据已过期', tone: 'stale' },
+  error: { label: '数据错误', tone: 'error' },
+  demo: { label: '演示数据', tone: 'demo' },
+  unavailable: { label: '正式来源暂不可用', tone: 'unavailable' }
+});
 
 const app = document.getElementById('app');
 const themeToggle = document.getElementById('themeToggle');
 const menuToggle = document.getElementById('menuToggle');
 const mobileNav = document.getElementById('mobileNav');
 let indicatorDialogTrigger = null;
+const marketDataControllers = new Map();
+
+function formatDateTime(value) {
+  if (!value) return '—';
+  const date = new Date(value);
+  if (Number.isNaN(date.valueOf())) return String(value);
+  return new Intl.DateTimeFormat('zh-CN', {
+    timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hourCycle: 'h23'
+  }).format(date);
+}
+
+function initialMarketModel(indicator) {
+  return {
+    id: indicator.id,
+    displayName: indicator.name,
+    value: null,
+    unit: indicator.unit || '',
+    asOf: null,
+    source: '本地市场数据服务',
+    status: 'loading',
+    statusMessage: '正在读取本地缓存',
+    updatedAt: null,
+    lastSuccessAt: null,
+    isDemo: false,
+    isStale: false,
+    availableRanges: indicator.dataMode === 'demo' ? RANGE_KEYS : [],
+    history: []
+  };
+}
+
+function failedMarketModel(indicator, previous) {
+  if (indicator.dataMode === 'demo') {
+    return {
+      ...initialMarketModel(indicator),
+      value: indicator.value,
+      source: indicator.demoSource,
+      status: 'demo',
+      statusMessage: indicator.demoMessage,
+      isDemo: true,
+      availableRanges: RANGE_KEYS
+    };
+  }
+  if (previous?.value !== null && previous?.value !== undefined) {
+    return { ...previous, status: 'stale', isStale: true, statusMessage: '内部数据服务不可用，显示上次成功数据' };
+  }
+  return {
+    ...initialMarketModel(indicator), status: 'error', statusMessage: '内部市场数据服务暂时不可用'
+  };
+}
 
 function escapeHtml(value = '') {
   return String(value).replace(/[&<>'"]/g, char => ({
@@ -226,31 +285,57 @@ function marketCycleSvg(stages, shape) {
 
 function metricCard(indicator, index) {
   const rangeKey = state.ranges[indicator.id] || '1Y';
-  const values = generateSeries(indicator, rangeKey);
-  const { line, area, min, max } = seriesToPath(values);
-  const rangeButtons = RANGE_KEYS.map((key, i) => `<button class="range-tab${key === rangeKey ? ' active' : ''}" data-indicator-id="${indicator.id}" data-range="${key}" type="button" aria-pressed="${key === rangeKey}">${RANGE_LABELS[i]}</button>`).join('');
+  const market = state.marketData[indicator.id] || initialMarketModel(indicator);
+  const statusMeta = DATA_STATUS[market.status] || DATA_STATUS.error;
+  const isDemo = market.status === 'demo';
+  const historyValues = Array.isArray(market.history) ? market.history.map(point => Number(point.value)).filter(Number.isFinite) : [];
+  const values = historyValues.length > 1 ? historyValues : isDemo ? generateSeries(indicator, rangeKey) : [];
+  const chart = values.length > 1 ? seriesToPath(values) : null;
+  const available = new Set(market.availableRanges || []);
+  const rangeButtons = RANGE_KEYS.map((key, i) => {
+    const disabled = !isDemo && !available.has(key);
+    return `<button class="range-tab${key === rangeKey ? ' active' : ''}" data-indicator-id="${indicator.id}" data-range="${key}" type="button" aria-pressed="${key === rangeKey}"${disabled ? ' disabled aria-disabled="true"' : ''}>${RANGE_LABELS[i]}</button>`;
+  }).join('');
+  const value = market.status === 'loading'
+    ? '<span class="metric-value-skeleton" aria-label="加载中"></span>'
+    : market.value === null || market.value === undefined
+      ? '—'
+      : `${escapeHtml(market.value)}${escapeHtml(market.unit || indicator.unit)}`;
+  const secondaryValue = isDemo && Number.isFinite(indicator.percentile)
+    ? `演示历史分位 ${indicator.percentile}%`
+    : market.asOf ? `数据日期 ${escapeHtml(market.asOf)}` : '暂无可用数据日期';
+  const chartMarkup = chart ? `
+      <svg class="metric-chart" viewBox="0 0 360 126" preserveAspectRatio="none" aria-label="${escapeHtml(indicator.name)} ${rangeKey}${isDemo ? '演示' : '历史'}曲线">
+        <defs><linearGradient id="metricGradient-${index}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--accent)" stop-opacity=".65"/><stop offset="1" stop-color="var(--accent)" stop-opacity="0"/></linearGradient></defs>
+        <line class="baseline" x1="0" x2="360" y1="63" y2="63"></line>
+        <path d="${chart.area}" fill="url(#metricGradient-${index})" opacity=".25"></path>
+        <path class="line" d="${chart.line}"></path>
+      </svg>` : `<div class="metric-chart-empty" role="status"><span>${market.status === 'loading' ? '正在读取本地缓存…' : '没有可展示的历史曲线'}</span></div>`;
+  const rangeSummary = chart
+    ? `${isDemo ? '演示' : '可见'}区间：${chart.min.toFixed(1)}–${chart.max.toFixed(1)}`
+    : market.historyStart ? `历史起始：${escapeHtml(market.historyStart)}` : '历史范围：暂无';
   return `
-    <article class="metric-card reveal" style="transition-delay:${index * 45}ms">
+    <article class="metric-card metric-card--${statusMeta.tone} reveal" data-market-status="${escapeHtml(market.status)}" style="transition-delay:${index * 45}ms">
       <div class="metric-top">
         <div>
           <div class="metric-title-row"><h3 class="metric-name">${escapeHtml(indicator.name)}</h3><button class="metric-info-button" type="button" data-indicator-info="${escapeHtml(indicator.id)}" aria-label="查看${escapeHtml(indicator.name)}指标说明">i</button></div>
           <p class="metric-subtitle">${escapeHtml(indicator.subtitle)}</p>
         </div>
         <div class="metric-value">
-          <strong>${escapeHtml(indicator.value)}${escapeHtml(indicator.unit)}</strong>
-          <span>历史分位 ${indicator.percentile}%</span>
+          <strong>${value}</strong>
+          <span>${secondaryValue}</span>
         </div>
       </div>
-      <span class="metric-status">${escapeHtml(indicator.status)}</span>
-      <svg class="metric-chart" viewBox="0 0 360 126" preserveAspectRatio="none" aria-label="${escapeHtml(indicator.name)} ${rangeKey}模拟波形">
-        <defs><linearGradient id="metricGradient-${index}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--accent)" stop-opacity=".65"/><stop offset="1" stop-color="var(--accent)" stop-opacity="0"/></linearGradient></defs>
-        <line class="baseline" x1="0" x2="360" y1="63" y2="63"></line>
-        <path d="${area}" fill="url(#metricGradient-${index})" opacity=".25"></path>
-        <path class="line" d="${line}"></path>
-      </svg>
+      <div class="metric-status-row"><span class="metric-status" data-status="${statusMeta.tone}">${statusMeta.label}</span><span>${escapeHtml(market.statusMessage || '')}</span></div>
+      ${chartMarkup}
       <div class="range-tabs" role="group" aria-label="时间范围">${rangeButtons}</div>
+      <dl class="metric-data-meta">
+        <div><dt>数据来源</dt><dd>${escapeHtml(market.source || '—')}</dd></div>
+        <div><dt>更新时间</dt><dd>${escapeHtml(formatDateTime(market.updatedAt))}</dd></div>
+        ${market.status === 'stale' ? `<div class="metric-stale-note"><dt>上次成功</dt><dd>${escapeHtml(formatDateTime(market.lastSuccessAt))}</dd></div>` : ''}
+      </dl>
       <p class="metric-explain">${escapeHtml(indicator.explain)}</p>
-      <p class="metric-subtitle">模拟区间：${min.toFixed(1)}–${max.toFixed(1)}</p>
+      <p class="metric-subtitle">${rangeSummary}</p>
     </article>`;
 }
 
@@ -297,7 +382,7 @@ function homeTemplate() {
 
       <section class="section">
         <div class="section-heading reveal">
-          <div><h2>辅助指标仪表盘</h2><p>第一版使用静态演示数值与模拟波形。每张卡片独立切换时间范围，互不联动。</p></div>
+          <div><h2>辅助指标仪表盘</h2><p>页面只读取本站内部API。正式来源未通过许可门槛时明确显示不可用或演示数据，不用伪造值补齐。</p></div>
           <a class="button ghost" href="#/indicators">查看指标说明</a>
         </div>
         <div class="metric-grid">${state.indicators.map(metricCard).join('')}</div>
@@ -310,14 +395,14 @@ function homeTemplate() {
               <section><h3>指标高低通常意味着什么</h3><p id="indicatorDialogInterpretation"></p></section>
               <section><h3>与市场周期的关系</h3><p id="indicatorDialogRelation"></p></section>
               <section class="dialog-limitations"><h3>使用限制</h3><p id="indicatorDialogLimitations"></p></section>
-              <p class="notice"><strong>静态演示</strong><span>当前数值为静态演示值，不代表实时市场数据；该指标不能单独用于判断市场阶段。</span></p>
+              <p class="notice"><strong id="indicatorDialogNoticeTitle">数据说明</strong><span id="indicatorDialogNoticeText"></span></p>
             </div>
           </section>
         </div>
       </section>
 
       <section class="section reveal">
-        <div class="notice"><strong>当前版本边界</strong><span>不接入真实行情、不进行系统自动判断、不保存人工确认、不读取IBKR持仓。页面结构和JSON数据接口已为后续版本预留。</span></div>
+        <div class="notice"><strong>当前版本边界</strong><span>在线数据必须先通过来源与许可审计；当前不进行市场阶段自动判断、不提供自动仓位建议、不读取IBKR持仓。</span></div>
       </section>
     </div>`;
 }
@@ -458,15 +543,69 @@ function indicatorsTemplate() {
   return `
     <div class="page">
       <div class="breadcrumb"><a href="#/">首页</a><span>/</span><span>指标说明</span></div>
-      <header class="page-title"><div><p class="eyebrow">Indicator Reference</p><h1>六类辅助指标</h1><p>指标用于描述估值、隐含波动、情绪和机构风险敞口。第一版全部为演示数据，不构成网页自动判断。</p></div></header>
+      <header class="page-title"><div><p class="eyebrow">Indicator Reference</p><h1>六类辅助指标</h1><p>指标用于描述估值、隐含波动、情绪和机构风险敞口。数据状态逐项独立，且不构成网页自动判断。</p></div></header>
       <section class="indicator-list">
-        ${state.indicators.map(indicator => `<article class="indicator-row reveal"><div><h2>${escapeHtml(indicator.name)}</h2><span class="metric-status">演示值 ${escapeHtml(indicator.value)}${escapeHtml(indicator.unit)}</span></div><div><strong>指标意义</strong><p>${escapeHtml(indicator.meaning)}</p></div><div><strong>使用限制</strong><p>${escapeHtml(indicator.limits)}</p></div></article>`).join('')}
+        ${state.indicators.map(indicator => {
+          const market = state.marketData[indicator.id] || initialMarketModel(indicator);
+          const status = DATA_STATUS[market.status] || DATA_STATUS.error;
+          const value = market.value === null || market.value === undefined ? '—' : `${market.value}${market.unit || indicator.unit || ''}`;
+          return `<article class="indicator-row reveal"><div><h2>${escapeHtml(indicator.name)}</h2><span class="metric-status" data-status="${status.tone}">${status.label} · ${escapeHtml(value)}</span><p>${escapeHtml(market.source || '—')} · ${escapeHtml(market.asOf || '无数据日期')}</p></div><div><strong>指标意义</strong><p>${escapeHtml(indicator.meaning)}</p></div><div><strong>使用限制</strong><p>${escapeHtml(indicator.limits)}</p></div></article>`;
+        }).join('')}
       </section>
     </div>`;
 }
 
 function notFoundTemplate() {
   return `<div class="page"><header class="page-title"><div><p class="eyebrow">404</p><h1>页面不存在</h1><p>该地址没有对应内容。</p><div class="hero-actions"><a class="button primary" href="#/">返回首页</a></div></div></header></div>`;
+}
+
+async function loadMarketData(range = '1Y') {
+  try {
+    const response = await fetch(`/api/market-data/indicators?range=${encodeURIComponent(range)}`, {
+      headers: { Accept: 'application/json' }
+    });
+    if (!response.ok) throw new Error(`Market data API ${response.status}`);
+    const payload = await response.json();
+    const byId = new Map((payload.indicators || []).map(model => [model.id, model]));
+    state.indicators.forEach(indicator => {
+      state.marketData[indicator.id] = byId.get(indicator.id) || failedMarketModel(indicator, state.marketData[indicator.id]);
+    });
+  } catch (error) {
+    console.error('Market data API:', error);
+    state.indicators.forEach(indicator => {
+      state.marketData[indicator.id] = failedMarketModel(indicator, state.marketData[indicator.id]);
+    });
+  }
+}
+
+async function loadIndicatorRange(id, range) {
+  const indicator = state.indicators.find(item => item.id === id);
+  if (!indicator) return;
+  const previous = state.marketData[id];
+  if (previous?.status === 'demo') {
+    render({ preserveScroll: true });
+    return;
+  }
+  marketDataControllers.get(id)?.abort();
+  const controller = new AbortController();
+  marketDataControllers.set(id, controller);
+  state.marketData[id] = { ...previous, status: 'loading', statusMessage: '正在读取所选时间范围' };
+  render({ preserveScroll: true });
+  try {
+    const response = await fetch(`/api/market-data/indicators/${encodeURIComponent(id)}?range=${encodeURIComponent(range)}`, {
+      signal: controller.signal,
+      headers: { Accept: 'application/json' }
+    });
+    if (!response.ok) throw new Error(`Market data API ${response.status}`);
+    state.marketData[id] = await response.json();
+  } catch (error) {
+    if (error.name === 'AbortError') return;
+    console.error(`Market data range ${id}:`, error);
+    state.marketData[id] = failedMarketModel(indicator, previous);
+  } finally {
+    if (marketDataControllers.get(id) === controller) marketDataControllers.delete(id);
+  }
+  render({ preserveScroll: true });
 }
 
 function setActiveNav(route) {
@@ -514,9 +653,10 @@ function bindCommonEvents() {
   });
 
   document.querySelectorAll('.range-tab').forEach(button => {
-    button.addEventListener('click', () => {
+    button.addEventListener('click', async () => {
+      if (button.disabled) return;
       state.ranges[button.dataset.indicatorId] = button.dataset.range;
-      render();
+      await loadIndicatorRange(button.dataset.indicatorId, button.dataset.range);
       requestAnimationFrame(() => document.querySelector(`[data-indicator-id="${button.dataset.indicatorId}"][data-range="${button.dataset.range}"]`)?.focus());
     });
   });
@@ -603,14 +743,21 @@ function bindCommonEvents() {
     button.addEventListener('click', () => {
       const indicator = state.indicators.find(item => item.id === button.dataset.indicatorInfo);
       if (!indicator || !indicatorDialog) return;
+      const market = state.marketData[indicator.id] || initialMarketModel(indicator);
+      const status = DATA_STATUS[market.status] || DATA_STATUS.error;
       indicatorDialogTrigger = button;
       const setText = (id, value) => { const node = document.getElementById(id); if (node) node.textContent = valueOr(value); };
       setText('indicatorDialogTitle', indicator.name);
-      setText('indicatorDialogValue', `当前模拟值：${indicator.value}${indicator.unit || ''} · ${indicator.status}`);
+      const displayValue = market.value === null || market.value === undefined ? '暂无' : `${market.value}${market.unit || indicator.unit || ''}`;
+      setText('indicatorDialogValue', `当前值：${displayValue} · ${status.label} · 来源：${market.source || '—'}`);
       setText('indicatorDialogDefinition', indicator.definition || indicator.meaning);
       setText('indicatorDialogInterpretation', indicator.interpretation || indicator.explain);
       setText('indicatorDialogRelation', indicator.marketRelation || '需要结合价格结构、波动率和市场广度共同判断。');
       setText('indicatorDialogLimitations', indicator.limitations || indicator.limits);
+      setText('indicatorDialogNoticeTitle', status.label);
+      setText('indicatorDialogNoticeText', market.status === 'demo'
+        ? '当前数值为静态演示值，不代表实时市场数据；该指标不能单独用于判断市场阶段。'
+        : `${market.statusMessage || '请核对数据状态。'}；该指标不能单独用于判断市场阶段。`);
       indicatorDialog.hidden = false;
       document.body.classList.add('dialog-open');
       indicatorDialog.querySelector('.indicator-dialog')?.focus();
@@ -651,7 +798,7 @@ function parseRoute() {
   return raw.startsWith('/') ? raw : `/${raw}`;
 }
 
-function render() {
+function render({ preserveScroll = false } = {}) {
   const route = parseRoute();
   state.route = route;
   document.body.classList.remove('dialog-open');
@@ -666,8 +813,10 @@ function render() {
   else app.innerHTML = notFoundTemplate();
 
   bindCommonEvents();
-  app.focus({ preventScroll: true });
-  window.scrollTo({ top: 0, behavior: 'instant' });
+  if (!preserveScroll) {
+    app.focus({ preventScroll: true });
+    window.scrollTo({ top: 0, behavior: 'instant' });
+  }
 }
 
 function applyTheme(theme) {
@@ -706,7 +855,11 @@ document.addEventListener('keydown', event => {
   }
 });
 
-window.addEventListener('hashchange', render);
+window.addEventListener('hashchange', () => {
+  marketDataControllers.forEach(controller => controller.abort());
+  marketDataControllers.clear();
+  render();
+});
 
 async function loadData() {
   const [stagesResponse, optionsResponse, indicatorsResponse, cycleResponse] = await Promise.all([
@@ -720,7 +873,10 @@ async function loadData() {
   state.options = await optionsResponse.json();
   state.indicators = await indicatorsResponse.json();
   state.cycleShape = await cycleResponse.json();
-  state.indicators.forEach(indicator => { state.ranges[indicator.id] = '1Y'; });
+  state.indicators.forEach(indicator => {
+    state.ranges[indicator.id] = '1Y';
+    state.marketData[indicator.id] = initialMarketModel(indicator);
+  });
 }
 
 (async function bootstrap() {
@@ -728,6 +884,8 @@ async function loadData() {
   try {
     await loadData();
     render();
+    await loadMarketData('1Y');
+    render({ preserveScroll: true });
   } catch (error) {
     console.error(error);
     app.innerHTML = `<div class="page"><div class="notice"><strong>加载失败</strong><span>无法读取网站JSON配置，请检查server.js是否正常启动。</span></div></div>`;
