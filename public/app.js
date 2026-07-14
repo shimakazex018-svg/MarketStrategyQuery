@@ -4,7 +4,9 @@ const state = {
   stages: [],
   options: [],
   indicators: [],
+  cycleShape: null,
   activeStageId: null,
+  optionCategory: '全部',
   ranges: {},
   route: ''
 };
@@ -16,6 +18,7 @@ const app = document.getElementById('app');
 const themeToggle = document.getElementById('themeToggle');
 const menuToggle = document.getElementById('menuToggle');
 const mobileNav = document.getElementById('mobileNav');
+let indicatorDialogTrigger = null;
 
 function escapeHtml(value = '') {
   return String(value).replace(/[&<>'"]/g, char => ({
@@ -53,9 +56,63 @@ function optionGuidanceMarkup(stage) {
   return `${groups.map(([level, label]) => `
     <div class="guidance-group ${level}">
       <span>${label}</span>
-      <div>${listOr(guidance[level], '暂无').map(name => `<strong>${escapeHtml(name)}</strong>`).join('')}</div>
+      <div>${listOr(guidance[level], '暂无').map(name => {
+        const option = state.options.find(item => item.english === name || item.name === name);
+        return option
+          ? `<a class="strategy-link" href="#/options/${option.id}">${escapeHtml(name)}</a>`
+          : `<strong>${escapeHtml(name)}</strong>`;
+      }).join('')}</div>
     </div>`).join('')}
     <p class="guidance-note">${escapeHtml(valueOr(guidance.note))}</p>`;
+}
+
+function stageActionTabs(actionPlan) {
+  const tabs = [
+    { id: 'initial', label: '初始动作', listClass: 'action-list' },
+    { id: 'worsening', label: '继续恶化', listClass: 'risk-list' },
+    { id: 'unchanged', label: '维持不变', listClass: 'condition-list' },
+    { id: 'improving', label: '市场改善', listClass: 'action-list' }
+  ];
+  return `
+    <div class="decision-tabs" data-tabs="stage-actions">
+      <div class="tab-list" role="tablist" aria-label="市场状态对应的执行动作">
+        ${tabs.map((tab, index) => `<button id="stage-action-tab-${tab.id}" class="tab-button${index === 0 ? ' active' : ''}" type="button" role="tab" aria-selected="${index === 0}" aria-controls="stage-action-panel-${tab.id}" tabindex="${index === 0 ? '0' : '-1'}" data-tab-target="stage-action-panel-${tab.id}">${tab.label}</button>`).join('')}
+      </div>
+      ${tabs.map((tab, index) => `<div id="stage-action-panel-${tab.id}" class="tab-panel" role="tabpanel" aria-labelledby="stage-action-tab-${tab.id}" tabindex="0"${index === 0 ? '' : ' hidden'}>${renderList(actionPlan[tab.id], tab.listClass)}</div>`).join('')}
+    </div>`;
+}
+
+function stageAssetTabs(stage, allocations) {
+  return `
+    <div class="decision-tabs" data-tabs="stage-assets">
+      <div class="tab-list" role="tablist" aria-label="选择资产查看配置逻辑">
+        ${allocations.map((item, index) => `<button id="stage-asset-tab-${index}" class="tab-button${index === 0 ? ' active' : ''}" type="button" role="tab" aria-selected="${index === 0}" aria-controls="stage-asset-panel-${index}" tabindex="${index === 0 ? '0' : '-1'}" data-tab-target="stage-asset-panel-${index}">${escapeHtml(valueOr(item.ticker))}</button>`).join('')}
+      </div>
+      ${allocations.map((item, index) => {
+        const rule = stage.assetRules?.[item.ticker] || {};
+        return `<section id="stage-asset-panel-${index}" class="tab-panel asset-detail-panel" role="tabpanel" aria-labelledby="stage-asset-tab-${index}" tabindex="0"${index === 0 ? '' : ' hidden'}>
+          <header><div><span>资产角色</span><h3>${escapeHtml(valueOr(item.ticker))}</h3></div><strong>${escapeHtml(valueOr(item.range))}</strong></header>
+          <p>${escapeHtml(valueOr(item.role))}</p>
+          <dl>
+            <div><dt>增配条件</dt><dd>${escapeHtml(valueOr(rule.increaseWhen))}</dd></div>
+            <div><dt>减配条件</dt><dd>${escapeHtml(valueOr(rule.reduceWhen))}</dd></div>
+            <div class="asset-prohibition"><dt>禁止条件</dt><dd>${escapeHtml(valueOr(rule.avoidWhen))}</dd></div>
+            <div><dt>主要风险</dt><dd>${escapeHtml(valueOr(rule.risk))}</dd></div>
+          </dl>
+        </section>`;
+      }).join('')}
+    </div>`;
+}
+
+function recognitionVisualMarkup(stage) {
+  const visual = stage.recognitionVisual;
+  if (!visual || !visual.src) return '';
+  const meta = [visual.source, visual.period].filter(Boolean).map(escapeHtml).join(' · ');
+  return `<figure class="recognition-visual">
+    ${visual.title ? `<h3>${escapeHtml(visual.title)}</h3>` : ''}
+    <img src="${escapeHtml(visual.src)}" alt="${escapeHtml(valueOr(visual.alt, `${stage.name}典型识别示意图`))}" loading="lazy">
+    ${(visual.caption || meta) ? `<figcaption>${visual.caption ? `<span>${escapeHtml(visual.caption)}</span>` : ''}${meta ? `<small>${meta}</small>` : ''}</figcaption>` : ''}
+  </figure>`;
 }
 
 function seedFrom(text) {
@@ -111,45 +168,60 @@ function seriesToPath(values, width = 360, height = 126, pad = 6) {
   return { line, area, min, max };
 }
 
-function marketCycleSvg(stages) {
-  const boxes = [
-    [52, 165, 156, 110], [236, 190, 156, 140], [420, 240, 156, 164],
-    [604, 315, 156, 182], [788, 330, 156, 142], [972, 250, 156, 180],
-    [1156, 158, 156, 170], [1340, 106, 156, 130], [1524, 58, 176, 126]
-  ];
-  const d = [
-    'M 78 226',
-    'C 105 184, 130 270, 165 220',
-    'C 205 180, 230 294, 270 242',
-    'C 306 215, 336 350, 370 292',
-    'C 408 230, 430 382, 468 336',
-    'C 508 286, 540 442, 575 370',
-    'C 610 315, 625 520, 674 448',
-    'C 718 386, 742 492, 786 438',
-    'C 834 380, 876 360, 916 398',
-    'C 954 420, 980 326, 1025 286',
-    'C 1068 245, 1106 230, 1148 205',
-    'C 1192 178, 1216 255, 1260 198',
-    'C 1300 150, 1330 214, 1370 152',
-    'C 1410 92, 1450 175, 1490 122',
-    'C 1535 66, 1574 136, 1618 92',
-    'C 1650 62, 1670 112, 1690 80'
-  ].join(' ');
-  const groups = stages.map((stage, i) => {
-    const [x, y, w, h] = boxes[i];
-    return `
-      <g class="stage-zone${state.activeStageId === stage.id ? ' is-active' : ''}" tabindex="0" role="link" aria-label="查看${escapeHtml(stage.name)}策略" data-stage-id="${stage.id}">
-        <rect x="${x}" y="${y}" width="${w}" height="${h}"></rect>
-        <text class="stage-index" x="${x + 16}" y="${y + 24}">S${String(stage.order).padStart(2, '0')}</text>
-        <text x="${x + 16}" y="${y + 52}">${escapeHtml(stage.name)}</text>
-        <text x="${x + 16}" y="${y + 77}" style="font-size:12px;fill:var(--text-soft);font-weight:500">${escapeHtml(stage.direction)}</text>
-      </g>`;
+function smoothSvgPath(points) {
+  if (points.length < 2) return '';
+  return points.slice(1).reduce((path, point, index) => {
+    const previous = points[index];
+    const midX = (previous[0] + point[0]) / 2;
+    return `${path} C ${midX.toFixed(1)} ${previous[1].toFixed(1)}, ${midX.toFixed(1)} ${point[1].toFixed(1)}, ${point[0].toFixed(1)} ${point[1].toFixed(1)}`;
+  }, `M ${points[0][0].toFixed(1)} ${points[0][1].toFixed(1)}`);
+}
+
+function marketCycleSvg(stages, shape) {
+  const width = 1760;
+  const height = 560;
+  const left = 60;
+  const right = 60;
+  const top = 70;
+  const bottom = 70;
+  const stageWidth = (width - left - right) / stages.length;
+  const shapeStages = Array.isArray(shape?.stages) ? shape.stages : [];
+  const allPoints = [];
+  const stageGeometry = stages.map((stage, stageIndex) => {
+    const segment = shapeStages.find(item => item.id === stage.id);
+    const values = Array.isArray(segment?.points) && segment.points.length > 1 ? segment.points : [50, 50];
+    const points = values.map((value, pointIndex) => {
+      const x = left + stageIndex * stageWidth + (pointIndex / (values.length - 1)) * stageWidth;
+      const normalized = Math.max(0, Math.min(100, Number(value) || 0));
+      const y = height - bottom - (normalized / 100) * (height - top - bottom);
+      return [x, y];
+    });
+    if (stageIndex) points.shift();
+    allPoints.push(...points);
+    return { stage, segment, points };
+  });
+  const path = smoothSvgPath(allPoints);
+  const groups = stageGeometry.map(({ stage, segment, points }, index) => {
+    const marker = points[Math.floor(points.length / 2)] || [left + (index + .5) * stageWidth, height / 2];
+    const labelWidth = 142;
+    const labelHeight = 44;
+    const labelX = Math.max(8, Math.min(width - labelWidth - 8, marker[0] - labelWidth / 2));
+    const preferredY = index % 2 ? marker[1] + 38 : marker[1] - 82;
+    const labelY = Math.max(12, Math.min(height - labelHeight - 12, preferredY));
+    return `<g class="stage-zone${state.activeStageId === stage.id ? ' is-active' : ''}" tabindex="0" role="link" aria-label="查看${escapeHtml(stage.name)}策略：${escapeHtml(valueOr(segment?.summary, stage.summary))}" data-stage-id="${stage.id}" data-cycle-preview-id="${stage.id}">
+      <rect class="stage-hit-area" x="${(left + index * stageWidth).toFixed(1)}" y="${top}" width="${stageWidth.toFixed(1)}" height="${height - top - bottom}"></rect>
+      <circle class="stage-marker" cx="${marker[0].toFixed(1)}" cy="${marker[1].toFixed(1)}" r="8"></circle>
+      <rect class="stage-label-bg" x="${labelX.toFixed(1)}" y="${labelY.toFixed(1)}" width="${labelWidth}" height="${labelHeight}"></rect>
+      <text class="stage-index" x="${(labelX + 11).toFixed(1)}" y="${(labelY + 17).toFixed(1)}">S${String(stage.order).padStart(2, '0')}</text>
+      <text class="stage-label" x="${(labelX + 11).toFixed(1)}" y="${(labelY + 34).toFixed(1)}">${escapeHtml(stage.name)}</text>
+    </g>`;
   }).join('');
-  return `
-    <svg class="market-cycle" viewBox="0 0 1760 590" role="img" aria-label="九阶段横向市场周期示意图">
-      <path class="cycle-path" d="${d}"></path>
-      ${groups}
-    </svg>`;
+  return `<svg class="market-cycle" viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeHtml(valueOr(shape?.label, '九阶段市场周期示意图'))}">
+    <defs><linearGradient id="cycleAreaGradient" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--accent)" stop-opacity=".24"/><stop offset="1" stop-color="var(--accent)" stop-opacity="0"/></linearGradient></defs>
+    <path class="cycle-area" d="${path} L ${allPoints.at(-1)?.[0] || 0} ${height - bottom} L ${allPoints[0]?.[0] || 0} ${height - bottom} Z"></path>
+    <path class="cycle-path" d="${path}"></path>
+    ${groups}
+  </svg>`;
 }
 
 function metricCard(indicator, index) {
@@ -161,7 +233,7 @@ function metricCard(indicator, index) {
     <article class="metric-card reveal" style="transition-delay:${index * 45}ms">
       <div class="metric-top">
         <div>
-          <h3 class="metric-name">${escapeHtml(indicator.name)}</h3>
+          <div class="metric-title-row"><h3 class="metric-name">${escapeHtml(indicator.name)}</h3><button class="metric-info-button" type="button" data-indicator-info="${escapeHtml(indicator.id)}" aria-label="查看${escapeHtml(indicator.name)}指标说明">i</button></div>
           <p class="metric-subtitle">${escapeHtml(indicator.subtitle)}</p>
         </div>
         <div class="metric-value">
@@ -184,6 +256,8 @@ function metricCard(indicator, index) {
 
 function homeTemplate() {
   const active = state.stages.find(stage => stage.id === state.activeStageId);
+  const previewStage = active || state.stages[0];
+  const previewShape = state.cycleShape?.stages?.find(item => item.id === previewStage?.id);
   return `
     <div class="page">
       <section class="hero">
@@ -197,7 +271,7 @@ function homeTemplate() {
           <h2 class="hero-panel-value">${active ? escapeHtml(active.name) : '尚未选择'}</h2>
           <p>${active ? escapeHtml(active.mode) : '第一版不进行网页自动判断。请直接点击市场周期中的阶段进行策略推演。'}</p>
           <div class="hero-actions">
-            ${active ? `<a class="button primary" href="#/stage/${active.id}">打开策略详情</a>` : '<a class="button primary" href="#cycle">选择市场阶段</a>'}
+            ${active ? `<a class="button primary" href="#/stage/${active.id}">打开策略详情</a>` : '<button class="button primary" type="button" data-scroll-target="cycle">选择市场阶段</button>'}
             <a class="button ghost" href="#/compare">查看阶段对比</a>
           </div>
         </aside>
@@ -208,11 +282,16 @@ function homeTemplate() {
           <div><h2>市场周期地图</h2><p>九种形态覆盖从高位震荡、趋势破坏、恐慌去杠杆，到底部修复、右侧确认与过热上涨的主要循环。</p></div>
         </div>
         <div class="cycle-shell">
-          <div class="cycle-toolbar"><strong>点击蓝色区域进入详情</strong><span>横向滚动可查看完整周期</span></div>
-          <div class="cycle-scroll">${marketCycleSvg(state.stages)}</div>
+          <div class="cycle-toolbar"><strong>${escapeHtml(valueOr(state.cycleShape?.label, '市场周期示意图'))}</strong><span>聚焦或触摸阶段查看摘要，点击进入详情</span></div>
+          <div class="cycle-scroll">${marketCycleSvg(state.stages, state.cycleShape)}</div>
+          <aside class="cycle-inspector" aria-live="polite">
+            <div><span id="cycleInspectorIndex">S${String(previewStage?.order || 1).padStart(2, '0')}</span><strong id="cycleInspectorName">${escapeHtml(valueOr(previewStage?.name))}</strong><p id="cycleInspectorSummary">${escapeHtml(valueOr(previewShape?.summary, previewStage?.summary))}</p></div>
+            <a id="cycleInspectorLink" class="button ghost" href="#/stage/${escapeHtml(valueOr(previewStage?.id, state.stages[0]?.id))}">查看阶段详情</a>
+          </aside>
           <div class="stage-strip">
-            ${state.stages.map(stage => `<button type="button" class="stage-pill${state.activeStageId === stage.id ? ' active' : ''}" data-stage-id="${stage.id}"><span>S${String(stage.order).padStart(2, '0')} · ${escapeHtml(stage.category)}</span><strong>${escapeHtml(stage.name)}</strong></button>`).join('')}
+            ${state.stages.map(stage => `<button type="button" class="stage-pill${state.activeStageId === stage.id ? ' active' : ''}" data-stage-id="${stage.id}" data-cycle-preview-id="${stage.id}"><span>S${String(stage.order).padStart(2, '0')}</span><strong>${escapeHtml(stage.name)}</strong></button>`).join('')}
           </div>
+          <p class="cycle-disclaimer">${escapeHtml(valueOr(state.cycleShape?.disclaimer, '静态示意图，不代表真实市场数据。'))}</p>
         </div>
       </section>
 
@@ -222,6 +301,19 @@ function homeTemplate() {
           <a class="button ghost" href="#/indicators">查看指标说明</a>
         </div>
         <div class="metric-grid">${state.indicators.map(metricCard).join('')}</div>
+        <div id="indicatorDialog" class="dialog-backdrop" hidden>
+          <section class="indicator-dialog" role="dialog" aria-modal="true" aria-labelledby="indicatorDialogTitle" tabindex="-1">
+            <header><div><span>Indicator Guide</span><h2 id="indicatorDialogTitle"></h2></div><button class="dialog-close" type="button" data-close-indicator-dialog aria-label="关闭指标说明">×</button></header>
+            <div class="indicator-dialog-body">
+              <p id="indicatorDialogValue" class="dialog-demo-value"></p>
+              <section><h3>定义</h3><p id="indicatorDialogDefinition"></p></section>
+              <section><h3>指标高低通常意味着什么</h3><p id="indicatorDialogInterpretation"></p></section>
+              <section><h3>与市场周期的关系</h3><p id="indicatorDialogRelation"></p></section>
+              <section class="dialog-limitations"><h3>使用限制</h3><p id="indicatorDialogLimitations"></p></section>
+              <p class="notice"><strong>静态演示</strong><span>当前数值为静态演示值，不代表实时市场数据；该指标不能单独用于判断市场阶段。</span></p>
+            </div>
+          </section>
+        </div>
       </section>
 
       <section class="section reveal">
@@ -233,89 +325,68 @@ function homeTemplate() {
 function stageTemplate(stage) {
   if (!stage) return notFoundTemplate();
   state.activeStageId = stage.id;
-  const previous = stage.adjacentStages?.previous;
-  const next = stage.adjacentStages?.next;
   const allocations = listOr(stage.allocations, {}).filter(item => item && typeof item === 'object');
   const actionPlan = stage.actionPlan || { initial: stage.actions };
+  const corePrinciple = listOr(actionPlan.initial, stage.mode)[0];
   return `
     <div class="page">
       <div class="breadcrumb"><a href="#/">市场周期</a><span>/</span><span>${escapeHtml(stage.name)}</span></div>
-      <header class="page-title">
+      <header id="stage-overview" class="page-title stage-decision-header">
         <div><p class="eyebrow">Stage ${String(stage.order).padStart(2, '0')} · ${escapeHtml(stage.category)}</p><h1>${escapeHtml(stage.name)}</h1><p>${escapeHtml(stage.summary)}</p></div>
         <a class="button" href="#/">返回周期图</a>
       </header>
 
-      <section class="stage-summary-grid">
-        <article class="summary-card reveal">
-          <h2>市场状态定义</h2>
-          <p>${escapeHtml(valueOr(stage.marketDefinition, stage.mode))}</p>
+      <nav class="stage-section-nav" aria-label="阶段详情页内导航">
+        ${[['stage-overview','概览'],['stage-allocation','仓位'],['stage-actions','执行动作'],['stage-assets','资产逻辑'],['stage-recognition','识别条件'],['stage-options','期权'],['stage-risk','风险']].map(([target, label]) => `<button type="button" data-scroll-target="${target}">${label}</button>`).join('')}
+      </nav>
+
+      <div class="stage-detail-layout">
+        <section class="content-card stage-overview-card reveal" aria-labelledby="stage-overview-heading">
+          <div><h2 id="stage-overview-heading">市场状态定义</h2><p>${escapeHtml(valueOr(stage.marketDefinition, stage.mode))}</p></div>
           <div class="stage-meta">
             <div class="meta-cell"><span>市场方向</span><strong>${escapeHtml(valueOr(stage.direction))}</strong></div>
             <div class="meta-cell"><span>风险等级</span><strong>${escapeHtml(valueOr(stage.risk))}</strong></div>
             <div class="meta-cell"><span>策略属性</span><strong>${escapeHtml(valueOr(stage.strategyProfile, stage.mode))}</strong></div>
           </div>
-        </article>
-        <article class="summary-card reveal">
-          <h2>相邻阶段区别</h2>
-          <div class="adjacent-grid">
-            <div><span>与前一阶段</span><strong>${escapeHtml(valueOr(state.stages.find(item => item.id === previous?.id)?.name, '周期前序'))}</strong><p>${escapeHtml(valueOr(previous?.difference))}</p></div>
-            <div><span>与后一阶段</span><strong>${escapeHtml(valueOr(state.stages.find(item => item.id === next?.id)?.name, '周期后序'))}</strong><p>${escapeHtml(valueOr(next?.difference))}</p></div>
-          </div>
-        </article>
-      </section>
+          <div class="core-principle"><span>核心原则</span><strong>${escapeHtml(valueOr(corePrinciple, stage.mode))}</strong></div>
+        </section>
 
-      <section class="content-grid">
-        <article class="content-card full reveal">
-          <h2>典型识别条件</h2>
-          ${renderList(stage.conditions)}
-        </article>
-        <article class="content-card full reveal">
+        <section id="stage-allocation" class="content-card reveal stage-anchor-section">
           <h2>允许仓位区间</h2>
           <p>各资产区间相互独立，不要求上下限合计为100%，也不代表应同时取上限或下限。</p>
           <div class="allocation-grid">
             ${allocations.map(item => `<div class="allocation-card"><span class="ticker">${escapeHtml(valueOr(item.ticker))}</span><div class="range">${escapeHtml(valueOr(item.range))}</div><p>${escapeHtml(valueOr(item.role))}</p></div>`).join('')}
           </div>
-        </article>
-        <article class="content-card full reveal">
-          <h2>各资产配置逻辑</h2>
-          <div class="asset-rule-grid">
-            ${allocations.map(item => {
-              const rule = stage.assetRules?.[item.ticker] || {};
-              return `<section class="asset-rule-card"><header><strong>${escapeHtml(valueOr(item.ticker))}</strong><span>${escapeHtml(valueOr(item.range))}</span></header><p>${escapeHtml(valueOr(item.role))}</p><dl><div><dt>增配条件</dt><dd>${escapeHtml(valueOr(rule.increaseWhen))}</dd></div><div><dt>减配条件</dt><dd>${escapeHtml(valueOr(rule.reduceWhen))}</dd></div><div><dt>禁止条件</dt><dd>${escapeHtml(valueOr(rule.avoidWhen))}</dd></div><div><dt>主要风险</dt><dd>${escapeHtml(valueOr(rule.risk))}</dd></div></dl></section>`;
-            }).join('')}
-          </div>
-        </article>
-        <article class="content-card full reveal">
+        </section>
+
+        <section id="stage-actions" class="content-card reveal stage-anchor-section">
+          <div class="card-heading-row"><div><h2>当前执行动作</h2><p>默认显示初始动作；切换市场状态查看对应处理。</p></div></div>
+          ${stageActionTabs(actionPlan)}
+        </section>
+
+        <section id="stage-assets" class="content-card reveal stage-anchor-section">
+          <div class="card-heading-row"><div><h2>各资产配置逻辑</h2><p>仓位区间保持可见；此处按资产查看角色、调整条件和风险。</p></div></div>
+          ${stageAssetTabs(stage, allocations)}
+        </section>
+
+        <section id="stage-recognition" class="content-card reveal stage-anchor-section recognition-section">
+          <div><h2>典型识别条件</h2><p>优先核对最有区分度的价格结构、波动率和相对强弱条件。</p>${renderList(listOr(stage.conditions).slice(0, 6))}</div>
+          ${recognitionVisualMarkup(stage)}
+          <details class="compact-details"><summary role="button" tabindex="0" aria-expanded="false">查看阶段切换条件</summary>${renderList(stage.transitionConditions, 'condition-list')}</details>
+        </section>
+
+        <section id="stage-options" class="content-card reveal stage-anchor-section">
           <div class="card-heading-row"><div><h2>期权策略分级</h2><p>阶段分级只说明用途优先级；建仓前仍需核对完整损益与管理规则。</p></div><a class="button ghost" href="#/options">打开期权工具库</a></div>
           <div class="guidance-grid">${optionGuidanceMarkup(stage)}</div>
-        </article>
-        <article class="content-card full reveal">
-          <h2>执行动作</h2>
-          <div class="scenario-grid">
-            <section><h3>初始执行</h3>${renderList(actionPlan.initial, 'action-list')}</section>
-            <section><h3>继续恶化</h3>${renderList(actionPlan.worsening, 'risk-list')}</section>
-            <section><h3>维持不变</h3>${renderList(actionPlan.unchanged, 'condition-list')}</section>
-            <section><h3>市场改善</h3>${renderList(actionPlan.improving, 'action-list')}</section>
-          </div>
-        </article>
-        <article class="content-card full reveal">
-          <h2>阶段切换条件</h2>
-          ${renderList(stage.transitionConditions, 'condition-list')}
-        </article>
-        <article class="content-card reveal">
-          <h2>潜在收益来源</h2>
-          ${renderList(stage.returnSources, 'action-list')}
-        </article>
-        <article class="content-card reveal">
-          <h2>潜在亏损来源</h2>
-          ${renderList(stage.lossSources, 'risk-list')}
-        </article>
-        <article class="content-card full reveal risk-boundary">
-          <h2>风险边界与机会成本</h2>
+        </section>
+
+        <section id="stage-risk" class="content-card reveal risk-boundary stage-anchor-section">
+          <h2>风险、收益与机会成本</h2>
+          <div class="source-grid"><section><h3>潜在收益来源</h3>${renderList(stage.returnSources, 'action-list')}</section><section><h3>潜在亏损来源</h3>${renderList(stage.lossSources, 'risk-list')}</section></div>
           <div class="risk-boundary-grid"><div><span>最大不利情景</span><p>${escapeHtml(valueOr(stage.worstCase))}</p></div><div><span>策略失效条件</span><p>${escapeHtml(valueOr(stage.invalidation))}</p></div><div><span>机会成本</span><p>${escapeHtml(valueOr(stage.opportunityCost))}</p></div></div>
           <div class="critical-notice"><strong>风险提示</strong><p>${escapeHtml(valueOr(stage.riskNotice, listOr(stage.risks).join('；')))}</p></div>
-        </article>
-      </section>
+        </section>
+      </div>
     </div>`;
 }
 
@@ -337,42 +408,49 @@ function compareTemplate() {
 }
 
 function optionTemplate(option) {
+  if (!option) return '<div class="notice"><strong>策略不可用</strong><span>未找到对应策略，请从目录重新选择。</span></div>';
   const performance = option.performance || {};
   const example = option.formulaExample || {};
+  const variables = listOr(option.variables, {}).filter(item => item && typeof item === 'object');
   return `
-    <article class="option-card reveal">
-      <div class="option-header">
-        <h2>${escapeHtml(option.name)}<small>${escapeHtml(option.english)}</small></h2>
-        <div class="option-badges"><span class="option-purpose">${escapeHtml(valueOr(option.category))}</span><span class="option-purpose muted">${escapeHtml(valueOr(option.purpose))}</span></div>
-      </div>
+    <article class="option-detail-card reveal" aria-labelledby="option-detail-title">
+      <header class="option-detail-header">
+        <div><span class="option-purpose">${escapeHtml(valueOr(option.category))}</span><h2 id="option-detail-title">${escapeHtml(valueOr(option.name))}<small>${escapeHtml(valueOr(option.english))}</small></h2><p>${escapeHtml(valueOr(option.purpose))}</p></div>
+      </header>
       <div class="option-structure"><span>交易结构</span>${escapeHtml(valueOr(option.structure))}</div>
-      <div class="option-facts">
-        <div class="option-fact"><span>建仓现金流</span><strong>${escapeHtml(valueOr(option.cashflow))}</strong></div>
-        <div class="option-fact"><span>市场方向判断</span><strong>${escapeHtml(valueOr(option.bias))}</strong></div>
-        <div class="option-fact"><span>适用标的</span><strong>${listOr(option.underlyings).map(escapeHtml).join(' / ')}</strong></div>
-        <div class="option-fact"><span>适用阶段</span><strong>${listOr(option.idealStages).map(escapeHtml).join(' / ')}</strong></div>
+      <div class="option-leg-grid option-summary-legs"><div><span>买入腿</span>${renderList(option.buyLegs, 'compact-list')}</div><div><span>卖出腿</span>${renderList(option.sellLegs, 'compact-list')}</div><div><span>适用标的</span>${renderList(option.underlyings, 'compact-list')}</div></div>
+      <div class="option-boundary-grid" aria-label="策略核心损益边界">
+        <section><span>最大收益</span><strong>${escapeHtml(valueOr(option.maxGain))}</strong></section>
+        <section class="loss"><span>最大亏损</span><strong>${escapeHtml(valueOr(option.maxLoss))}</strong></section>
+        <section><span>盈亏平衡点</span><strong>${escapeHtml(valueOr(option.breakeven))}</strong></section>
       </div>
-      <div class="option-leg-grid"><div><span>买入腿</span>${renderList(listOr(option.buyLegs, '无独立买入期权腿'), 'compact-list')}</div><div><span>卖出腿</span>${renderList(listOr(option.sellLegs, '无独立卖出期权腿'), 'compact-list')}</div><div><span>不适用阶段</span>${renderList(option.unsuitableStages, 'compact-list')}</div></div>
-      <ul class="formula-list">
-        <li><strong>最大收益：</strong>${escapeHtml(valueOr(option.maxGain))}</li>
-        <li><strong>最大亏损：</strong>${escapeHtml(valueOr(option.maxLoss))}</li>
-        <li><strong>盈亏平衡：</strong>${escapeHtml(valueOr(option.breakeven))}</li>
-      </ul>
-      <div class="option-planning-grid"><section><h3>DTE选择逻辑</h3><p>${escapeHtml(valueOr(option.dteLogic))}</p></section><section><h3>行权价逻辑</h3><p>${escapeHtml(valueOr(option.strikeLogic))}</p></section></div>
-      <div class="performance-grid"><section><span>标的上涨</span><p>${escapeHtml(valueOr(performance.up))}</p></section><section><span>标的横盘</span><p>${escapeHtml(valueOr(performance.sideways))}</p></section><section><span>标的下跌</span><p>${escapeHtml(valueOr(performance.down))}</p></section></div>
-      <div class="management-grid"><section><h3>时间价值</h3><p>${escapeHtml(valueOr(option.thetaImpact))}</p></section><section><h3>隐含波动率</h3><p>${escapeHtml(valueOr(option.ivImpact))}</p></section><section><h3>提前退出</h3><p>${escapeHtml(valueOr(option.earlyExit))}</p></section><section><h3>到期处理</h3><p>${escapeHtml(valueOr(option.expiration))}</p></section></div>
-      <div class="option-risk-grid"><section><h3>主要风险</h3><p>${escapeHtml(valueOr(option.risk))}</p></section><section><h3>机会成本</h3><p>${escapeHtml(valueOr(option.opportunityCost))}</p></section></div>
-      <details class="formula-details"><summary role="button" tabindex="0" aria-expanded="false">变量说明与公式示例</summary><div class="variable-grid">${listOr(option.variables, {}).filter(item => item && typeof item === 'object').map(item => `<div><strong>${escapeHtml(valueOr(item.symbol))}</strong><span>${escapeHtml(valueOr(item.meaning))}</span></div>`).join('')}</div><p><strong>示例假设：</strong>${escapeHtml(valueOr(example.scenario))}</p><p><strong>计算：</strong>${escapeHtml(valueOr(example.calculation))}</p><p><strong>解释：</strong>${escapeHtml(valueOr(example.conclusion))}</p><p>公式默认1张美股期权对应100股，未计佣金、税费、提前行权、指派和实际滑点。</p></details>
+      <section class="option-visible-risk"><h3>主要风险</h3><p>${escapeHtml(valueOr(option.risk))}</p></section>
+
+      <div class="option-detail-groups">
+        <details class="option-detail-group" open><summary role="button" tabindex="0" aria-expanded="true">交易设计</summary><div class="option-planning-grid"><section><h3>市场方向</h3><p>${escapeHtml(valueOr(option.bias))}</p></section><section><h3>适用阶段</h3><p>${listOr(option.idealStages).map(escapeHtml).join(' / ')}</p></section><section><h3>不适用阶段</h3><p>${listOr(option.unsuitableStages).map(escapeHtml).join(' / ')}</p></section><section><h3>DTE逻辑</h3><p>${escapeHtml(valueOr(option.dteLogic))}</p></section><section><h3>行权价逻辑</h3><p>${escapeHtml(valueOr(option.strikeLogic))}</p></section><section><h3>建仓现金流</h3><p>${escapeHtml(valueOr(option.cashflow))}</p></section></div></details>
+        <details class="option-detail-group"><summary role="button" tabindex="0" aria-expanded="false">市场表现</summary><div class="performance-grid"><section><span>上涨</span><p>${escapeHtml(valueOr(performance.up))}</p></section><section><span>横盘</span><p>${escapeHtml(valueOr(performance.sideways))}</p></section><section><span>下跌</span><p>${escapeHtml(valueOr(performance.down))}</p></section></div></details>
+        <details class="option-detail-group"><summary role="button" tabindex="0" aria-expanded="false">时间和波动率</summary><div class="management-grid"><section><h3>Theta影响</h3><p>${escapeHtml(valueOr(option.thetaImpact))}</p></section><section><h3>IV影响</h3><p>${escapeHtml(valueOr(option.ivImpact))}</p></section></div></details>
+        <details class="option-detail-group"><summary role="button" tabindex="0" aria-expanded="false">管理规则</summary><div class="management-grid"><section><h3>提前退出</h3><p>${escapeHtml(valueOr(option.earlyExit))}</p></section><section><h3>到期处理</h3><p>${escapeHtml(valueOr(option.expiration))}</p></section><section><h3>指派或行权风险</h3><p>${escapeHtml(valueOr(option.assignmentRisk, option.expiration))}</p></section><section><h3>机会成本</h3><p>${escapeHtml(valueOr(option.opportunityCost))}</p></section></div></details>
+        <details class="option-detail-group formula-details"><summary role="button" tabindex="0" aria-expanded="false">公式与变量</summary><div class="variable-grid">${variables.map(item => `<div><strong>${escapeHtml(valueOr(item.symbol))}</strong><span>${escapeHtml(valueOr(item.meaning))}</span></div>`).join('')}</div><p><strong>示例假设：</strong>${escapeHtml(valueOr(example.scenario))}</p><p><strong>计算：</strong>${escapeHtml(valueOr(example.calculation))}</p><p><strong>解释：</strong>${escapeHtml(valueOr(example.conclusion))}</p><p>静态公式默认1张美股期权对应100股，未计佣金、税费、提前行权、指派和实际滑点；不使用伪造实时价格。</p></details>
+      </div>
     </article>`;
 }
 
-function optionsTemplate() {
+function optionsTemplate(selectedId) {
+  const categories = ['全部', '保护', '进攻', '收益增强'];
+  const filtered = state.optionCategory === '全部' ? state.options : state.options.filter(option => option.category === state.optionCategory);
+  const selected = state.options.find(option => option.id === selectedId) || filtered[0] || state.options[0];
   return `
     <div class="page">
       <div class="breadcrumb"><a href="#/">首页</a><span>/</span><span>期权工具</span></div>
-      <header class="page-title"><div><p class="eyebrow">Option Toolkit</p><h1>八类期权工具</h1><p>逐项核对交易腿、适用场景、损益边界、期限与行权价、行情表现、退出和到期处理。</p></div></header>
-      <div class="notice" style="margin-bottom:18px"><strong>计算口径</strong><span>示例公式按每股权利金表达，乘数按100计算。组合内现货成本、净权利金的正负方向必须在实际建仓时重新核对。</span></div>
-      <section class="option-grid">${state.options.map(optionTemplate).join('')}</section>
+      <header class="page-title"><div><p class="eyebrow">Option Toolkit</p><h1>八类期权工具</h1><p>从目录选择一种策略，集中核对结构、损益边界、管理规则和公式。</p></div></header>
+      <div class="notice option-calculation-notice"><strong>计算口径</strong><span>示例公式按每股权利金表达，乘数按100计算；当前没有真实期权链或实时价格。</span></div>
+      <div class="option-category-filter" role="group" aria-label="按策略分类筛选">${categories.map(category => `<button type="button" class="category-button${category === state.optionCategory ? ' active' : ''}" data-option-category="${escapeHtml(category)}" aria-pressed="${category === state.optionCategory}">${escapeHtml(category)}</button>`).join('')}</div>
+      <label class="option-mobile-select">选择策略<select id="optionSelect">${state.options.map(option => `<option value="${escapeHtml(option.id)}"${option.id === selected.id ? ' selected' : ''}>${escapeHtml(option.english)} · ${escapeHtml(option.name)}</option>`).join('')}</select></label>
+      <div class="option-workspace">
+        <nav class="option-catalog" aria-label="期权策略目录">${filtered.map(option => `<a class="option-catalog-item${option.id === selected.id ? ' active' : ''}" href="#/options/${option.id}"${option.id === selected.id ? ' aria-current="page"' : ''}><span>${escapeHtml(option.english)}</span><small>${escapeHtml(option.name)} · ${escapeHtml(option.category)}</small></a>`).join('')}</nav>
+        ${optionTemplate(selected)}
+      </div>
     </div>`;
 }
 
@@ -394,7 +472,7 @@ function notFoundTemplate() {
 function setActiveNav(route) {
   document.querySelectorAll('.desktop-nav a').forEach(link => {
     const href = link.getAttribute('href').slice(1);
-    const active = route === href || (href === '/' && route.startsWith('/stage/'));
+    const active = route === href || (href === '/' && route.startsWith('/stage/')) || (href === '/options' && route.startsWith('/options/'));
     link.classList.toggle('active', active);
   });
 }
@@ -415,6 +493,26 @@ function bindCommonEvents() {
     });
   });
 
+  const updateCycleInspector = id => {
+    const stage = state.stages.find(item => item.id === id);
+    if (!stage) return;
+    const shape = state.cycleShape?.stages?.find(item => item.id === id);
+    const index = document.getElementById('cycleInspectorIndex');
+    const name = document.getElementById('cycleInspectorName');
+    const summary = document.getElementById('cycleInspectorSummary');
+    const link = document.getElementById('cycleInspectorLink');
+    if (index) index.textContent = `S${String(stage.order).padStart(2, '0')}`;
+    if (name) name.textContent = stage.name;
+    if (summary) summary.textContent = valueOr(shape?.summary, stage.summary);
+    if (link) link.href = `#/stage/${stage.id}`;
+  };
+  document.querySelectorAll('[data-cycle-preview-id]').forEach(element => {
+    const preview = () => updateCycleInspector(element.dataset.cyclePreviewId);
+    element.addEventListener('mouseenter', preview);
+    element.addEventListener('focus', preview);
+    element.addEventListener('pointerdown', preview);
+  });
+
   document.querySelectorAll('.range-tab').forEach(button => {
     button.addEventListener('click', () => {
       state.ranges[button.dataset.indicatorId] = button.dataset.range;
@@ -423,7 +521,7 @@ function bindCommonEvents() {
     });
   });
 
-  document.querySelectorAll('.formula-details').forEach(details => {
+  document.querySelectorAll('.formula-details, .compact-details, .option-detail-group').forEach(details => {
     const summary = details.querySelector('summary');
     if (!summary) return;
     const syncExpanded = () => summary.setAttribute('aria-expanded', String(details.open));
@@ -436,6 +534,105 @@ function bindCommonEvents() {
       }
     });
     syncExpanded();
+  });
+
+  document.querySelectorAll('[data-tabs]').forEach(tabGroup => {
+    const tabs = [...tabGroup.querySelectorAll('[role="tab"]')];
+    const selectTab = (tab, focus = false) => {
+      tabs.forEach(item => {
+        const selected = item === tab;
+        item.classList.toggle('active', selected);
+        item.setAttribute('aria-selected', String(selected));
+        item.tabIndex = selected ? 0 : -1;
+        const panel = document.getElementById(item.getAttribute('aria-controls'));
+        if (panel) panel.hidden = !selected;
+      });
+      if (focus) tab.focus();
+    };
+    tabs.forEach((tab, index) => {
+      tab.addEventListener('click', () => selectTab(tab));
+      tab.addEventListener('keydown', event => {
+        const keys = ['ArrowLeft', 'ArrowRight', 'Home', 'End'];
+        if (!keys.includes(event.key)) return;
+        event.preventDefault();
+        const targetIndex = event.key === 'Home'
+          ? 0
+          : event.key === 'End'
+            ? tabs.length - 1
+            : (index + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
+        selectTab(tabs[targetIndex], true);
+      });
+    });
+  });
+
+  document.querySelectorAll('[data-scroll-target]').forEach(button => {
+    button.addEventListener('click', () => {
+      const target = document.getElementById(button.dataset.scrollTarget);
+      if (!target) return;
+      const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      target.scrollIntoView({ behavior: reducedMotion ? 'auto' : 'smooth', block: 'start' });
+    });
+  });
+
+  document.querySelectorAll('[data-option-category]').forEach(button => {
+    button.addEventListener('click', () => {
+      state.optionCategory = button.dataset.optionCategory;
+      const currentId = parseRoute().split('/')[2];
+      const available = state.optionCategory === '全部'
+        ? state.options
+        : state.options.filter(option => option.category === state.optionCategory);
+      const nextId = available.some(option => option.id === currentId) ? currentId : available[0]?.id;
+      if (nextId && nextId !== currentId) location.hash = `#/options/${nextId}`;
+      else render();
+    });
+  });
+
+  document.getElementById('optionSelect')?.addEventListener('change', event => {
+    location.hash = `#/options/${event.target.value}`;
+  });
+
+  const indicatorDialog = document.getElementById('indicatorDialog');
+  const closeIndicatorDialog = () => {
+    if (!indicatorDialog || indicatorDialog.hidden) return;
+    indicatorDialog.hidden = true;
+    document.body.classList.remove('dialog-open');
+    indicatorDialogTrigger?.focus();
+    indicatorDialogTrigger = null;
+  };
+  document.querySelectorAll('[data-indicator-info]').forEach(button => {
+    button.addEventListener('click', () => {
+      const indicator = state.indicators.find(item => item.id === button.dataset.indicatorInfo);
+      if (!indicator || !indicatorDialog) return;
+      indicatorDialogTrigger = button;
+      const setText = (id, value) => { const node = document.getElementById(id); if (node) node.textContent = valueOr(value); };
+      setText('indicatorDialogTitle', indicator.name);
+      setText('indicatorDialogValue', `当前模拟值：${indicator.value}${indicator.unit || ''} · ${indicator.status}`);
+      setText('indicatorDialogDefinition', indicator.definition || indicator.meaning);
+      setText('indicatorDialogInterpretation', indicator.interpretation || indicator.explain);
+      setText('indicatorDialogRelation', indicator.marketRelation || '需要结合价格结构、波动率和市场广度共同判断。');
+      setText('indicatorDialogLimitations', indicator.limitations || indicator.limits);
+      indicatorDialog.hidden = false;
+      document.body.classList.add('dialog-open');
+      indicatorDialog.querySelector('.indicator-dialog')?.focus();
+    });
+  });
+  indicatorDialog?.querySelector('[data-close-indicator-dialog]')?.addEventListener('click', closeIndicatorDialog);
+  indicatorDialog?.addEventListener('click', event => {
+    if (event.target === indicatorDialog) closeIndicatorDialog();
+  });
+  indicatorDialog?.addEventListener('keydown', event => {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      closeIndicatorDialog();
+      return;
+    }
+    if (event.key !== 'Tab') return;
+    const focusable = [...indicatorDialog.querySelectorAll('button, [href], select, [tabindex]:not([tabindex="-1"])')].filter(item => !item.hidden);
+    if (!focusable.length) return;
+    const first = focusable[0];
+    const last = focusable.at(-1);
+    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
   });
 
   const revealObserver = new IntersectionObserver(entries => {
@@ -457,11 +654,13 @@ function parseRoute() {
 function render() {
   const route = parseRoute();
   state.route = route;
+  document.body.classList.remove('dialog-open');
+  indicatorDialogTrigger = null;
   setActiveNav(route);
 
   if (route === '/') app.innerHTML = homeTemplate();
   else if (route === '/compare') app.innerHTML = compareTemplate();
-  else if (route === '/options') app.innerHTML = optionsTemplate();
+  else if (route === '/options' || route.startsWith('/options/')) app.innerHTML = optionsTemplate(route.split('/')[2]);
   else if (route === '/indicators') app.innerHTML = indicatorsTemplate();
   else if (route.startsWith('/stage/')) app.innerHTML = stageTemplate(state.stages.find(stage => stage.id === route.split('/')[2]));
   else app.innerHTML = notFoundTemplate();
@@ -510,15 +709,17 @@ document.addEventListener('keydown', event => {
 window.addEventListener('hashchange', render);
 
 async function loadData() {
-  const [stagesResponse, optionsResponse, indicatorsResponse] = await Promise.all([
+  const [stagesResponse, optionsResponse, indicatorsResponse, cycleResponse] = await Promise.all([
     fetch('/data/stages.json'),
     fetch('/data/options.json'),
-    fetch('/data/indicators.json')
+    fetch('/data/indicators.json'),
+    fetch('/data/cycle-shape.json')
   ]);
-  if (!stagesResponse.ok || !optionsResponse.ok || !indicatorsResponse.ok) throw new Error('Failed to load site data');
+  if (!stagesResponse.ok || !optionsResponse.ok || !indicatorsResponse.ok || !cycleResponse.ok) throw new Error('Failed to load site data');
   state.stages = await stagesResponse.json();
   state.options = await optionsResponse.json();
   state.indicators = await indicatorsResponse.json();
+  state.cycleShape = await cycleResponse.json();
   state.indicators.forEach(indicator => { state.ranges[indicator.id] = '1Y'; });
 }
 

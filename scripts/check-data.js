@@ -31,6 +31,7 @@ function assertTextArray(value, label) {
 const stages = readJson('public/data/stages.json');
 const options = readJson('public/data/options.json');
 const indicators = readJson('public/data/indicators.json');
+const cycleShape = readJson('public/data/cycle-shape.json');
 const appSource = fs.readFileSync(path.join(ROOT, 'public/app.js'), 'utf8');
 
 const stageNames = ['高位震荡', '震荡下跌', '单边下跌', '恐慌暴跌', '底部震荡', '右侧反转', '单边上涨', '震荡上涨', '加速上涨／过热'];
@@ -46,6 +47,14 @@ assertExactList(indicators.map(indicator => indicator.name), indicatorNames, '�
 assert(new Set(stages.map(stage => stage.id)).size === stages.length, '阶段ID存在重复项');
 assert(new Set(options.map(option => option.id)).size === options.length, '期权ID存在重复项');
 assert(stages.every((stage, index) => stage.order === index + 1), '市场阶段order必须从1到9连续排列');
+assertText(cycleShape.label, 'cycleShape.label');
+assertText(cycleShape.disclaimer, 'cycleShape.disclaimer');
+assertExactList(cycleShape.stages.map(stage => stage.id), stages.map(stage => stage.id), '周期图阶段');
+cycleShape.stages.forEach(stage => {
+  assertText(stage.summary, `cycleShape.${stage.id}.summary`);
+  assert(Array.isArray(stage.points) && stage.points.length >= 2, `cycleShape.${stage.id}.points至少需要两个数据点`);
+  stage.points.forEach((value, index) => assert(Number.isFinite(value) && value >= 0 && value <= 100, `cycleShape.${stage.id}.points[${index}]必须在0至100之间`));
+});
 
 const knownOptions = new Set(optionNames);
 const knownStageIds = new Set(stages.map(stage => stage.id));
@@ -91,6 +100,10 @@ options.forEach(option => {
   assert(Array.isArray(option.variables) && option.variables.length, `${option.english}.variables必须是非空数组`);
   option.variables.forEach((variable, index) => ['symbol', 'meaning'].forEach(field => assertText(variable[field], `${option.english}.variables[${index}].${field}`)));
   ['scenario', 'calculation', 'conclusion'].forEach(field => assertText(option.formulaExample?.[field], `${option.english}.formulaExample.${field}`));
+});
+
+indicators.forEach(indicator => {
+  ['definition', 'interpretation', 'marketRelation', 'limitations'].forEach(field => assertText(indicator[field], `${indicator.name}.${field}`));
 });
 
 rangeLabels.forEach(label => assert(appSource.includes(`'${label}'`), `前端时间范围缺少：${label}`));
