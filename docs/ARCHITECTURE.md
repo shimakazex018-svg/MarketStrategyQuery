@@ -87,3 +87,13 @@ Hash 不会发送给服务器，因此服务器无需为缺失静态路径回退
 `indicators.json` 在旧有 `meaning/limits` 兼容字段之外提供 `definition/interpretation/marketRelation/limitations`。首页只创建一个可复用对话框外壳，点击指标信息按钮后以 `textContent` 写入当前指标内容，避免重复 DOM 和正文硬编码。
 
 对话框具备 `role="dialog"`、模态语义、Escape及遮罩关闭、焦点约束与关闭后焦点返回。移动端显示为底部抽屉且正文内部滚动；指标数值继续是静态演示值，不进行网络请求或阶段自动判断。
+
+## v0.3 市场数据边界
+
+浏览器只访问本站 `/api/market-data/*`，页面加载不会直接请求第三方。`server/market-data/` 将数据源适配、结构校验、原子缓存、请求预算、调度、日志和 HTTP API 分离；单指标故障不会阻断其他指标或静态策略页面。服务启动先读本地缓存，缓存损坏按指标隔离；未确认来源许可时，即使存在旧缓存也不向页面展示。
+
+当前数据源审计没有发现同时满足定义、机器可读、Windows 可访问和公开再展示许可门槛的正式来源，因此 VIX/VXN 返回 `unavailable`，QQQ组合TTM PE、Forward PE、恐慌贪婪指数和基金经理仓位指数返回 `demo`。实现保留受控 Cboe 适配器，但只有显式设置 `CBOE_DATA_LICENSE_CONFIRMED=true` 后才允许请求；默认不会发起外部请求。
+
+指标响应统一支持 `loading/fresh/stale/error/demo/unavailable`。在线模型包含数值、数据日期、来源、最近尝试、最近成功、下次允许时间、可用时间范围及有界历史点；无缓存失败时使用 `null`，不以 0 伪装数据。历史曲线最多向前端返回 240 点，避免长期缓存和 DOM/SVG 无界增长。
+
+缓存位于被 Git 忽略的 `runtime-data/market-data/`，采用临时文件加重命名的原子写入。日志和可选原始响应均有文件大小或保留数量上限；没有数据库、长期无限缓存或浏览器端密钥。

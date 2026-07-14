@@ -2,44 +2,32 @@
 
 ## 当前状态
 
-- 版本：v0.2 信息架构评审候选 / `package.json` 仍为 0.1.0（未发布、未合并）。
-- 形态：可本地运行、内容结构完整且完成核心页面可读性优化的静态策略网站。
-- 技术栈：原生 HTML/CSS/JavaScript、JSON、Node.js 原生 HTTP。
-- 默认地址：`0.0.0.0:48101`；从本机使用 `http://127.0.0.1:48101`。
-- 持久化与外部服务：无。
-- Git：稳定基线 `main@c5c02fce4329793609dc175c5b5f3104ab6ffc14`；当前开发分支 `feature/v0.2-information-architecture`，不得在用户确认前合并。
+- 稳定版本：`main` 上的 `v0.2.0`，提交 `160345eeeefca763b05233fdae76a43025a85516`。
+- 开发分支：`feature/v0.3-live-market-data`，尚未合并、尚未创建 v0.3 标签。
+- 技术栈：原生 HTML/CSS/JavaScript、JSON、Node.js 原生 HTTP，无第三方运行依赖。
+- 默认地址：`0.0.0.0:48101`；本机访问 `http://127.0.0.1:48101`。
 
-## 最近验证
+## v0.3 实现状态
 
-日期：2026-07-14。
+数据源审计、市场数据基础设施、六种前端状态和异常测试已经完成。Cboe VIX/VXN 官方 CSV 在 Windows 实测可访问，但公开条款没有确认本网站缓存和再展示许可；Invesco QQQ组合TTM PE 没有找到同时满足机器接口、口径和许可的来源。因此当前没有真实指标正式上线：VIX/VXN 为 unavailable；QQQ组合TTM PE、Forward PE、恐慌贪婪指数和基金经理仓位指数为 demo。
 
-已完成语法、完整数据契约、HTTP、真实浏览器路由与交互、标签和折叠键盘操作、期权浏览器历史、指标弹窗焦点返回、深浅主题及四种视口长内容溢出检查。实际 iPad/iPhone 设备和目标 ZeroTier 网络仍需用户验收，详见 `TESTING.md`。
+浏览器只请求本站 `/api/market-data/*`。默认许可开关关闭，服务可以完全断网启动；缓存损坏按指标隔离，未获许可时不会展示旧在线缓存。若未来获得 Cboe 授权，可在部署环境显式设置 `CBOE_DATA_LICENSE_CONFIRMED=true`，但启用前仍应复核条款和实际请求结果。
 
-## 已知问题
+## 资源边界
 
-- 阶段和期权字段已覆盖冻结内容范围；具体仓位边界、期权参数逻辑和金融文案仍需用户或合格专业人士审定。
-- 当前系统命令行环境可能没有 Node/npm；部署机需要安装 Node.js 18+。Codex 本轮使用随附 Node 进行等价检查。
-- 主题只跟随系统初始偏好并在当前页面会话切换，刷新后不持久化；v0.1 未要求保存偏好。
-- 识别图片字段已预留但全部为 `null`；周期波形是手工静态示意，不代表真实QQQ行情。
+- 单指标每日最多 4 次外部请求；失败重试间隔为 15、60、180 分钟。
+- 单提供方每日最多 20 次请求；手动刷新冷却 30 分钟并使用并发锁。
+- VIX 07:10、VXN 07:15（Asia/Shanghai）检查，周末跳过。
+- 历史 API 最多返回 240 点；缓存原子写入，日志和可选原始响应有界。
+- QQQ PE 未来必须按实际来源频率调度，不能对月度文件进行每日抓取。
 
-## 下一步
+## 验证与验收
 
-1. 用户查看 `previews/review-v0.2-information-architecture/` 与本地网站，确认信息层级后再决定是否合并。
-2. 后续独立批次再处理阶段对比页，不与本分支混合。
-3. 逐阶段审定金融内容，并在真实设备及目标局域网/ZeroTier 环境执行人工验收。
+运行 `npm.cmd run check`。启动后检查 `/api/health`、`/api/market-data/indicators`、首页、阶段详情、阶段对比、期权工具和指标说明，以及 375、768、1024、1440 四类宽度。浏览器截图位于 `previews/review-v0.3-live-market-data/`；fresh/stale/error/loading 截图来自 `tests/review-server.js`，画面来源明确标注“UI验收夹具（非真实行情）”。
 
-## 重要文件
+## 已知边界与下一步
 
-- 产品边界：`AGENTS.md`、`PROJECT_CONTEXT.md`、`DECISIONS.md`。
-- 业务数据：`public/data/stages.json`、`options.json`、`indicators.json`；静态周期形态：`cycle-shape.json`。
-- 页面逻辑与样式：`public/app.js`、`public/styles.css`。
-- 服务：`server.js`。
-- 验证：`scripts/check-data.js`、`TESTING.md`。
-- 未完成项：`TODO.md`。
-
-## 部署注意事项
-
-- 启动前确认 48101 未被未知进程占用。
-- 保持 `0.0.0.0` 监听以支持局域网和 ZeroTier，但不要配置公网穿透。
-- Windows 防火墙只开放 TCP 48101 的 Private 入站规则，不关闭防火墙。
-- 该版本没有登录鉴权，必须限定在可信局域网或 ZeroTier 网络中使用。
+- 真实 iPhone/iPad 触摸、目标局域网、ZeroTier 和 Windows 防火墙仍需用户侧复验。
+- Cboe 许可、QQQ PE 正式机器来源和其余三类候选指标仍待外部确认。
+- 本轮没有自动判断市场阶段、自动仓位建议、IBKR、数据库、登录、回测或自动交易。
+- 用户验收 v0.3 分支后再决定是否合并 main；不要自行合并或创建 `v0.3.0` 标签。
