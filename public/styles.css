@@ -509,7 +509,8 @@ body.dialog-open { overflow: hidden; }
   font-weight: 750;
 }
 .stage-section-nav button:hover, .stage-section-nav button:focus-visible { color: var(--text); background: var(--surface-muted); }
-.stage-detail-layout { display: grid; gap: 18px; }
+.stage-detail-layout { display: grid; min-width: 0; gap: 18px; }
+.stage-detail-layout > * { min-width: 0; }
 .stage-anchor-section, #stage-overview { scroll-margin-top: calc(var(--header-height) + 76px); }
 .stage-overview-card { padding: clamp(20px, 3vw, 30px); }
 .core-principle {
