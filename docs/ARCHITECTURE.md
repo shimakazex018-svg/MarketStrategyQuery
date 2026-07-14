@@ -81,3 +81,9 @@ Hash 不会发送给服务器，因此服务器无需为缺失静态路径回退
 `public/data/cycle-shape.json` 保存九阶段的手工归一化静态点位、紧凑摘要和非实时声明，阶段 ID 必须与 `stages.json` 一一对应。`marketCycleSvg()` 只负责把数据映射为平滑 SVG 曲线、标记和可访问交互区域，因此未来替换获准的历史片段时不需要重写图形组件。
 
 该数据不是实时或历史QQQ精确数据，运行时不请求外部行情。窄屏仅允许 `.cycle-scroll` 容器横向滚动；页面根节点不得产生横向溢出。
+
+## v0.2 指标说明弹窗
+
+`indicators.json` 在旧有 `meaning/limits` 兼容字段之外提供 `definition/interpretation/marketRelation/limitations`。首页只创建一个可复用对话框外壳，点击指标信息按钮后以 `textContent` 写入当前指标内容，避免重复 DOM 和正文硬编码。
+
+对话框具备 `role="dialog"`、模态语义、Escape及遮罩关闭、焦点约束与关闭后焦点返回。移动端显示为底部抽屉且正文内部滚动；指标数值继续是静态演示值，不进行网络请求或阶段自动判断。

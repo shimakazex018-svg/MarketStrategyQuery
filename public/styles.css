@@ -354,8 +354,59 @@ button { color: inherit; }
 }
 .metric-card:hover { transform: translateY(-5px); box-shadow: var(--shadow-hover); border-color: var(--line-strong); }
 .metric-top { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; }
+.metric-title-row { display: flex; align-items: center; gap: 8px; }
 .metric-name { margin: 0; font-size: 19px; letter-spacing: -.02em; }
+.metric-info-button {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid var(--line-strong);
+  border-radius: 50%;
+  background: var(--surface-muted);
+  color: var(--accent-strong);
+  cursor: pointer;
+  font-family: Georgia, serif;
+  font-weight: 800;
+}
+.metric-info-button:hover, .metric-info-button:focus-visible { border-color: var(--accent); background: var(--accent-soft); }
 .metric-subtitle { margin: 4px 0 0; color: var(--text-soft); font-size: 12px; }
+
+body.dialog-open { overflow: hidden; }
+.dialog-backdrop {
+  position: fixed;
+  z-index: 100;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(4, 11, 22, .58);
+  backdrop-filter: blur(5px);
+}
+.dialog-backdrop[hidden] { display: none; }
+.indicator-dialog {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  width: min(680px, 100%);
+  max-height: min(760px, calc(100vh - 40px));
+  overflow: hidden;
+  border: 1px solid var(--line-strong);
+  border-radius: 22px;
+  background: var(--surface);
+  box-shadow: 0 32px 100px rgba(0,0,0,.34);
+}
+.indicator-dialog > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; padding: 20px 22px; border-bottom: 1px solid var(--line); }
+.indicator-dialog header span { color: var(--accent-strong); font-size: 11px; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; }
+.indicator-dialog h2 { margin: 3px 0 0; font-size: 30px; }
+.dialog-close { flex: 0 0 auto; width: 44px; height: 44px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-muted); cursor: pointer; font-size: 25px; line-height: 1; }
+.indicator-dialog-body { overflow-y: auto; overscroll-behavior: contain; padding: 20px 22px 24px; }
+.indicator-dialog-body > section { padding: 14px 0; border-bottom: 1px solid var(--line); }
+.indicator-dialog-body h3, .indicator-dialog-body p { margin: 0; }
+.indicator-dialog-body h3 { font-size: 14px; }
+.indicator-dialog-body section p { margin-top: 5px; color: var(--text-soft); }
+.dialog-demo-value { display: inline-flex; padding: 7px 10px; border-radius: 999px; background: var(--accent-soft); color: var(--accent-strong); font-size: 13px; font-weight: 750; }
+.indicator-dialog-body .notice { margin-top: 16px; }
 .metric-value { text-align: right; }
 .metric-value strong { display: block; font-size: 29px; line-height: 1; letter-spacing: -.04em; }
 .metric-value span { color: var(--text-soft); font-size: 12px; }
@@ -746,6 +797,9 @@ button { color: inherit; }
   .cycle-inspector .button { width: 100%; }
   .metric-grid, .content-grid, .option-grid, .asset-rule-grid, .scenario-grid, .option-leg-grid, .option-planning-grid, .management-grid, .option-risk-grid, .performance-grid { grid-template-columns: 1fr; }
   .metric-card { min-height: 310px; }
+  .metric-info-button { width: 44px; height: 44px; }
+  .dialog-backdrop { align-items: end; padding: 0; }
+  .indicator-dialog { width: 100%; max-height: min(86vh, 760px); border-radius: 22px 22px 0 0; }
   .page-title { align-items: flex-start; flex-direction: column; }
   .stage-meta { grid-template-columns: 1fr; }
   .stage-section-nav { position: static; margin-inline: -2px; }

@@ -18,6 +18,7 @@ const app = document.getElementById('app');
 const themeToggle = document.getElementById('themeToggle');
 const menuToggle = document.getElementById('menuToggle');
 const mobileNav = document.getElementById('mobileNav');
+let indicatorDialogTrigger = null;
 
 function escapeHtml(value = '') {
   return String(value).replace(/[&<>'"]/g, char => ({
@@ -232,7 +233,7 @@ function metricCard(indicator, index) {
     <article class="metric-card reveal" style="transition-delay:${index * 45}ms">
       <div class="metric-top">
         <div>
-          <h3 class="metric-name">${escapeHtml(indicator.name)}</h3>
+          <div class="metric-title-row"><h3 class="metric-name">${escapeHtml(indicator.name)}</h3><button class="metric-info-button" type="button" data-indicator-info="${escapeHtml(indicator.id)}" aria-label="查看${escapeHtml(indicator.name)}指标说明">i</button></div>
           <p class="metric-subtitle">${escapeHtml(indicator.subtitle)}</p>
         </div>
         <div class="metric-value">
@@ -300,6 +301,19 @@ function homeTemplate() {
           <a class="button ghost" href="#/indicators">查看指标说明</a>
         </div>
         <div class="metric-grid">${state.indicators.map(metricCard).join('')}</div>
+        <div id="indicatorDialog" class="dialog-backdrop" hidden>
+          <section class="indicator-dialog" role="dialog" aria-modal="true" aria-labelledby="indicatorDialogTitle" tabindex="-1">
+            <header><div><span>Indicator Guide</span><h2 id="indicatorDialogTitle"></h2></div><button class="dialog-close" type="button" data-close-indicator-dialog aria-label="关闭指标说明">×</button></header>
+            <div class="indicator-dialog-body">
+              <p id="indicatorDialogValue" class="dialog-demo-value"></p>
+              <section><h3>定义</h3><p id="indicatorDialogDefinition"></p></section>
+              <section><h3>指标高低通常意味着什么</h3><p id="indicatorDialogInterpretation"></p></section>
+              <section><h3>与市场周期的关系</h3><p id="indicatorDialogRelation"></p></section>
+              <section class="dialog-limitations"><h3>使用限制</h3><p id="indicatorDialogLimitations"></p></section>
+              <p class="notice"><strong>静态演示</strong><span>当前数值为静态演示值，不代表实时市场数据；该指标不能单独用于判断市场阶段。</span></p>
+            </div>
+          </section>
+        </div>
       </section>
 
       <section class="section reveal">
@@ -577,6 +591,50 @@ function bindCommonEvents() {
     location.hash = `#/options/${event.target.value}`;
   });
 
+  const indicatorDialog = document.getElementById('indicatorDialog');
+  const closeIndicatorDialog = () => {
+    if (!indicatorDialog || indicatorDialog.hidden) return;
+    indicatorDialog.hidden = true;
+    document.body.classList.remove('dialog-open');
+    indicatorDialogTrigger?.focus();
+    indicatorDialogTrigger = null;
+  };
+  document.querySelectorAll('[data-indicator-info]').forEach(button => {
+    button.addEventListener('click', () => {
+      const indicator = state.indicators.find(item => item.id === button.dataset.indicatorInfo);
+      if (!indicator || !indicatorDialog) return;
+      indicatorDialogTrigger = button;
+      const setText = (id, value) => { const node = document.getElementById(id); if (node) node.textContent = valueOr(value); };
+      setText('indicatorDialogTitle', indicator.name);
+      setText('indicatorDialogValue', `当前模拟值：${indicator.value}${indicator.unit || ''} · ${indicator.status}`);
+      setText('indicatorDialogDefinition', indicator.definition || indicator.meaning);
+      setText('indicatorDialogInterpretation', indicator.interpretation || indicator.explain);
+      setText('indicatorDialogRelation', indicator.marketRelation || '需要结合价格结构、波动率和市场广度共同判断。');
+      setText('indicatorDialogLimitations', indicator.limitations || indicator.limits);
+      indicatorDialog.hidden = false;
+      document.body.classList.add('dialog-open');
+      indicatorDialog.querySelector('.indicator-dialog')?.focus();
+    });
+  });
+  indicatorDialog?.querySelector('[data-close-indicator-dialog]')?.addEventListener('click', closeIndicatorDialog);
+  indicatorDialog?.addEventListener('click', event => {
+    if (event.target === indicatorDialog) closeIndicatorDialog();
+  });
+  indicatorDialog?.addEventListener('keydown', event => {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      closeIndicatorDialog();
+      return;
+    }
+    if (event.key !== 'Tab') return;
+    const focusable = [...indicatorDialog.querySelectorAll('button, [href], select, [tabindex]:not([tabindex="-1"])')].filter(item => !item.hidden);
+    if (!focusable.length) return;
+    const first = focusable[0];
+    const last = focusable.at(-1);
+    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+  });
+
   const revealObserver = new IntersectionObserver(entries => {
     entries.forEach(entry => {
       if (entry.isIntersecting) {
@@ -596,6 +654,8 @@ function parseRoute() {
 function render() {
   const route = parseRoute();
   state.route = route;
+  document.body.classList.remove('dialog-open');
+  indicatorDialogTrigger = null;
   setActiveNav(route);
 
   if (route === '/') app.innerHTML = homeTemplate();

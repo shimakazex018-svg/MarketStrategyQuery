@@ -102,6 +102,10 @@ options.forEach(option => {
   ['scenario', 'calculation', 'conclusion'].forEach(field => assertText(option.formulaExample?.[field], `${option.english}.formulaExample.${field}`));
 });
 
+indicators.forEach(indicator => {
+  ['definition', 'interpretation', 'marketRelation', 'limitations'].forEach(field => assertText(indicator[field], `${indicator.name}.${field}`));
+});
+
 rangeLabels.forEach(label => assert(appSource.includes(`'${label}'`), `前端时间范围缺少：${label}`));
 rangeKeys.forEach(key => assert(appSource.includes(`'${key}'`), `前端时间范围键缺少：${key}`));
 
