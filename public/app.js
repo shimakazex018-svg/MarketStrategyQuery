@@ -53,9 +53,63 @@ function optionGuidanceMarkup(stage) {
   return `${groups.map(([level, label]) => `
     <div class="guidance-group ${level}">
       <span>${label}</span>
-      <div>${listOr(guidance[level], '暂无').map(name => `<strong>${escapeHtml(name)}</strong>`).join('')}</div>
+      <div>${listOr(guidance[level], '暂无').map(name => {
+        const option = state.options.find(item => item.english === name || item.name === name);
+        return option
+          ? `<a class="strategy-link" href="#/options/${option.id}">${escapeHtml(name)}</a>`
+          : `<strong>${escapeHtml(name)}</strong>`;
+      }).join('')}</div>
     </div>`).join('')}
     <p class="guidance-note">${escapeHtml(valueOr(guidance.note))}</p>`;
+}
+
+function stageActionTabs(actionPlan) {
+  const tabs = [
+    { id: 'initial', label: '初始动作', listClass: 'action-list' },
+    { id: 'worsening', label: '继续恶化', listClass: 'risk-list' },
+    { id: 'unchanged', label: '维持不变', listClass: 'condition-list' },
+    { id: 'improving', label: '市场改善', listClass: 'action-list' }
+  ];
+  return `
+    <div class="decision-tabs" data-tabs="stage-actions">
+      <div class="tab-list" role="tablist" aria-label="市场状态对应的执行动作">
+        ${tabs.map((tab, index) => `<button id="stage-action-tab-${tab.id}" class="tab-button${index === 0 ? ' active' : ''}" type="button" role="tab" aria-selected="${index === 0}" aria-controls="stage-action-panel-${tab.id}" tabindex="${index === 0 ? '0' : '-1'}" data-tab-target="stage-action-panel-${tab.id}">${tab.label}</button>`).join('')}
+      </div>
+      ${tabs.map((tab, index) => `<div id="stage-action-panel-${tab.id}" class="tab-panel" role="tabpanel" aria-labelledby="stage-action-tab-${tab.id}" tabindex="0"${index === 0 ? '' : ' hidden'}>${renderList(actionPlan[tab.id], tab.listClass)}</div>`).join('')}
+    </div>`;
+}
+
+function stageAssetTabs(stage, allocations) {
+  return `
+    <div class="decision-tabs" data-tabs="stage-assets">
+      <div class="tab-list" role="tablist" aria-label="选择资产查看配置逻辑">
+        ${allocations.map((item, index) => `<button id="stage-asset-tab-${index}" class="tab-button${index === 0 ? ' active' : ''}" type="button" role="tab" aria-selected="${index === 0}" aria-controls="stage-asset-panel-${index}" tabindex="${index === 0 ? '0' : '-1'}" data-tab-target="stage-asset-panel-${index}">${escapeHtml(valueOr(item.ticker))}</button>`).join('')}
+      </div>
+      ${allocations.map((item, index) => {
+        const rule = stage.assetRules?.[item.ticker] || {};
+        return `<section id="stage-asset-panel-${index}" class="tab-panel asset-detail-panel" role="tabpanel" aria-labelledby="stage-asset-tab-${index}" tabindex="0"${index === 0 ? '' : ' hidden'}>
+          <header><div><span>资产角色</span><h3>${escapeHtml(valueOr(item.ticker))}</h3></div><strong>${escapeHtml(valueOr(item.range))}</strong></header>
+          <p>${escapeHtml(valueOr(item.role))}</p>
+          <dl>
+            <div><dt>增配条件</dt><dd>${escapeHtml(valueOr(rule.increaseWhen))}</dd></div>
+            <div><dt>减配条件</dt><dd>${escapeHtml(valueOr(rule.reduceWhen))}</dd></div>
+            <div class="asset-prohibition"><dt>禁止条件</dt><dd>${escapeHtml(valueOr(rule.avoidWhen))}</dd></div>
+            <div><dt>主要风险</dt><dd>${escapeHtml(valueOr(rule.risk))}</dd></div>
+          </dl>
+        </section>`;
+      }).join('')}
+    </div>`;
+}
+
+function recognitionVisualMarkup(stage) {
+  const visual = stage.recognitionVisual;
+  if (!visual || !visual.src) return '';
+  const meta = [visual.source, visual.period].filter(Boolean).map(escapeHtml).join(' · ');
+  return `<figure class="recognition-visual">
+    ${visual.title ? `<h3>${escapeHtml(visual.title)}</h3>` : ''}
+    <img src="${escapeHtml(visual.src)}" alt="${escapeHtml(valueOr(visual.alt, `${stage.name}典型识别示意图`))}" loading="lazy">
+    ${(visual.caption || meta) ? `<figcaption>${visual.caption ? `<span>${escapeHtml(visual.caption)}</span>` : ''}${meta ? `<small>${meta}</small>` : ''}</figcaption>` : ''}
+  </figure>`;
 }
 
 function seedFrom(text) {
@@ -233,89 +287,68 @@ function homeTemplate() {
 function stageTemplate(stage) {
   if (!stage) return notFoundTemplate();
   state.activeStageId = stage.id;
-  const previous = stage.adjacentStages?.previous;
-  const next = stage.adjacentStages?.next;
   const allocations = listOr(stage.allocations, {}).filter(item => item && typeof item === 'object');
   const actionPlan = stage.actionPlan || { initial: stage.actions };
+  const corePrinciple = listOr(actionPlan.initial, stage.mode)[0];
   return `
     <div class="page">
       <div class="breadcrumb"><a href="#/">市场周期</a><span>/</span><span>${escapeHtml(stage.name)}</span></div>
-      <header class="page-title">
+      <header id="stage-overview" class="page-title stage-decision-header">
         <div><p class="eyebrow">Stage ${String(stage.order).padStart(2, '0')} · ${escapeHtml(stage.category)}</p><h1>${escapeHtml(stage.name)}</h1><p>${escapeHtml(stage.summary)}</p></div>
         <a class="button" href="#/">返回周期图</a>
       </header>
 
-      <section class="stage-summary-grid">
-        <article class="summary-card reveal">
-          <h2>市场状态定义</h2>
-          <p>${escapeHtml(valueOr(stage.marketDefinition, stage.mode))}</p>
+      <nav class="stage-section-nav" aria-label="阶段详情页内导航">
+        ${[['stage-overview','概览'],['stage-allocation','仓位'],['stage-actions','执行动作'],['stage-assets','资产逻辑'],['stage-recognition','识别条件'],['stage-options','期权'],['stage-risk','风险']].map(([target, label]) => `<button type="button" data-scroll-target="${target}">${label}</button>`).join('')}
+      </nav>
+
+      <div class="stage-detail-layout">
+        <section class="content-card stage-overview-card reveal" aria-labelledby="stage-overview-heading">
+          <div><h2 id="stage-overview-heading">市场状态定义</h2><p>${escapeHtml(valueOr(stage.marketDefinition, stage.mode))}</p></div>
           <div class="stage-meta">
             <div class="meta-cell"><span>市场方向</span><strong>${escapeHtml(valueOr(stage.direction))}</strong></div>
             <div class="meta-cell"><span>风险等级</span><strong>${escapeHtml(valueOr(stage.risk))}</strong></div>
             <div class="meta-cell"><span>策略属性</span><strong>${escapeHtml(valueOr(stage.strategyProfile, stage.mode))}</strong></div>
           </div>
-        </article>
-        <article class="summary-card reveal">
-          <h2>相邻阶段区别</h2>
-          <div class="adjacent-grid">
-            <div><span>与前一阶段</span><strong>${escapeHtml(valueOr(state.stages.find(item => item.id === previous?.id)?.name, '周期前序'))}</strong><p>${escapeHtml(valueOr(previous?.difference))}</p></div>
-            <div><span>与后一阶段</span><strong>${escapeHtml(valueOr(state.stages.find(item => item.id === next?.id)?.name, '周期后序'))}</strong><p>${escapeHtml(valueOr(next?.difference))}</p></div>
-          </div>
-        </article>
-      </section>
+          <div class="core-principle"><span>核心原则</span><strong>${escapeHtml(valueOr(corePrinciple, stage.mode))}</strong></div>
+        </section>
 
-      <section class="content-grid">
-        <article class="content-card full reveal">
-          <h2>典型识别条件</h2>
-          ${renderList(stage.conditions)}
-        </article>
-        <article class="content-card full reveal">
+        <section id="stage-allocation" class="content-card reveal stage-anchor-section">
           <h2>允许仓位区间</h2>
           <p>各资产区间相互独立，不要求上下限合计为100%，也不代表应同时取上限或下限。</p>
           <div class="allocation-grid">
             ${allocations.map(item => `<div class="allocation-card"><span class="ticker">${escapeHtml(valueOr(item.ticker))}</span><div class="range">${escapeHtml(valueOr(item.range))}</div><p>${escapeHtml(valueOr(item.role))}</p></div>`).join('')}
           </div>
-        </article>
-        <article class="content-card full reveal">
-          <h2>各资产配置逻辑</h2>
-          <div class="asset-rule-grid">
-            ${allocations.map(item => {
-              const rule = stage.assetRules?.[item.ticker] || {};
-              return `<section class="asset-rule-card"><header><strong>${escapeHtml(valueOr(item.ticker))}</strong><span>${escapeHtml(valueOr(item.range))}</span></header><p>${escapeHtml(valueOr(item.role))}</p><dl><div><dt>增配条件</dt><dd>${escapeHtml(valueOr(rule.increaseWhen))}</dd></div><div><dt>减配条件</dt><dd>${escapeHtml(valueOr(rule.reduceWhen))}</dd></div><div><dt>禁止条件</dt><dd>${escapeHtml(valueOr(rule.avoidWhen))}</dd></div><div><dt>主要风险</dt><dd>${escapeHtml(valueOr(rule.risk))}</dd></div></dl></section>`;
-            }).join('')}
-          </div>
-        </article>
-        <article class="content-card full reveal">
+        </section>
+
+        <section id="stage-actions" class="content-card reveal stage-anchor-section">
+          <div class="card-heading-row"><div><h2>当前执行动作</h2><p>默认显示初始动作；切换市场状态查看对应处理。</p></div></div>
+          ${stageActionTabs(actionPlan)}
+        </section>
+
+        <section id="stage-assets" class="content-card reveal stage-anchor-section">
+          <div class="card-heading-row"><div><h2>各资产配置逻辑</h2><p>仓位区间保持可见；此处按资产查看角色、调整条件和风险。</p></div></div>
+          ${stageAssetTabs(stage, allocations)}
+        </section>
+
+        <section id="stage-recognition" class="content-card reveal stage-anchor-section recognition-section">
+          <div><h2>典型识别条件</h2><p>优先核对最有区分度的价格结构、波动率和相对强弱条件。</p>${renderList(listOr(stage.conditions).slice(0, 6))}</div>
+          ${recognitionVisualMarkup(stage)}
+          <details class="compact-details"><summary role="button" tabindex="0" aria-expanded="false">查看阶段切换条件</summary>${renderList(stage.transitionConditions, 'condition-list')}</details>
+        </section>
+
+        <section id="stage-options" class="content-card reveal stage-anchor-section">
           <div class="card-heading-row"><div><h2>期权策略分级</h2><p>阶段分级只说明用途优先级；建仓前仍需核对完整损益与管理规则。</p></div><a class="button ghost" href="#/options">打开期权工具库</a></div>
           <div class="guidance-grid">${optionGuidanceMarkup(stage)}</div>
-        </article>
-        <article class="content-card full reveal">
-          <h2>执行动作</h2>
-          <div class="scenario-grid">
-            <section><h3>初始执行</h3>${renderList(actionPlan.initial, 'action-list')}</section>
-            <section><h3>继续恶化</h3>${renderList(actionPlan.worsening, 'risk-list')}</section>
-            <section><h3>维持不变</h3>${renderList(actionPlan.unchanged, 'condition-list')}</section>
-            <section><h3>市场改善</h3>${renderList(actionPlan.improving, 'action-list')}</section>
-          </div>
-        </article>
-        <article class="content-card full reveal">
-          <h2>阶段切换条件</h2>
-          ${renderList(stage.transitionConditions, 'condition-list')}
-        </article>
-        <article class="content-card reveal">
-          <h2>潜在收益来源</h2>
-          ${renderList(stage.returnSources, 'action-list')}
-        </article>
-        <article class="content-card reveal">
-          <h2>潜在亏损来源</h2>
-          ${renderList(stage.lossSources, 'risk-list')}
-        </article>
-        <article class="content-card full reveal risk-boundary">
-          <h2>风险边界与机会成本</h2>
+        </section>
+
+        <section id="stage-risk" class="content-card reveal risk-boundary stage-anchor-section">
+          <h2>风险、收益与机会成本</h2>
+          <div class="source-grid"><section><h3>潜在收益来源</h3>${renderList(stage.returnSources, 'action-list')}</section><section><h3>潜在亏损来源</h3>${renderList(stage.lossSources, 'risk-list')}</section></div>
           <div class="risk-boundary-grid"><div><span>最大不利情景</span><p>${escapeHtml(valueOr(stage.worstCase))}</p></div><div><span>策略失效条件</span><p>${escapeHtml(valueOr(stage.invalidation))}</p></div><div><span>机会成本</span><p>${escapeHtml(valueOr(stage.opportunityCost))}</p></div></div>
           <div class="critical-notice"><strong>风险提示</strong><p>${escapeHtml(valueOr(stage.riskNotice, listOr(stage.risks).join('；')))}</p></div>
-        </article>
-      </section>
+        </section>
+      </div>
     </div>`;
 }
 
@@ -423,7 +456,7 @@ function bindCommonEvents() {
     });
   });
 
-  document.querySelectorAll('.formula-details').forEach(details => {
+  document.querySelectorAll('.formula-details, .compact-details').forEach(details => {
     const summary = details.querySelector('summary');
     if (!summary) return;
     const syncExpanded = () => summary.setAttribute('aria-expanded', String(details.open));
@@ -436,6 +469,44 @@ function bindCommonEvents() {
       }
     });
     syncExpanded();
+  });
+
+  document.querySelectorAll('[data-tabs]').forEach(tabGroup => {
+    const tabs = [...tabGroup.querySelectorAll('[role="tab"]')];
+    const selectTab = (tab, focus = false) => {
+      tabs.forEach(item => {
+        const selected = item === tab;
+        item.classList.toggle('active', selected);
+        item.setAttribute('aria-selected', String(selected));
+        item.tabIndex = selected ? 0 : -1;
+        const panel = document.getElementById(item.getAttribute('aria-controls'));
+        if (panel) panel.hidden = !selected;
+      });
+      if (focus) tab.focus();
+    };
+    tabs.forEach((tab, index) => {
+      tab.addEventListener('click', () => selectTab(tab));
+      tab.addEventListener('keydown', event => {
+        const keys = ['ArrowLeft', 'ArrowRight', 'Home', 'End'];
+        if (!keys.includes(event.key)) return;
+        event.preventDefault();
+        const targetIndex = event.key === 'Home'
+          ? 0
+          : event.key === 'End'
+            ? tabs.length - 1
+            : (index + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
+        selectTab(tabs[targetIndex], true);
+      });
+    });
+  });
+
+  document.querySelectorAll('[data-scroll-target]').forEach(button => {
+    button.addEventListener('click', () => {
+      const target = document.getElementById(button.dataset.scrollTarget);
+      if (!target) return;
+      const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      target.scrollIntoView({ behavior: reducedMotion ? 'auto' : 'smooth', block: 'start' });
+    });
   });
 
   const revealObserver = new IntersectionObserver(entries => {

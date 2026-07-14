@@ -10,6 +10,7 @@
     "summary": "指数处于相对高位，趋势尚未明确破坏，但上涨动能减弱，价格在有限区间内反复。",
     "marketDefinition": "上涨趋势进入高位消化期：价格仍靠近阶段高点，但突破跟随、市场广度和相对强弱不再同步增强。它不是确认顶部，也不是健康单边上涨。",
     "strategyProfile": "中性偏多、先保护后判断",
+    "recognitionVisual": null,
     "adjacentStages": {
       "previous": {"id":"accelerating-overheat","difference":"相较加速上涨／过热，本阶段上涨斜率已经放缓，追价意愿下降，重点从降低杠杆转为观察区间方向。"},
       "next": {"id":"oscillating-decline","difference":"相较震荡下跌，本阶段尚未形成持续的低点下移，关键均线和核心支撑仍大体有效。"}
@@ -87,6 +88,7 @@
     "summary": "市场反弹仍然存在，但高点和低点逐步下移，整体重心下降，尚未进入连续恐慌抛售。",
     "marketDefinition": "价格在反弹与回落之间反复，但高点、低点和均线重心逐步下降。风险释放是渐进的，尚未出现单边流动性冲击。",
     "strategyProfile": "偏空、防守降波动",
+    "recognitionVisual": null,
     "adjacentStages": {
       "previous": {"id":"high-consolidation","difference":"相较高位震荡，本阶段已经出现低点下移、关键均线转弱和反弹失败。"},
       "next": {"id":"one-way-decline","difference":"相较单边下跌，本阶段仍有可交易反弹，下降速度和均线空头排列尚未完全一致。"}
@@ -164,6 +166,7 @@
     "summary": "价格持续下行，均线结构恶化，反弹力度弱且持续时间短，市场风险敞口需要明显收缩。",
     "marketDefinition": "价格、均线和市场广度形成一致的下降趋势，反弹持续时间短且无法改变低点下移。组合目标从捕捉反弹转为控制账户级回撤。",
     "strategyProfile": "空头环境、资本保全优先",
+    "recognitionVisual": null,
     "adjacentStages": {
       "previous": {"id":"oscillating-decline","difference":"相较震荡下跌，本阶段反弹更弱、均线空头排列更清晰，持有高Beta资产的容错显著降低。"},
       "next": {"id":"panic-crash","difference":"相较恐慌暴跌，本阶段下跌虽持续但流动性仍相对有序，波动率未必处于极端尖峰。"}
@@ -241,6 +244,7 @@
     "summary": "市场在短时间内快速下跌，波动率与相关性同时上升，流动性收缩，常规技术信号可能暂时失真。",
     "marketDefinition": "短时间内价格、波动率、相关性和成交价差同时失控，市场由有序定价转为流动性主导。首要任务是避免保证金压力和被迫卖出。",
     "strategyProfile": "极端防守、流动性优先",
+    "recognitionVisual": null,
     "adjacentStages": {
       "previous": {"id":"one-way-decline","difference":"相较单边下跌，本阶段跌速、跳空、相关性和波动率显著上升，常规反弹和均线信号可靠性下降。"},
       "next": {"id":"bottom-consolidation","difference":"相较底部震荡，本阶段仍在快速创新低，波动率尚未稳定，市场没有形成可观察的止跌区间。"}
@@ -318,6 +322,7 @@
     "summary": "市场下跌速度放缓，在低位反复波动，恐慌有所缓解，但右侧趋势尚未完成确认。",
     "marketDefinition": "价格停止快速创新低并形成低位交易区间，波动率从尖峰回落，但均线和上涨结构尚未确认。它是止跌观察期，不是已确认牛市。",
     "strategyProfile": "中性观察、小仓试错",
+    "recognitionVisual": null,
     "adjacentStages": {
       "previous": {"id":"panic-crash","difference":"相较恐慌暴跌，本阶段跌速、价差和波动率已缓和，市场开始形成可辨认的支撑区间。"},
       "next": {"id":"right-side-reversal","difference":"相较右侧反转，本阶段仍未稳定站回关键均线，市场广度和相对强弱改善缺少持续性。"}
@@ -395,6 +400,7 @@
     "summary": "价格重新站回关键均线，市场广度与相对强弱改善，趋势从防守阶段转向逐步恢复上涨敞口。",
     "marketDefinition": "价格从低位结构中向上突破并重新站回关键均线，市场广度、成交参与和相对强弱同步改善。趋势转多，但假突破仍是主要风险。",
     "strategyProfile": "转多、分批进攻",
+    "recognitionVisual": null,
     "adjacentStages": {
       "previous": {"id":"bottom-consolidation","difference":"相较底部震荡，本阶段已站回关键均线并形成更高低点，风险仓恢复具有可验证的右侧依据。"},
       "next": {"id":"one-way-rise","difference":"相较单边上涨，本阶段趋势持续时间仍短，回踩确认和市场广度尚需进一步验证。"}
@@ -472,6 +478,7 @@
     "summary": "市场高点和低点持续抬升，均线向上，回调短而浅，趋势收益优先于频繁收租。",
     "marketDefinition": "价格稳定运行在上升均线之上，高点与低点持续抬高，回调短且能迅速恢复。组合主要收益来自持续持有趋势，而不是频繁择时。",
     "strategyProfile": "多头趋势、持有优先",
+    "recognitionVisual": null,
     "adjacentStages": {
       "previous": {"id":"right-side-reversal","difference":"相较右侧反转，本阶段趋势已经经过回踩确认，均线、广度和相对强弱持续性更强。"},
       "next": {"id":"oscillating-rise","difference":"相较震荡上涨，本阶段回调更浅、恢复更快，趋势结构更流畅，频繁区间交易的必要性更低。"}
@@ -549,6 +556,7 @@
     "summary": "市场在反复回调中继续创新高，整体重心向上，但趋势不如单边上涨流畅。",
     "marketDefinition": "价格在上升大方向中反复回撤和恢复，仍能形成阶段新高，但短期均线频繁被测试。组合需要利用区间而不是追逐每次突破。",
     "strategyProfile": "中性偏多、回调再平衡",
+    "recognitionVisual": null,
     "adjacentStages": {
       "previous": {"id":"one-way-rise","difference":"相较单边上涨，本阶段回调更频繁、持续更久，20日线附近的反复和假突破明显增多。"},
       "next": {"id":"accelerating-overheat","difference":"相较加速上涨／过热，本阶段上涨斜率和情绪尚未极端，回调仍能释放拥挤风险。"}
@@ -626,6 +634,7 @@
     "summary": "上涨斜率明显加快，估值、情绪和机构仓位同时偏高，继续上涨仍可能发生，但收益回吐风险增加。",
     "marketDefinition": "价格显著偏离短期均线，上涨斜率、估值、情绪和仓位拥挤同时升高。趋势仍向上，但边际买盘和风险补偿下降。",
     "strategyProfile": "强多但脆弱、去杠杆锁利润",
+    "recognitionVisual": null,
     "adjacentStages": {
       "previous": {"id":"oscillating-rise","difference":"相较震荡上涨，本阶段回调更少、斜率更陡，估值和情绪拥挤已从背景风险变成主要管理对象。"},
       "next": {"id":"high-consolidation","difference":"相较高位震荡，本阶段仍在加速创新高；高位震荡则已出现动能衰减和区间消化。"}
