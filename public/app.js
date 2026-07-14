@@ -271,7 +271,7 @@ function homeTemplate() {
           <h2 class="hero-panel-value">${active ? escapeHtml(active.name) : '尚未选择'}</h2>
           <p>${active ? escapeHtml(active.mode) : '第一版不进行网页自动判断。请直接点击市场周期中的阶段进行策略推演。'}</p>
           <div class="hero-actions">
-            ${active ? `<a class="button primary" href="#/stage/${active.id}">打开策略详情</a>` : '<a class="button primary" href="#cycle">选择市场阶段</a>'}
+            ${active ? `<a class="button primary" href="#/stage/${active.id}">打开策略详情</a>` : '<button class="button primary" type="button" data-scroll-target="cycle">选择市场阶段</button>'}
             <a class="button ghost" href="#/compare">查看阶段对比</a>
           </div>
         </aside>
