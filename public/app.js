@@ -5,6 +5,7 @@ const state = {
   options: [],
   indicators: [],
   activeStageId: null,
+  optionCategory: '全部',
   ranges: {},
   route: ''
 };
@@ -370,42 +371,49 @@ function compareTemplate() {
 }
 
 function optionTemplate(option) {
+  if (!option) return '<div class="notice"><strong>策略不可用</strong><span>未找到对应策略，请从目录重新选择。</span></div>';
   const performance = option.performance || {};
   const example = option.formulaExample || {};
+  const variables = listOr(option.variables, {}).filter(item => item && typeof item === 'object');
   return `
-    <article class="option-card reveal">
-      <div class="option-header">
-        <h2>${escapeHtml(option.name)}<small>${escapeHtml(option.english)}</small></h2>
-        <div class="option-badges"><span class="option-purpose">${escapeHtml(valueOr(option.category))}</span><span class="option-purpose muted">${escapeHtml(valueOr(option.purpose))}</span></div>
-      </div>
+    <article class="option-detail-card reveal" aria-labelledby="option-detail-title">
+      <header class="option-detail-header">
+        <div><span class="option-purpose">${escapeHtml(valueOr(option.category))}</span><h2 id="option-detail-title">${escapeHtml(valueOr(option.name))}<small>${escapeHtml(valueOr(option.english))}</small></h2><p>${escapeHtml(valueOr(option.purpose))}</p></div>
+      </header>
       <div class="option-structure"><span>交易结构</span>${escapeHtml(valueOr(option.structure))}</div>
-      <div class="option-facts">
-        <div class="option-fact"><span>建仓现金流</span><strong>${escapeHtml(valueOr(option.cashflow))}</strong></div>
-        <div class="option-fact"><span>市场方向判断</span><strong>${escapeHtml(valueOr(option.bias))}</strong></div>
-        <div class="option-fact"><span>适用标的</span><strong>${listOr(option.underlyings).map(escapeHtml).join(' / ')}</strong></div>
-        <div class="option-fact"><span>适用阶段</span><strong>${listOr(option.idealStages).map(escapeHtml).join(' / ')}</strong></div>
+      <div class="option-leg-grid option-summary-legs"><div><span>买入腿</span>${renderList(option.buyLegs, 'compact-list')}</div><div><span>卖出腿</span>${renderList(option.sellLegs, 'compact-list')}</div><div><span>适用标的</span>${renderList(option.underlyings, 'compact-list')}</div></div>
+      <div class="option-boundary-grid" aria-label="策略核心损益边界">
+        <section><span>最大收益</span><strong>${escapeHtml(valueOr(option.maxGain))}</strong></section>
+        <section class="loss"><span>最大亏损</span><strong>${escapeHtml(valueOr(option.maxLoss))}</strong></section>
+        <section><span>盈亏平衡点</span><strong>${escapeHtml(valueOr(option.breakeven))}</strong></section>
       </div>
-      <div class="option-leg-grid"><div><span>买入腿</span>${renderList(listOr(option.buyLegs, '无独立买入期权腿'), 'compact-list')}</div><div><span>卖出腿</span>${renderList(listOr(option.sellLegs, '无独立卖出期权腿'), 'compact-list')}</div><div><span>不适用阶段</span>${renderList(option.unsuitableStages, 'compact-list')}</div></div>
-      <ul class="formula-list">
-        <li><strong>最大收益：</strong>${escapeHtml(valueOr(option.maxGain))}</li>
-        <li><strong>最大亏损：</strong>${escapeHtml(valueOr(option.maxLoss))}</li>
-        <li><strong>盈亏平衡：</strong>${escapeHtml(valueOr(option.breakeven))}</li>
-      </ul>
-      <div class="option-planning-grid"><section><h3>DTE选择逻辑</h3><p>${escapeHtml(valueOr(option.dteLogic))}</p></section><section><h3>行权价逻辑</h3><p>${escapeHtml(valueOr(option.strikeLogic))}</p></section></div>
-      <div class="performance-grid"><section><span>标的上涨</span><p>${escapeHtml(valueOr(performance.up))}</p></section><section><span>标的横盘</span><p>${escapeHtml(valueOr(performance.sideways))}</p></section><section><span>标的下跌</span><p>${escapeHtml(valueOr(performance.down))}</p></section></div>
-      <div class="management-grid"><section><h3>时间价值</h3><p>${escapeHtml(valueOr(option.thetaImpact))}</p></section><section><h3>隐含波动率</h3><p>${escapeHtml(valueOr(option.ivImpact))}</p></section><section><h3>提前退出</h3><p>${escapeHtml(valueOr(option.earlyExit))}</p></section><section><h3>到期处理</h3><p>${escapeHtml(valueOr(option.expiration))}</p></section></div>
-      <div class="option-risk-grid"><section><h3>主要风险</h3><p>${escapeHtml(valueOr(option.risk))}</p></section><section><h3>机会成本</h3><p>${escapeHtml(valueOr(option.opportunityCost))}</p></section></div>
-      <details class="formula-details"><summary role="button" tabindex="0" aria-expanded="false">变量说明与公式示例</summary><div class="variable-grid">${listOr(option.variables, {}).filter(item => item && typeof item === 'object').map(item => `<div><strong>${escapeHtml(valueOr(item.symbol))}</strong><span>${escapeHtml(valueOr(item.meaning))}</span></div>`).join('')}</div><p><strong>示例假设：</strong>${escapeHtml(valueOr(example.scenario))}</p><p><strong>计算：</strong>${escapeHtml(valueOr(example.calculation))}</p><p><strong>解释：</strong>${escapeHtml(valueOr(example.conclusion))}</p><p>公式默认1张美股期权对应100股，未计佣金、税费、提前行权、指派和实际滑点。</p></details>
+      <section class="option-visible-risk"><h3>主要风险</h3><p>${escapeHtml(valueOr(option.risk))}</p></section>
+
+      <div class="option-detail-groups">
+        <details class="option-detail-group" open><summary role="button" tabindex="0" aria-expanded="true">交易设计</summary><div class="option-planning-grid"><section><h3>市场方向</h3><p>${escapeHtml(valueOr(option.bias))}</p></section><section><h3>适用阶段</h3><p>${listOr(option.idealStages).map(escapeHtml).join(' / ')}</p></section><section><h3>不适用阶段</h3><p>${listOr(option.unsuitableStages).map(escapeHtml).join(' / ')}</p></section><section><h3>DTE逻辑</h3><p>${escapeHtml(valueOr(option.dteLogic))}</p></section><section><h3>行权价逻辑</h3><p>${escapeHtml(valueOr(option.strikeLogic))}</p></section><section><h3>建仓现金流</h3><p>${escapeHtml(valueOr(option.cashflow))}</p></section></div></details>
+        <details class="option-detail-group"><summary role="button" tabindex="0" aria-expanded="false">市场表现</summary><div class="performance-grid"><section><span>上涨</span><p>${escapeHtml(valueOr(performance.up))}</p></section><section><span>横盘</span><p>${escapeHtml(valueOr(performance.sideways))}</p></section><section><span>下跌</span><p>${escapeHtml(valueOr(performance.down))}</p></section></div></details>
+        <details class="option-detail-group"><summary role="button" tabindex="0" aria-expanded="false">时间和波动率</summary><div class="management-grid"><section><h3>Theta影响</h3><p>${escapeHtml(valueOr(option.thetaImpact))}</p></section><section><h3>IV影响</h3><p>${escapeHtml(valueOr(option.ivImpact))}</p></section></div></details>
+        <details class="option-detail-group"><summary role="button" tabindex="0" aria-expanded="false">管理规则</summary><div class="management-grid"><section><h3>提前退出</h3><p>${escapeHtml(valueOr(option.earlyExit))}</p></section><section><h3>到期处理</h3><p>${escapeHtml(valueOr(option.expiration))}</p></section><section><h3>指派或行权风险</h3><p>${escapeHtml(valueOr(option.assignmentRisk, option.expiration))}</p></section><section><h3>机会成本</h3><p>${escapeHtml(valueOr(option.opportunityCost))}</p></section></div></details>
+        <details class="option-detail-group formula-details"><summary role="button" tabindex="0" aria-expanded="false">公式与变量</summary><div class="variable-grid">${variables.map(item => `<div><strong>${escapeHtml(valueOr(item.symbol))}</strong><span>${escapeHtml(valueOr(item.meaning))}</span></div>`).join('')}</div><p><strong>示例假设：</strong>${escapeHtml(valueOr(example.scenario))}</p><p><strong>计算：</strong>${escapeHtml(valueOr(example.calculation))}</p><p><strong>解释：</strong>${escapeHtml(valueOr(example.conclusion))}</p><p>静态公式默认1张美股期权对应100股，未计佣金、税费、提前行权、指派和实际滑点；不使用伪造实时价格。</p></details>
+      </div>
     </article>`;
 }
 
-function optionsTemplate() {
+function optionsTemplate(selectedId) {
+  const categories = ['全部', '保护', '进攻', '收益增强'];
+  const filtered = state.optionCategory === '全部' ? state.options : state.options.filter(option => option.category === state.optionCategory);
+  const selected = state.options.find(option => option.id === selectedId) || filtered[0] || state.options[0];
   return `
     <div class="page">
       <div class="breadcrumb"><a href="#/">首页</a><span>/</span><span>期权工具</span></div>
-      <header class="page-title"><div><p class="eyebrow">Option Toolkit</p><h1>八类期权工具</h1><p>逐项核对交易腿、适用场景、损益边界、期限与行权价、行情表现、退出和到期处理。</p></div></header>
-      <div class="notice" style="margin-bottom:18px"><strong>计算口径</strong><span>示例公式按每股权利金表达，乘数按100计算。组合内现货成本、净权利金的正负方向必须在实际建仓时重新核对。</span></div>
-      <section class="option-grid">${state.options.map(optionTemplate).join('')}</section>
+      <header class="page-title"><div><p class="eyebrow">Option Toolkit</p><h1>八类期权工具</h1><p>从目录选择一种策略，集中核对结构、损益边界、管理规则和公式。</p></div></header>
+      <div class="notice option-calculation-notice"><strong>计算口径</strong><span>示例公式按每股权利金表达，乘数按100计算；当前没有真实期权链或实时价格。</span></div>
+      <div class="option-category-filter" role="group" aria-label="按策略分类筛选">${categories.map(category => `<button type="button" class="category-button${category === state.optionCategory ? ' active' : ''}" data-option-category="${escapeHtml(category)}" aria-pressed="${category === state.optionCategory}">${escapeHtml(category)}</button>`).join('')}</div>
+      <label class="option-mobile-select">选择策略<select id="optionSelect">${state.options.map(option => `<option value="${escapeHtml(option.id)}"${option.id === selected.id ? ' selected' : ''}>${escapeHtml(option.english)} · ${escapeHtml(option.name)}</option>`).join('')}</select></label>
+      <div class="option-workspace">
+        <nav class="option-catalog" aria-label="期权策略目录">${filtered.map(option => `<a class="option-catalog-item${option.id === selected.id ? ' active' : ''}" href="#/options/${option.id}"${option.id === selected.id ? ' aria-current="page"' : ''}><span>${escapeHtml(option.english)}</span><small>${escapeHtml(option.name)} · ${escapeHtml(option.category)}</small></a>`).join('')}</nav>
+        ${optionTemplate(selected)}
+      </div>
     </div>`;
 }
 
@@ -427,7 +435,7 @@ function notFoundTemplate() {
 function setActiveNav(route) {
   document.querySelectorAll('.desktop-nav a').forEach(link => {
     const href = link.getAttribute('href').slice(1);
-    const active = route === href || (href === '/' && route.startsWith('/stage/'));
+    const active = route === href || (href === '/' && route.startsWith('/stage/')) || (href === '/options' && route.startsWith('/options/'));
     link.classList.toggle('active', active);
   });
 }
@@ -456,7 +464,7 @@ function bindCommonEvents() {
     });
   });
 
-  document.querySelectorAll('.formula-details, .compact-details').forEach(details => {
+  document.querySelectorAll('.formula-details, .compact-details, .option-detail-group').forEach(details => {
     const summary = details.querySelector('summary');
     if (!summary) return;
     const syncExpanded = () => summary.setAttribute('aria-expanded', String(details.open));
@@ -509,6 +517,23 @@ function bindCommonEvents() {
     });
   });
 
+  document.querySelectorAll('[data-option-category]').forEach(button => {
+    button.addEventListener('click', () => {
+      state.optionCategory = button.dataset.optionCategory;
+      const currentId = parseRoute().split('/')[2];
+      const available = state.optionCategory === '全部'
+        ? state.options
+        : state.options.filter(option => option.category === state.optionCategory);
+      const nextId = available.some(option => option.id === currentId) ? currentId : available[0]?.id;
+      if (nextId && nextId !== currentId) location.hash = `#/options/${nextId}`;
+      else render();
+    });
+  });
+
+  document.getElementById('optionSelect')?.addEventListener('change', event => {
+    location.hash = `#/options/${event.target.value}`;
+  });
+
   const revealObserver = new IntersectionObserver(entries => {
     entries.forEach(entry => {
       if (entry.isIntersecting) {
@@ -532,7 +557,7 @@ function render() {
 
   if (route === '/') app.innerHTML = homeTemplate();
   else if (route === '/compare') app.innerHTML = compareTemplate();
-  else if (route === '/options') app.innerHTML = optionsTemplate();
+  else if (route === '/options' || route.startsWith('/options/')) app.innerHTML = optionsTemplate(route.split('/')[2]);
   else if (route === '/indicators') app.innerHTML = indicatorsTemplate();
   else if (route.startsWith('/stage/')) app.innerHTML = stageTemplate(state.stages.find(stage => stage.id === route.split('/')[2]));
   else app.innerHTML = notFoundTemplate();
