@@ -39,6 +39,31 @@ test('unapproved sources are unavailable while unrelated cards remain demo', asy
   assert.equal(service.getStatus().fredApiKeyConfigured, false);
 });
 
+test('unapproved sources do not expose a previously written online cache', async t => {
+  const runtimeDir = await fs.mkdtemp(path.join(os.tmpdir(), 'market-license-test-'));
+  t.after(() => fs.rm(runtimeDir, { recursive: true, force: true }));
+  const config = {
+    enabled: true, timezone: 'Asia/Shanghai', requestTimeoutMs: 50, connectTimeoutMs: 20,
+    maxAttemptsPerDay: 4, manualRefreshCooldownMinutes: 30, providerDailyLimit: 20,
+    runtimeDir, permissions: { cboe: false }, fredApiKeyConfigured: false
+  };
+  const store = new CacheStore(runtimeDir);
+  await store.init();
+  await store.writeIndicator('vix', {
+    id: 'vix', name: 'VIX', value: 12.5, unit: '', asOfDate: '2024-01-04',
+    source: 'Cboe', sourceUrl: 'https://example.invalid', sourceType: 'official-csv',
+    status: 'fresh', isDemo: false, history: [{ date: '2024-01-04', value: 12.5 }],
+    availableRanges: ['1M'], lastAttemptAt: null, lastSuccessAt: '2024-01-04T00:00:00.000Z',
+    nextAllowedAt: null, errorType: null, statusMessage: 'cached'
+  });
+  const limiter = new RequestLimiter(store, config);
+  const logger = new BoundedLogger(store.logsDir);
+  const service = new MarketDataService({ rootDir, config, cacheStore: store, limiter, logger });
+  await service.init({ startupRefresh: false });
+  assert.equal(service.getIndicator('vix').status, 'unavailable');
+  assert.equal(service.getIndicator('vix').value, null);
+});
+
 test('successful fetch becomes fresh and unchanged data is not appended', async t => {
   const { service } = await createService(t, { fetchImpl: async () => new Response(validCsv, { status: 200 }) });
   const first = await service.refresh('vix');
@@ -71,13 +96,13 @@ test('corrupt cache does not prevent offline service startup', async t => {
   t.after(() => fs.rm(runtimeDir, { recursive: true, force: true }));
   await fs.mkdir(path.join(runtimeDir, 'latest'), { recursive: true });
   await fs.writeFile(path.join(runtimeDir, 'latest', 'vix.json'), '{bad', 'utf8');
-  const config = { enabled: true, timezone: 'Asia/Shanghai', requestTimeoutMs: 10, maxAttemptsPerDay: 4, manualRefreshCooldownMinutes: 30, providerDailyLimit: 20, runtimeDir, permissions: { cboe: false }, fredApiKeyConfigured: false };
+  const config = { enabled: true, timezone: 'Asia/Shanghai', requestTimeoutMs: 10, maxAttemptsPerDay: 4, manualRefreshCooldownMinutes: 30, providerDailyLimit: 20, runtimeDir, permissions: { cboe: true }, fredApiKeyConfigured: false };
   const store = new CacheStore(runtimeDir);
   const limiter = new RequestLimiter(store, config);
   const logger = new BoundedLogger(store.logsDir);
   const service = new MarketDataService({ rootDir, config, cacheStore: store, limiter, logger });
   await service.init({ startupRefresh: false });
-  assert.equal(service.getIndicator('vix').status, 'unavailable');
+  assert.equal(service.getIndicator('vix').status, 'error');
   assert.equal(service.getStatus().cacheErrors.vix.type, 'cache-corrupt');
 });
 

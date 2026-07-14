@@ -128,6 +128,11 @@ class MarketDataService {
         this.models.set(indicator.id, demoModel(indicator, this.now()));
         continue;
       }
+      const approved = this.config.enabled && this.config.permissions[decision.permission];
+      if (!approved) {
+        this.models.set(indicator.id, unavailableModel(indicator, decision, this.now()));
+        continue;
+      }
       const cached = await this.cacheStore.readIndicator(indicator.id);
       if (cached.error) {
         this.cacheErrors.set(indicator.id, cached.error);
@@ -147,10 +152,7 @@ class MarketDataService {
         }
       }
       if (!this.models.has(indicator.id)) {
-        const approved = this.config.enabled && this.config.permissions[decision.permission];
-        this.models.set(indicator.id, approved
-          ? errorModel(indicator, this.sources.get(indicator.id), { marketDataType: 'not-attempted' }, null, this.now())
-          : unavailableModel(indicator, decision, this.now()));
+        this.models.set(indicator.id, errorModel(indicator, this.sources.get(indicator.id), { marketDataType: 'not-attempted' }, null, this.now()));
       }
     }
 
