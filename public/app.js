@@ -4,6 +4,7 @@ const state = {
   stages: [],
   options: [],
   indicators: [],
+  cycleShape: null,
   activeStageId: null,
   optionCategory: '全部',
   ranges: {},
@@ -166,45 +167,60 @@ function seriesToPath(values, width = 360, height = 126, pad = 6) {
   return { line, area, min, max };
 }
 
-function marketCycleSvg(stages) {
-  const boxes = [
-    [52, 165, 156, 110], [236, 190, 156, 140], [420, 240, 156, 164],
-    [604, 315, 156, 182], [788, 330, 156, 142], [972, 250, 156, 180],
-    [1156, 158, 156, 170], [1340, 106, 156, 130], [1524, 58, 176, 126]
-  ];
-  const d = [
-    'M 78 226',
-    'C 105 184, 130 270, 165 220',
-    'C 205 180, 230 294, 270 242',
-    'C 306 215, 336 350, 370 292',
-    'C 408 230, 430 382, 468 336',
-    'C 508 286, 540 442, 575 370',
-    'C 610 315, 625 520, 674 448',
-    'C 718 386, 742 492, 786 438',
-    'C 834 380, 876 360, 916 398',
-    'C 954 420, 980 326, 1025 286',
-    'C 1068 245, 1106 230, 1148 205',
-    'C 1192 178, 1216 255, 1260 198',
-    'C 1300 150, 1330 214, 1370 152',
-    'C 1410 92, 1450 175, 1490 122',
-    'C 1535 66, 1574 136, 1618 92',
-    'C 1650 62, 1670 112, 1690 80'
-  ].join(' ');
-  const groups = stages.map((stage, i) => {
-    const [x, y, w, h] = boxes[i];
-    return `
-      <g class="stage-zone${state.activeStageId === stage.id ? ' is-active' : ''}" tabindex="0" role="link" aria-label="查看${escapeHtml(stage.name)}策略" data-stage-id="${stage.id}">
-        <rect x="${x}" y="${y}" width="${w}" height="${h}"></rect>
-        <text class="stage-index" x="${x + 16}" y="${y + 24}">S${String(stage.order).padStart(2, '0')}</text>
-        <text x="${x + 16}" y="${y + 52}">${escapeHtml(stage.name)}</text>
-        <text x="${x + 16}" y="${y + 77}" style="font-size:12px;fill:var(--text-soft);font-weight:500">${escapeHtml(stage.direction)}</text>
-      </g>`;
+function smoothSvgPath(points) {
+  if (points.length < 2) return '';
+  return points.slice(1).reduce((path, point, index) => {
+    const previous = points[index];
+    const midX = (previous[0] + point[0]) / 2;
+    return `${path} C ${midX.toFixed(1)} ${previous[1].toFixed(1)}, ${midX.toFixed(1)} ${point[1].toFixed(1)}, ${point[0].toFixed(1)} ${point[1].toFixed(1)}`;
+  }, `M ${points[0][0].toFixed(1)} ${points[0][1].toFixed(1)}`);
+}
+
+function marketCycleSvg(stages, shape) {
+  const width = 1760;
+  const height = 560;
+  const left = 60;
+  const right = 60;
+  const top = 70;
+  const bottom = 70;
+  const stageWidth = (width - left - right) / stages.length;
+  const shapeStages = Array.isArray(shape?.stages) ? shape.stages : [];
+  const allPoints = [];
+  const stageGeometry = stages.map((stage, stageIndex) => {
+    const segment = shapeStages.find(item => item.id === stage.id);
+    const values = Array.isArray(segment?.points) && segment.points.length > 1 ? segment.points : [50, 50];
+    const points = values.map((value, pointIndex) => {
+      const x = left + stageIndex * stageWidth + (pointIndex / (values.length - 1)) * stageWidth;
+      const normalized = Math.max(0, Math.min(100, Number(value) || 0));
+      const y = height - bottom - (normalized / 100) * (height - top - bottom);
+      return [x, y];
+    });
+    if (stageIndex) points.shift();
+    allPoints.push(...points);
+    return { stage, segment, points };
+  });
+  const path = smoothSvgPath(allPoints);
+  const groups = stageGeometry.map(({ stage, segment, points }, index) => {
+    const marker = points[Math.floor(points.length / 2)] || [left + (index + .5) * stageWidth, height / 2];
+    const labelWidth = 142;
+    const labelHeight = 44;
+    const labelX = Math.max(8, Math.min(width - labelWidth - 8, marker[0] - labelWidth / 2));
+    const preferredY = index % 2 ? marker[1] + 38 : marker[1] - 82;
+    const labelY = Math.max(12, Math.min(height - labelHeight - 12, preferredY));
+    return `<g class="stage-zone${state.activeStageId === stage.id ? ' is-active' : ''}" tabindex="0" role="link" aria-label="查看${escapeHtml(stage.name)}策略：${escapeHtml(valueOr(segment?.summary, stage.summary))}" data-stage-id="${stage.id}" data-cycle-preview-id="${stage.id}">
+      <rect class="stage-hit-area" x="${(left + index * stageWidth).toFixed(1)}" y="${top}" width="${stageWidth.toFixed(1)}" height="${height - top - bottom}"></rect>
+      <circle class="stage-marker" cx="${marker[0].toFixed(1)}" cy="${marker[1].toFixed(1)}" r="8"></circle>
+      <rect class="stage-label-bg" x="${labelX.toFixed(1)}" y="${labelY.toFixed(1)}" width="${labelWidth}" height="${labelHeight}"></rect>
+      <text class="stage-index" x="${(labelX + 11).toFixed(1)}" y="${(labelY + 17).toFixed(1)}">S${String(stage.order).padStart(2, '0')}</text>
+      <text class="stage-label" x="${(labelX + 11).toFixed(1)}" y="${(labelY + 34).toFixed(1)}">${escapeHtml(stage.name)}</text>
+    </g>`;
   }).join('');
-  return `
-    <svg class="market-cycle" viewBox="0 0 1760 590" role="img" aria-label="九阶段横向市场周期示意图">
-      <path class="cycle-path" d="${d}"></path>
-      ${groups}
-    </svg>`;
+  return `<svg class="market-cycle" viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeHtml(valueOr(shape?.label, '九阶段市场周期示意图'))}">
+    <defs><linearGradient id="cycleAreaGradient" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--accent)" stop-opacity=".24"/><stop offset="1" stop-color="var(--accent)" stop-opacity="0"/></linearGradient></defs>
+    <path class="cycle-area" d="${path} L ${allPoints.at(-1)?.[0] || 0} ${height - bottom} L ${allPoints[0]?.[0] || 0} ${height - bottom} Z"></path>
+    <path class="cycle-path" d="${path}"></path>
+    ${groups}
+  </svg>`;
 }
 
 function metricCard(indicator, index) {
@@ -239,6 +255,8 @@ function metricCard(indicator, index) {
 
 function homeTemplate() {
   const active = state.stages.find(stage => stage.id === state.activeStageId);
+  const previewStage = active || state.stages[0];
+  const previewShape = state.cycleShape?.stages?.find(item => item.id === previewStage?.id);
   return `
     <div class="page">
       <section class="hero">
@@ -263,11 +281,16 @@ function homeTemplate() {
           <div><h2>市场周期地图</h2><p>九种形态覆盖从高位震荡、趋势破坏、恐慌去杠杆，到底部修复、右侧确认与过热上涨的主要循环。</p></div>
         </div>
         <div class="cycle-shell">
-          <div class="cycle-toolbar"><strong>点击蓝色区域进入详情</strong><span>横向滚动可查看完整周期</span></div>
-          <div class="cycle-scroll">${marketCycleSvg(state.stages)}</div>
+          <div class="cycle-toolbar"><strong>${escapeHtml(valueOr(state.cycleShape?.label, '市场周期示意图'))}</strong><span>聚焦或触摸阶段查看摘要，点击进入详情</span></div>
+          <div class="cycle-scroll">${marketCycleSvg(state.stages, state.cycleShape)}</div>
+          <aside class="cycle-inspector" aria-live="polite">
+            <div><span id="cycleInspectorIndex">S${String(previewStage?.order || 1).padStart(2, '0')}</span><strong id="cycleInspectorName">${escapeHtml(valueOr(previewStage?.name))}</strong><p id="cycleInspectorSummary">${escapeHtml(valueOr(previewShape?.summary, previewStage?.summary))}</p></div>
+            <a id="cycleInspectorLink" class="button ghost" href="#/stage/${escapeHtml(valueOr(previewStage?.id, state.stages[0]?.id))}">查看阶段详情</a>
+          </aside>
           <div class="stage-strip">
-            ${state.stages.map(stage => `<button type="button" class="stage-pill${state.activeStageId === stage.id ? ' active' : ''}" data-stage-id="${stage.id}"><span>S${String(stage.order).padStart(2, '0')} · ${escapeHtml(stage.category)}</span><strong>${escapeHtml(stage.name)}</strong></button>`).join('')}
+            ${state.stages.map(stage => `<button type="button" class="stage-pill${state.activeStageId === stage.id ? ' active' : ''}" data-stage-id="${stage.id}" data-cycle-preview-id="${stage.id}"><span>S${String(stage.order).padStart(2, '0')}</span><strong>${escapeHtml(stage.name)}</strong></button>`).join('')}
           </div>
+          <p class="cycle-disclaimer">${escapeHtml(valueOr(state.cycleShape?.disclaimer, '静态示意图，不代表真实市场数据。'))}</p>
         </div>
       </section>
 
@@ -456,6 +479,26 @@ function bindCommonEvents() {
     });
   });
 
+  const updateCycleInspector = id => {
+    const stage = state.stages.find(item => item.id === id);
+    if (!stage) return;
+    const shape = state.cycleShape?.stages?.find(item => item.id === id);
+    const index = document.getElementById('cycleInspectorIndex');
+    const name = document.getElementById('cycleInspectorName');
+    const summary = document.getElementById('cycleInspectorSummary');
+    const link = document.getElementById('cycleInspectorLink');
+    if (index) index.textContent = `S${String(stage.order).padStart(2, '0')}`;
+    if (name) name.textContent = stage.name;
+    if (summary) summary.textContent = valueOr(shape?.summary, stage.summary);
+    if (link) link.href = `#/stage/${stage.id}`;
+  };
+  document.querySelectorAll('[data-cycle-preview-id]').forEach(element => {
+    const preview = () => updateCycleInspector(element.dataset.cyclePreviewId);
+    element.addEventListener('mouseenter', preview);
+    element.addEventListener('focus', preview);
+    element.addEventListener('pointerdown', preview);
+  });
+
   document.querySelectorAll('.range-tab').forEach(button => {
     button.addEventListener('click', () => {
       state.ranges[button.dataset.indicatorId] = button.dataset.range;
@@ -606,15 +649,17 @@ document.addEventListener('keydown', event => {
 window.addEventListener('hashchange', render);
 
 async function loadData() {
-  const [stagesResponse, optionsResponse, indicatorsResponse] = await Promise.all([
+  const [stagesResponse, optionsResponse, indicatorsResponse, cycleResponse] = await Promise.all([
     fetch('/data/stages.json'),
     fetch('/data/options.json'),
-    fetch('/data/indicators.json')
+    fetch('/data/indicators.json'),
+    fetch('/data/cycle-shape.json')
   ]);
-  if (!stagesResponse.ok || !optionsResponse.ok || !indicatorsResponse.ok) throw new Error('Failed to load site data');
+  if (!stagesResponse.ok || !optionsResponse.ok || !indicatorsResponse.ok || !cycleResponse.ok) throw new Error('Failed to load site data');
   state.stages = await stagesResponse.json();
   state.options = await optionsResponse.json();
   state.indicators = await indicatorsResponse.json();
+  state.cycleShape = await cycleResponse.json();
   state.indicators.forEach(indicator => { state.ranges[indicator.id] = '1Y'; });
 }
 

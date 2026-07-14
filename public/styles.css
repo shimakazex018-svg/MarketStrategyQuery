@@ -277,13 +277,14 @@ button { color: inherit; }
 .market-cycle {
   display: block;
   width: 100%;
-  min-width: 1120px;
+  min-width: 1280px;
   height: auto;
   background:
     linear-gradient(var(--line) 1px, transparent 1px),
     linear-gradient(90deg, var(--line) 1px, transparent 1px);
   background-size: 64px 64px;
 }
+.cycle-area { fill: url(#cycleAreaGradient); }
 .cycle-path {
   fill: none;
   stroke: var(--accent);
@@ -297,36 +298,36 @@ button { color: inherit; }
 }
 @keyframes drawPath { to { stroke-dashoffset: 0; } }
 .stage-zone { cursor: pointer; outline: none; }
-.stage-zone rect {
-  fill: color-mix(in srgb, var(--surface) 88%, transparent);
-  stroke: var(--accent);
-  stroke-width: 2;
-  rx: 16;
-  transition: fill .22s ease, stroke-width .22s ease, transform .22s ease, filter .22s ease;
-  transform-box: fill-box;
-  transform-origin: center;
-}
-.stage-zone text { fill: var(--text); font-size: 15px; font-weight: 750; pointer-events: none; }
-.stage-zone .stage-index { fill: var(--accent-strong); font-size: 11px; letter-spacing: .10em; }
-.stage-zone:hover rect, .stage-zone:focus rect {
-  fill: var(--accent-soft);
-  stroke-width: 4;
-  transform: scale(1.025);
-  filter: drop-shadow(0 12px 22px rgba(20,110,245,.16));
-}
-.stage-zone.is-active rect { fill: var(--positive-soft); stroke: var(--positive); stroke-width: 4; }
+.stage-hit-area { fill: transparent; stroke: transparent; }
+.stage-label-bg { fill: color-mix(in srgb, var(--surface) 90%, transparent); stroke: var(--line-strong); stroke-width: 1; rx: 11; transition: fill .2s ease, stroke .2s ease; }
+.stage-marker { fill: var(--surface); stroke: var(--accent); stroke-width: 4; transition: r .2s ease, fill .2s ease; }
+.stage-zone text { pointer-events: none; }
+.stage-zone .stage-index { fill: var(--accent-strong); font-size: 10px; font-weight: 800; letter-spacing: .08em; }
+.stage-zone .stage-label { fill: var(--text); font-size: 13px; font-weight: 760; }
+.stage-zone:hover .stage-label-bg, .stage-zone:focus .stage-label-bg { fill: var(--accent-soft); stroke: var(--accent); }
+.stage-zone:hover .stage-marker, .stage-zone:focus .stage-marker { r: 11; fill: var(--accent-soft); }
+.stage-zone:focus-visible .stage-hit-area { stroke: var(--accent); stroke-width: 3; stroke-dasharray: 8 8; }
+.stage-zone.is-active .stage-label-bg { fill: var(--positive-soft); stroke: var(--positive); stroke-width: 2; }
+.stage-zone.is-active .stage-marker { fill: var(--positive-soft); stroke: var(--positive); }
 .stage-zone.is-active .stage-index { fill: var(--positive); }
+
+.cycle-inspector { display: flex; align-items: center; justify-content: space-between; gap: 20px; min-height: 94px; padding: 15px 20px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); background: var(--surface-muted); }
+.cycle-inspector > div { min-width: 0; }
+.cycle-inspector span { color: var(--accent-strong); font-size: 11px; font-weight: 800; letter-spacing: .08em; }
+.cycle-inspector strong { display: block; margin-top: 2px; font-size: 18px; }
+.cycle-inspector p { margin: 3px 0 0; color: var(--text-soft); font-size: 13px; }
 
 .stage-strip {
   display: grid;
   grid-template-columns: repeat(9, minmax(150px, 1fr));
   gap: 10px;
-  padding: 18px;
+  padding: 12px 18px;
   overflow-x: auto;
 }
 .stage-pill {
   min-width: 150px;
-  padding: 14px;
+  min-height: 56px;
+  padding: 9px 12px;
   border: 1px solid var(--line);
   border-radius: 14px;
   background: var(--surface-muted);
@@ -337,6 +338,7 @@ button { color: inherit; }
 }
 .stage-pill:hover, .stage-pill.active { transform: translateY(-2px); color: var(--text); background: var(--accent-soft); border-color: var(--accent); }
 .stage-pill strong { display: block; margin-top: 3px; color: var(--text); font-size: 15px; }
+.cycle-disclaimer { margin: 0; padding: 0 20px 16px; color: var(--text-soft); font-size: 12px; }
 
 .metric-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }
 .metric-card {
@@ -738,6 +740,10 @@ button { color: inherit; }
   .hero-panel { padding: 18px; }
   .section-heading { align-items: flex-start; flex-direction: column; }
   .cycle-shell { border-radius: 20px; }
+  .market-cycle { min-width: 1180px; }
+  .cycle-toolbar { align-items: flex-start; flex-direction: column; padding: 14px 16px; }
+  .cycle-inspector { align-items: flex-start; flex-direction: column; min-height: 154px; padding: 14px 16px; }
+  .cycle-inspector .button { width: 100%; }
   .metric-grid, .content-grid, .option-grid, .asset-rule-grid, .scenario-grid, .option-leg-grid, .option-planning-grid, .management-grid, .option-risk-grid, .performance-grid { grid-template-columns: 1fr; }
   .metric-card { min-height: 310px; }
   .page-title { align-items: flex-start; flex-direction: column; }
