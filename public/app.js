@@ -20,7 +20,11 @@ const DATA_STATUS = Object.freeze({
   stale: { label: '数据已过期', tone: 'stale' },
   error: { label: '数据错误', tone: 'error' },
   demo: { label: '演示数据', tone: 'demo' },
-  unavailable: { label: '正式来源暂不可用', tone: 'unavailable' }
+  unavailable: { label: '暂不可用', tone: 'unavailable' },
+  provisional: { label: '初步估算', tone: 'provisional' },
+  insufficient_coverage: { label: '覆盖不足', tone: 'insufficient' },
+  manual: { label: '人工录入', tone: 'manual' },
+  quality_warning: { label: '质量提示', tone: 'warning' }
 });
 
 const app = document.getElementById('app');
@@ -87,6 +91,10 @@ function escapeHtml(value = '') {
 
 function valueOr(value, fallback = '待补充') {
   return value === undefined || value === null || value === '' ? fallback : value;
+}
+
+function hasFiniteValue(value) {
+  return value !== undefined && value !== null && value !== '' && Number.isFinite(Number(value));
 }
 
 function listOr(value, fallback = '待补充') {
@@ -213,9 +221,9 @@ function generateSeries(indicator, rangeKey) {
   return values.map((v, i) => v + delta * (i / (values.length - 1)));
 }
 
-function seriesToPath(values, width = 360, height = 126, pad = 6) {
-  const min = Math.min(...values);
-  const max = Math.max(...values);
+function seriesToPath(values, width = 360, height = 126, pad = 6, scale = null) {
+  const min = scale?.min ?? Math.min(...values);
+  const max = scale?.max ?? Math.max(...values);
   const range = max - min || 1;
   const points = values.map((value, index) => {
     const x = pad + (index / (values.length - 1)) * (width - pad * 2);
@@ -290,18 +298,30 @@ function metricCard(indicator, index) {
   const isDemo = market.status === 'demo';
   const historyValues = Array.isArray(market.history) ? market.history.map(point => Number(point.value)).filter(Number.isFinite) : [];
   const values = historyValues.length > 1 ? historyValues : isDemo ? generateSeries(indicator, rangeKey) : [];
-  const chart = values.length > 1 ? seriesToPath(values) : null;
+  const robustValues = indicator.id === 'pe' && Array.isArray(market.robustHistory)
+    ? market.robustHistory.map(point => Number(point.value)).filter(Number.isFinite)
+    : [];
+  const combinedScale = robustValues.length > 1 && values.length > 1
+    ? { min: Math.min(...values, ...robustValues), max: Math.max(...values, ...robustValues) }
+    : null;
+  const chart = values.length > 1 ? seriesToPath(values, 360, 126, 6, combinedScale) : null;
+  const robustChart = robustValues.length > 1 ? seriesToPath(robustValues, 360, 126, 6, combinedScale) : null;
   const available = new Set(market.availableRanges || []);
   const rangeButtons = RANGE_KEYS.map((key, i) => {
     const disabled = !isDemo && !available.has(key);
     return `<button class="range-tab${key === rangeKey ? ' active' : ''}" data-indicator-id="${indicator.id}" data-range="${key}" type="button" aria-pressed="${key === rangeKey}"${disabled ? ' disabled aria-disabled="true"' : ''}>${RANGE_LABELS[i]}</button>`;
   }).join('');
+  const displayNumber = number => hasFiniteValue(number) ? Number(number).toFixed(2).replace(/\.00$/, '') : '—';
   const value = market.status === 'loading'
     ? '<span class="metric-value-skeleton" aria-label="加载中"></span>'
     : market.value === null || market.value === undefined
       ? '—'
-      : `${escapeHtml(market.value)}${escapeHtml(market.unit || indicator.unit)}`;
-  const secondaryValue = isDemo && Number.isFinite(indicator.percentile)
+      : indicator.id === 'pe'
+        ? `原始 ${escapeHtml(displayNumber(market.value))}${escapeHtml(market.unit || indicator.unit)}`
+        : `${escapeHtml(displayNumber(market.value))}${escapeHtml(market.unit || indicator.unit)}`;
+  const secondaryValue = indicator.id === 'pe' && hasFiniteValue(market.secondaryValue)
+    ? `稳健 ${escapeHtml(displayNumber(market.secondaryValue))}${escapeHtml(market.unit || indicator.unit)}`
+    : isDemo && Number.isFinite(indicator.percentile)
     ? `演示历史分位 ${indicator.percentile}%`
     : market.asOf ? `数据日期 ${escapeHtml(market.asOf)}` : '暂无可用数据日期';
   const chartMarkup = chart ? `
@@ -310,6 +330,7 @@ function metricCard(indicator, index) {
         <line class="baseline" x1="0" x2="360" y1="63" y2="63"></line>
         <path d="${chart.area}" fill="url(#metricGradient-${index})" opacity=".25"></path>
         <path class="line" d="${chart.line}"></path>
+        ${robustChart ? `<path class="line line--robust" d="${robustChart.line}"></path>` : ''}
       </svg>` : `<div class="metric-chart-empty" role="status"><span>${market.status === 'loading' ? '正在读取本地缓存…' : '没有可展示的历史曲线'}</span></div>`;
   const rangeSummary = chart
     ? `${isDemo ? '演示' : '可见'}区间：${chart.min.toFixed(1)}–${chart.max.toFixed(1)}`
@@ -327,14 +348,20 @@ function metricCard(indicator, index) {
         </div>
       </div>
       <div class="metric-status-row"><span class="metric-status" data-status="${statusMeta.tone}">${statusMeta.label}</span><span>${escapeHtml(market.statusMessage || '')}</span></div>
+      ${market.qualityStatus === 'quality_warning' ? '<div class="metric-quality-warning"><span class="metric-status" data-status="warning">质量提示</span><span>结果可显示，但存在需要核对的数据质量标记。</span></div>' : ''}
       ${chartMarkup}
+      ${robustChart ? '<div class="metric-chart-legend"><span>原始PE</span><span>稳健PE</span></div>' : ''}
       <div class="range-tabs" role="group" aria-label="时间范围">${rangeButtons}</div>
       <dl class="metric-data-meta">
         <div><dt>数据来源</dt><dd>${escapeHtml(market.source || '—')}</dd></div>
+        <div><dt>数据日期</dt><dd>${escapeHtml(market.asOf || '—')}</dd></div>
         <div><dt>更新时间</dt><dd>${escapeHtml(formatDateTime(market.updatedAt))}</dd></div>
+        ${hasFiniteValue(market.financialCoverageWeight) ? `<div><dt>财务覆盖</dt><dd>${(Number(market.financialCoverageWeight) * 100).toFixed(1)}%</dd></div>` : ''}
+        ${hasFiniteValue(market.priceCoverageWeight) ? `<div><dt>价格覆盖</dt><dd>${(Number(market.priceCoverageWeight) * 100).toFixed(1)}%</dd></div>` : ''}
         ${market.status === 'stale' ? `<div class="metric-stale-note"><dt>上次成功</dt><dd>${escapeHtml(formatDateTime(market.lastSuccessAt))}</dd></div>` : ''}
       </dl>
       <p class="metric-explain">${escapeHtml(indicator.explain)}</p>
+      ${indicator.id === 'pe' ? '<a class="metric-detail-link" href="#/indicators/pe">查看PE口径、覆盖与极值诊断</a>' : ''}
       <p class="metric-subtitle">${rangeSummary}</p>
     </article>`;
 }
@@ -386,6 +413,7 @@ function homeTemplate() {
           <a class="button ghost" href="#/indicators">查看指标说明</a>
         </div>
         <div class="metric-grid">${state.indicators.map(metricCard).join('')}</div>
+        <p class="cycle-disclaimer">数据仅用于本人投资研究。初步估算表示部分成分数据缺失或日期并非完全一致；覆盖不足时不输出正式数值。所有指标均不能单独用于判断市场阶段或形成自动仓位建议。</p>
         <div id="indicatorDialog" class="dialog-backdrop" hidden>
           <section class="indicator-dialog" role="dialog" aria-modal="true" aria-labelledby="indicatorDialogTitle" tabindex="-1">
             <header><div><span>Indicator Guide</span><h2 id="indicatorDialogTitle"></h2></div><button class="dialog-close" type="button" data-close-indicator-dialog aria-label="关闭指标说明">×</button></header>
@@ -543,7 +571,7 @@ function indicatorsTemplate() {
   return `
     <div class="page">
       <div class="breadcrumb"><a href="#/">首页</a><span>/</span><span>指标说明</span></div>
-      <header class="page-title"><div><p class="eyebrow">Indicator Reference</p><h1>六类辅助指标</h1><p>指标用于描述估值、隐含波动、情绪和机构风险敞口。数据状态逐项独立，且不构成网页自动判断。</p></div></header>
+      <header class="page-title"><div><p class="eyebrow">Indicator Reference</p><h1>六类辅助指标</h1><p>指标用于描述估值、实现波动率、风险偏好和期货市场机构仓位。数据状态逐项独立，且不构成网页自动判断。</p></div></header>
       <section class="indicator-list">
         ${state.indicators.map(indicator => {
           const market = state.marketData[indicator.id] || initialMarketModel(indicator);
@@ -552,6 +580,49 @@ function indicatorsTemplate() {
           return `<article class="indicator-row reveal"><div><h2>${escapeHtml(indicator.name)}</h2><span class="metric-status" data-status="${status.tone}">${status.label} · ${escapeHtml(value)}</span><p>${escapeHtml(market.source || '—')} · ${escapeHtml(market.asOf || '无数据日期')}</p></div><div><strong>指标意义</strong><p>${escapeHtml(indicator.meaning)}</p></div><div><strong>使用限制</strong><p>${escapeHtml(indicator.limits)}</p></div></article>`;
         }).join('')}
       </section>
+    </div>`;
+}
+
+function peDetailTemplate() {
+  const indicator = state.indicators.find(item => item.id === 'pe');
+  const market = state.marketData.pe || initialMarketModel(indicator || { id: 'pe', name: 'QQQ组合TTM PE' });
+  const status = DATA_STATUS[market.status] || DATA_STATUS.error;
+  const number = value => hasFiniteValue(value) ? Number(value).toFixed(4).replace(/0+$/, '').replace(/\.$/, '') : '—';
+  const percent = value => hasFiniteValue(value) ? `${(Number(value) * 100).toFixed(2)}%` : '—';
+  const flags = Array.isArray(market.qualityFlags) ? market.qualityFlags : [];
+  const affected = Array.isArray(market.affectedConstituents) ? market.affectedConstituents : [];
+  return `
+    <div class="page">
+      <div class="breadcrumb"><a href="#/">首页</a><span>/</span><a href="#/indicators">指标说明</a><span>/</span><span>QQQ组合TTM PE</span></div>
+      <header class="page-title pe-detail-title"><div><p class="eyebrow">Valuation Diagnostics</p><h1>QQQ组合TTM PE</h1><p>原始口径保留普通亏损公司；稳健口径在E/P层面缩尾极值并保持原QQQ权重。两者均不是Invesco官方发布的基金估值。</p></div><span class="metric-status" data-status="${status.tone}">${status.label}</span></header>
+      <div class="notice"><strong>当前结论</strong><span>${escapeHtml(market.statusMessage || '尚无可用结果。')}</span></div>
+      ${market.qualityStatus === 'quality_warning' ? '<div class="notice warning"><strong>质量提示</strong><span>当前状态允许显示结果，但请先核对下列质量标记和受影响成分。</span></div>' : ''}
+      <section class="pe-value-grid">
+        <article><span>PE-Q1-RAW-v1</span><strong>${number(market.rawPE ?? market.value)}x</strong><p>QQQ权重加权盈利收益率的倒数。</p></article>
+        <article><span>PE-Q1-ROBUST-WMAD4-v1</span><strong>${number(market.robustPE ?? market.secondaryValue)}x</strong><p>加权中位数与加权MAD的四倍稳健尺度缩尾。</p></article>
+        <article><span>两口径差值</span><strong>${number(market.rawRobustDifference)}x</strong><p>差异扩大时优先检查高权重极值和口径错配。</p></article>
+      </section>
+      <section class="pe-diagnostic-grid">
+        <article class="content-card"><h2>覆盖与日期</h2><dl class="diagnostic-list">
+          <div><dt>财务覆盖权重</dt><dd>${percent(market.financialCoverageWeight)}</dd></div>
+          <div><dt>价格覆盖权重</dt><dd>${percent(market.priceCoverageWeight)}</dd></div>
+          <div><dt>权重日期</dt><dd>${escapeHtml(market.weightAsOf || '—')}</dd></div>
+          <div><dt>价格日期</dt><dd>${escapeHtml(market.priceAsOf || '—')}</dd></div>
+          <div><dt>财务截止日期</dt><dd>${escapeHtml(market.financialAsOf || '—')}</dd></div>
+          <div><dt>有效成分 / 总成分</dt><dd>${escapeHtml(valueOr(market.validComponentCount, '—'))} / ${escapeHtml(valueOr(market.componentCount, '—'))}</dd></div>
+        </dl></article>
+        <article class="content-card"><h2>亏损与极值</h2><dl class="diagnostic-list">
+          <div><dt>亏损公司数量</dt><dd>${escapeHtml(valueOr(market.lossMakingCount, '—'))}</dd></div>
+          <div><dt>亏损公司权重</dt><dd>${percent(market.lossMakingWeight)}</dd></div>
+          <div><dt>极值数量</dt><dd>${escapeHtml(valueOr(market.outlierCount, '—'))}</dd></div>
+          <div><dt>极值权重</dt><dd>${percent(market.outlierWeight)}</dd></div>
+          <div><dt>分母稳定性</dt><dd>${escapeHtml(valueOr(market.denominatorStability, '—'))}</dd></div>
+          <div><dt>计算时间</dt><dd>${escapeHtml(formatDateTime(market.calculatedAt))}</dd></div>
+        </dl></article>
+      </section>
+      <section class="content-card"><h2>数据质量标记</h2>${flags.length ? renderList(flags) : '<p>当前没有质量标记。</p>'}</section>
+      <section class="content-card"><h2>受稳健缩尾影响的成分</h2>${affected.length ? renderList(affected.map(item => typeof item === 'string' ? item : `${item.ticker || '未知'}：${item.reason || 'E/P超出稳健边界'}`)) : '<p>当前没有受影响成分，或尚无可用结果。</p>'}</section>
+      <div class="notice"><strong>使用边界</strong><span>本页不展示市值聚合诊断算法或排除亏损诊断值作为正式PE；结果仅用于本人投资研究，不构成自动阶段判断、仓位建议或收益保证。</span></div>
     </div>`;
 }
 
@@ -611,7 +682,7 @@ async function loadIndicatorRange(id, range) {
 function setActiveNav(route) {
   document.querySelectorAll('.desktop-nav a').forEach(link => {
     const href = link.getAttribute('href').slice(1);
-    const active = route === href || (href === '/' && route.startsWith('/stage/')) || (href === '/options' && route.startsWith('/options/'));
+    const active = route === href || (href === '/' && route.startsWith('/stage/')) || (href === '/options' && route.startsWith('/options/')) || (href === '/indicators' && route.startsWith('/indicators/'));
     link.classList.toggle('active', active);
   });
 }
@@ -809,6 +880,7 @@ function render({ preserveScroll = false } = {}) {
   else if (route === '/compare') app.innerHTML = compareTemplate();
   else if (route === '/options' || route.startsWith('/options/')) app.innerHTML = optionsTemplate(route.split('/')[2]);
   else if (route === '/indicators') app.innerHTML = indicatorsTemplate();
+  else if (route === '/indicators/pe') app.innerHTML = peDetailTemplate();
   else if (route.startsWith('/stage/')) app.innerHTML = stageTemplate(state.stages.find(stage => stage.id === route.split('/')[2]));
   else app.innerHTML = notFoundTemplate();
 

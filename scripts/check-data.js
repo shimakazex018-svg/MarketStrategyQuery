@@ -2,6 +2,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { loadProviderRegistry } = require('../server/market-data/provider-compliance');
 
 const ROOT = path.join(__dirname, '..');
 
@@ -33,13 +34,17 @@ const options = readJson('public/data/options.json');
 const indicators = readJson('public/data/indicators.json');
 const cycleShape = readJson('public/data/cycle-shape.json');
 const appSource = fs.readFileSync(path.join(ROOT, 'public/app.js'), 'utf8');
+const providerRegistry = loadProviderRegistry(ROOT);
 
 const stageNames = ['高位震荡', '震荡下跌', '单边下跌', '恐慌暴跌', '底部震荡', '右侧反转', '单边上涨', '震荡上涨', '加速上涨／过热'];
 const optionNames = ['Protective Put', 'Collar', 'Put Debit Spread', 'Put Credit Spread', 'Covered Call', 'Cash-Secured Put', 'Call Debit Spread', 'Long Call'];
-const indicatorNames = ['QQQ组合TTM PE', 'Forward PE', 'VIX', 'VXN', '恐慌贪婪指数', '基金经理仓位指数'];
+const indicatorNames = ['QQQ组合TTM PE', 'Forward PE', 'QQQ RV20', 'QQQ波动率分位', '自建风险偏好', '纳指期货机构仓位'];
 const allocationTickers = ['QQQ', 'SOXX', 'SOXL', '现金/SGOV'];
 const rangeLabels = ['1个月', '3个月', '6个月', '1年', '3年', '5年', '10年'];
 const rangeKeys = ['1M', '3M', '6M', '1Y', '3Y', '5Y', '10Y'];
+
+assert(appSource.includes('function hasFiniteValue(value)'), '前端必须区分null空值与数值0');
+assert(!appSource.includes('Number.isFinite(Number(market.secondaryValue))'), 'PE副值不得把null格式化为0');
 
 assertExactList(stages.map(stage => stage.name), stageNames, '市场阶段');
 assertExactList(options.map(option => option.english), optionNames, '期权策略');
@@ -104,7 +109,7 @@ options.forEach(option => {
 
 indicators.forEach(indicator => {
   ['definition', 'interpretation', 'marketRelation', 'limitations'].forEach(field => assertText(indicator[field], `${indicator.name}.${field}`));
-  assert(['demo', 'unavailable'].includes(indicator.dataMode), `${indicator.name}.dataMode必须为demo或unavailable`);
+  assert(['derived', 'manual', 'official', 'demo', 'unavailable'].includes(indicator.dataMode), `${indicator.name}.dataMode无效`);
   if (indicator.dataMode === 'demo') {
     assertText(indicator.demoSource, `${indicator.name}.demoSource`);
     assertText(indicator.demoMessage, `${indicator.name}.demoMessage`);
@@ -113,5 +118,10 @@ indicators.forEach(indicator => {
 
 rangeLabels.forEach(label => assert(appSource.includes(`'${label}'`), `前端时间范围缺少：${label}`));
 rangeKeys.forEach(key => assert(appSource.includes(`'${key}'`), `前端时间范围键缺少：${key}`));
+assertExactList(providerRegistry.providers.map(provider => provider.providerId), ['sec-edgar', 'cftc', 'cboe', 'ibkr', 'twelve-data', 'alpha-vantage'], 'Provider登记');
+providerRegistry.providers.forEach(provider => {
+  const selected = ['sec-edgar', 'cftc'].includes(provider.providerId);
+  assert(provider.enabled === selected, `${provider.providerId}启用状态与合规选择不一致`);
+});
 
 console.log('Data check passed: 9 complete stages, 8 complete options, 6 indicators, 7 ranges, and all references are valid.');

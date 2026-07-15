@@ -1,0 +1,8 @@
+[
+  {"ticker":"SAMPLEA","weight":0.25,"weightAsOf":"2026-01-02","price":100,"priceCurrency":"USD","ttmEps":5,"ttmNetIncome":500,"dilutedShares":100,"financialCurrency":"USD"},
+  {"ticker":"SAMPLEB","weight":0.20,"weightAsOf":"2026-01-02","price":80,"priceCurrency":"USD","ttmEps":4,"ttmNetIncome":320,"dilutedShares":80,"financialCurrency":"USD"},
+  {"ticker":"SAMPLEC","weight":0.18,"weightAsOf":"2026-01-02","price":120,"priceCurrency":"USD","ttmEps":6,"ttmNetIncome":600,"dilutedShares":100,"financialCurrency":"USD"},
+  {"ticker":"SAMPLED","weight":0.15,"weightAsOf":"2026-01-02","price":60,"priceCurrency":"USD","ttmEps":3,"ttmNetIncome":240,"dilutedShares":80,"financialCurrency":"USD"},
+  {"ticker":"SAMPLEE","weight":0.12,"weightAsOf":"2026-01-02","price":50,"priceCurrency":"USD","ttmEps":-1,"ttmNetIncome":-50,"dilutedShares":50,"financialCurrency":"USD"},
+  {"ticker":"SAMPLEF","weight":0.10,"weightAsOf":"2026-01-02","price":40,"priceCurrency":"USD","ttmEps":2,"ttmNetIncome":100,"dilutedShares":50,"financialCurrency":"USD"}
+]

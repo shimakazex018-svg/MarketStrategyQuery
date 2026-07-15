@@ -1,63 +1,33 @@
-# HANDOFF
+# 最新交接
 
-## Last Completed Task
+## 当前状态
 
-建立并规范 Codex 长期上下文管理文档体系。八份文档现在分别承担工作规则、当前事实、当前架构、长期决策、任务状态、当前验证、历史记录和最新交接职责。
+- 分支：`feature/v0.4-compliant-market-data-waterfall`。
+- 检查点B代码已完成：正式六卡、SEC/CFTC受控来源、本地导入、派生协调器、前端状态、PE双口径详情和异常测试。
+- `PE-Q1-RAW-v1`保留普通亏损公司；`PE-Q1-ROBUST-WMAD4-v1`在E/P层按加权中位数/MAD四倍稳健尺度Winsorize。内部市值聚合和排除亏损值不在正式页面展示。
+- SEC Provider虽通过合规登记，但默认不请求；必须同时设置`SEC_BULK_UPDATE_ENABLED=true`、`SEC_USER_AGENT_APP`和有效`SEC_USER_AGENT_EMAIL`。
+- CFTC正式使用TFF Futures Only `gpe5-46if`中的`209742`；周六Asia/Shanghai检查，`209747`仅作诊断。
+- 本轮实际CFTC数据行请求在受限网络中返回`network/fetch failed`，提升权限重试又因工具额度限制未获批准；因此不能把CFTC卡报告为当前`fresh`，运行缓存仍为空。
+- 用户尚未提供QQQ持仓/权重、QQQ与成分股复权价格、Forward PE本地CSV，因此正式进程六卡当前均可显示`unavailable`并离线启动。
+- UI状态截图使用独立验收夹具，页面来源明确写明“UI验收合成夹具（非真实行情）”；不代表已取得真实市场数据。
 
-## Current State
+## 已验证
 
-- 当前分支：`feature/v0.3-live-market-data`。
-- 当前代码 HEAD：`1cb21a654baedcc4d1c5ccefe90d8fa043d9a110`。
-- 稳定基线：`main@160345eeeefca763b05233fdae76a43025a85516`，标签 `v0.2.0`。
-- v0.3 数据源审计、市场数据基础设施、六状态 UI、17 项自动测试和评审截图已完成并推送开发分支，尚未合并 main。
-- 本次只修改八份 Markdown；业务代码、配置、脚本、接口和运行数据未修改。
-- VIX/VXN 当前 unavailable；QQQ组合TTM PE、Forward PE、恐慌贪婪指数、基金经理仓位指数当前 demo。
+- 按`package.json`完整check命令逐项执行：69项测试、0失败。
+- 9个阶段、8种期权、6项新指标、7个范围不变。
+- 独立端口48218的正式进程`/api/health`返回HTTP 200；无输入时六项独立`unavailable`。
+- `runtime-data/`继续被Git忽略；没有生成`package-lock.json`。
+- 应用内浏览器已验证首页、两类阶段详情、期权工具、阶段对比、指标说明和PE详情；375×812、768×1024、1024×1366、1440×900无页面级横向溢出。
+- 深浅主题、指标弹窗Escape关闭和焦点返回正常；浏览器控制台0错误。
+- `previews/review-v0.4-self-calculated-mvp/`包含正式首页与非真实行情状态夹具截图、manifest和contact sheet。
 
-## Recently Changed Files
+## 待办顺序
 
-- `AGENTS.md`
-- `docs/PROJECT_CONTEXT.md`
-- `docs/ARCHITECTURE.md`
-- `docs/DECISIONS.md`
-- `docs/TODO.md`
-- `docs/TESTING.md`
-- `docs/CHANGELOG.md`
-- `docs/HANDOFF.md`
+1. 用户按模板提供本地持仓、价格和Forward PE；不得将其提交Git。
+2. 如用户决定启用SEC，在本机环境变量中配置应用名、联系邮箱和开关；不要在聊天或仓库中记录邮箱。
+3. 在真实输入可用后复核覆盖率、日期差、质量标记和历史范围；不得把初步估算升级为fresh，除非全部门槛满足。
+4. 当前分支提交并推送后等待用户验收；不合并main、不创建v0.4.0标签。
 
-## Validation
+## 禁止边界
 
-- 八份目标文档存在且边界清晰。
-- `git diff --check`：通过。
-- `npm.cmd run check`：17 项通过、0 失败；9阶段、8期权、6指标、7范围及引用有效。
-- Git 差异应只包含上述八份文档。
-
-## Known Issues
-
-- Cboe 自动缓存与再展示许可：待确认。
-- QQQ组合TTM PE 正式机器来源和完整口径：待确认。
-- 真实 iPad/iPhone、目标局域网、ZeroTier 和 Windows 防火墙跨设备验收：待确认。
-- 金融策略内容仍需用户或合格专业人士最终审定。
-
-## Risks
-
-- 默认监听 `0.0.0.0` 且没有登录鉴权，只应在可信局域网或 ZeroTier 网络使用。
-- 当前实际运行数据目录 `runtime-data/` 已被忽略；未来可能出现的通用 `data/`、`cache/`、缩略图、HLS 和 SQLite 文件尚无预防性忽略规则。它们当前不存在，不应在本任务修改 `.gitignore`。
-- 测试夹具和演示数据不得描述为真实行情。
-
-## Recommended Next Task
-
-先由用户审阅本次文档体系和 v0.3 评审截图，再决定是否：
-
-1. 提交本次文档改动；
-2. 合并 `feature/v0.3-live-market-data` 到 `main`；
-3. 继续处理外部数据许可或金融内容审定。
-
-未经用户明确批准，不要自行合并 main、创建 `v0.3.0` 标签或启用真实数据抓取。
-
-## Notes for Next Codex Session
-
-1. 严格按 `AGENTS.md` 的顺序读取七份上下文文档。
-2. 再读取新任务涉及的源码和专项市场数据文档，不能只凭本交接文件修改代码。
-3. 开始前检查分支、HEAD、上游和工作树，保留用户未提交改动。
-4. 若本次文档改动仍未提交，不要覆盖；先向用户确认提交要求。
-5. 运行数据不得删除、移动或提交。
+不得恢复IBKR、Twelve Data或Alpha Vantage，不抓取财经网页，不新增自动阶段判断、仓位建议、数据库、登录、交易或第三方运行依赖。运行缓存、真实数据、联系邮箱和任何凭证不得提交。

@@ -1,5 +1,64 @@
 # 变更日志
 
+## 2026-07-15 - v0.4自计算市场指标检查点B
+
+- 正式首页六卡切换为QQQ组合TTM PE双口径、Forward PE、QQQ RV20、QQQ波动率分位、自建风险偏好和纳指期货机构仓位。
+- 接入本地CSV、SEC companyfacts bulk、CFTC TFF运行协调器；启动优先读缓存，浏览器访问不触发外部请求。
+- SEC要求显式开关、应用名和有效联系邮箱，每天最多一次；CFTC选择`209742`并在Asia/Shanghai周六检查，`209747`仅作诊断。
+- 新增`provisional`、`insufficient_coverage`、`manual`和独立`quality_warning`显示；覆盖不足不使用0或演示值。
+- 新增`#/indicators/pe`详情页，展示双口径、覆盖、日期、亏损与极值诊断，不把内部市值聚合或排除亏损算法描述为正式PE。
+- 自动检查69项通过；正式服务在独立端口健康检查200并可无输入离线启动。应用内浏览器完成四档响应式、主题、核心路由、弹窗键盘和控制台验收，并补齐明确标注为非真实行情的UI状态截图。
+- 修复PE覆盖不足时`null`副值被格式化为`0x`的问题；缺失值统一保持为占位符，不伪造零值。
+
+## 2026-07-15 - 检查点A.1原始与稳健QQQ PE
+
+### Added
+- 新增`PE-Q1-RAW-v1`：在组合加权盈利收益率中保留正盈利和负盈利，非正或不稳定分母不输出正PE。
+- 新增`PE-Q1-ROBUST-WMAD4-v1`：在E/P层按weighted median ± 4个稳健尺度Winsorize，不删除成分、不改变权重。
+- 新增稳健方法回退、覆盖率、正式成分数、极值权重、亏损公司和受影响成分诊断；排除亏损版只保留为内部字段。
+- 新增30成分纯虚构fixture，覆盖正/负/大权重/多个极值、普通亏损、MAD为0、小样本、近零/负分母、顺序、未标准化权重、非有限输入和拆股错误。
+- 明确旧方法B使用覆盖公司的完整市场总市值/完整净利润，未按QQQ权重构造统一名义组合，因此只保留为诊断算法；正式原始PE以方法A为准。
+- 补充价格/财务/权重日期血缘、原始与稳健分母稳定性、`robustScale`、两口径差值和EPS/净利润一致性诊断。
+- 新增QQQ PE输入可用性调查：SEC与CFTC存在官方机器来源，QQQ持仓/权重和复权价格当前仍需用户本地CSV。
+
+### Validation
+- `npm.cmd run check`通过53项测试、0失败；QQQ PE专项18项通过。未修改正式首页、读取真实市场数据、进入全量计算或检查点B。
+
+## 2026-07-15 - v0.4自计算市场指标检查点A
+
+### Changed
+- 当前阶段不继续IBKR、Twelve Data或Alpha Vantage；保留历史评估与合规硬门禁，全部保持禁用。
+- 定义检查点B目标六项为自计算QQQ组合TTM PE、Forward PE人工录入、QQQ RV20、RV20历史分位、自建风险偏好和Nasdaq期货机构仓位代理。
+- 统一状态扩展`insufficient_coverage`与`manual`；正式首页仍保持v0.3六卡，未改前端。
+
+### Added
+- 新增有界CSV解析、QQQ成分权重/价格/人工Forward PE导入和仅含虚构数据的模板。
+- 新增SEC GAAP/IFRS字段映射、修订去重、四季度TTM和显式拆股调整内核。
+- 新增QQQ PE加权盈利收益率与覆盖样本总市值/总盈利两种候选算法，均比较亏损处理版本。
+- 新增RV10/20/60、RV20历史分位、`RISK-APPETITE-v1-EW`、CFTC TFF候选仓位和逐指标故障隔离。
+
+### Validation
+- `npm.cmd run check`通过42项测试、0失败；固定9阶段、8期权、6个现有指标和7范围不变。
+- 测试覆盖CSV错误、SEC修订/重叠/GAAP/IFRS/拆股、覆盖不足、币种、亏损、近零/负PE、波动率样本、Forward PE过期、COT缺失和单项故障隔离。
+- 所有fixture均为虚构数据；未下载SEC bulk、未请求CFTC/IBKR/Twelve Data/Alpha Vantage，也未修改正式页面或截图。
+
+## 2026-07-15 - v0.4第一检查点：个人用途与Provider合规门禁
+
+### Added
+- 固化仅限本人、本机/家庭局域网/私人ZeroTier、非盈利且不再分发的市场数据使用边界。
+- 新增非敏感Provider注册表、状态校验模块和环境变量之前的正式启用硬门禁。
+- 新增IBKR非敏感本机预检查、官方资料评估和未发送的英文客服询问模板。
+
+### Validation
+- GitHub仓库当前为PUBLIC；未修改可见性，建议用户改为private。
+- 本机未发现TWS、IB Gateway、Client Portal Gateway或典型API监听端口；未安装、未登录、未请求行情。
+- `npm.cmd run check`通过22项测试、0失败；固定9阶段、8期权、6指标和7范围不变。
+
+### Notes
+- Cboe与IBKR均为`pending_written_confirmation`、`enabled=false`；VIX/VXN继续unavailable。
+- 因需要安装官方组件、用户人工登录、订阅确认和书面许可，本检查点停止；未进入Twelve Data。
+- 没有UI变化，未修改v0.3截图或评审清单。
+
 ## 2026-07-14 - 建立 Codex 长期上下文管理体系
 
 ### Changed

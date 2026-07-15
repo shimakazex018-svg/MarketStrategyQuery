@@ -32,9 +32,14 @@ public/                         # 浏览器可访问的源文件
     indicators.json             # 六指标定义、演示/不可用状态配置
     cycle-shape.json            # 手工归一化周期示意数据
 server.js                       # HTTP 服务组装、健康检查、静态文件
+config/
+  market-data-providers.json    # 非敏感Provider合规登记与启用状态
 server/
   data-sources/                 # 外部来源下载和解析适配器
   market-data/                  # 市场数据服务模块
+  imports/                      # 有界CSV、权重、价格和人工输入校验
+  derived-indicators/           # SEC/PE、RV、分位、风险偏好和COT纯计算内核
+templates/imports/              # 仅含虚构数据的导入模板
 scripts/                        # 数据检查、启动和防火墙辅助脚本
 tests/                          # Node 自动测试与 UI 评审夹具服务
 runtime-data/market-data/       # 运行缓存、请求状态和日志；不进入 Git
@@ -66,6 +71,7 @@ docs/                           # 长期上下文与专项设计文档
 - `server.js`：创建市场数据服务和调度器；处理健康检查、内部 API 和安全静态文件响应。
 - `server/data-sources/cboe-history.js`：Cboe VIX/VXN CSV 适配器；许可开关未确认时不会启用。
 - `server/market-data/config.js`：读取环境变量和运行目录；不解析 `.env` 文件。
+- `provider-compliance.js`：验证Provider字段、合规状态和`enabled`不变量；环境变量不能绕过该门禁。
 - `schema.js`：统一模型、日期/数值校验、范围过滤和最多 240 点抽样。
 - `cache-store.js`：按指标拆分 JSON，使用临时文件、`fsync` 和原子替换；损坏文件按指标隔离。
 - `request-limiter.js`：持久化每日指标/提供方预算、手动冷却和并发锁。
@@ -73,6 +79,13 @@ docs/                           # 长期上下文与专项设计文档
 - `service.js`：组合静态定义、缓存、许可决策、来源和状态回退。
 - `logger.js`：有界日志轮转，防止磁盘持续增长。
 - `http-api.js`：内部 API 路由、范围校验和可信网段手动刷新限制。
+- `server/imports/`：最大2 MiB、10,000行的CSV解析，校验ticker、日期、权重、价格、来源和人工Forward PE，并生成SHA-256导入manifest。
+- `server/derived-indicators/sec-facts.js`：可配置GAAP/IFRS字段优先级、修订去重、季度TTM和显式拆股口径调整。
+- `qqq-pe.js`：输出保留全部正负盈利的原始加权E/P，以及基于weighted median/MAD、1.4826尺度和4倍边界的稳健E/P；极值只Winsorize、不删成分、不改权重。排除亏损与旧聚合市值法只保留为诊断。
+- `realized-volatility.js` / `volatility-percentile.js`：基于复权收盘价计算RV10/20/60与1/3/5/10年实际可用分位。
+- `risk-appetite.js`：`RISK-APPETITE-v1-EW`七分项等权原型；缺失不补0，至少5/7可用。
+- `cot-positioning.js`：TFF候选合约字段计算；`209742`和`209747`仍未正式选定。
+- `runner.js`：逐指标捕获计算错误，避免单项失败中断其他派生结果。
 
 ## 主要 API
 
@@ -90,6 +103,7 @@ docs/                           # 长期上下文与专项设计文档
 
 ```text
 获批机器来源
+  -> Provider合规登记硬门禁
   -> source adapter
   -> schema validation
   -> atomic cache
@@ -98,7 +112,25 @@ docs/                           # 长期上下文与专项设计文档
   -> indicator card / SVG history
 ```
 
-合法状态为 `loading/fresh/stale/error/demo/unavailable`。无数据使用 `null`，不使用 0 或未标记模拟点。单指标失败不影响其他指标、健康检查或静态策略页面。
+统一页面模型允许`loading/fresh/stale/error/demo/unavailable/insufficient_coverage/manual/provisional/quality_warning`。`quality_warning`是与主状态并列的质量维度，允许与`provisional`同时存在。无数据使用`null`，不使用0或未标记模拟点。单指标失败不影响其他指标、健康检查或静态策略页面。
+
+## 自计算数据流（检查点B）
+
+```text
+虚构fixture / 用户未来本地CSV
+  -> 有界导入与SHA-256 manifest
+  -> 标准化记录
+  -> 独立派生计算
+  -> 覆盖率、算法版本、输入日期和诊断
+```
+
+`server/self-calculated/coordinator.js`已将该流接入正式内部API。启动时只读取本地导入、运行缓存和已存在的官方源缓存，不因浏览器访问触发外部请求。原始、标准化和派生文件分层位于`runtime-data/sources|imports|normalized|derived|market-data`并继续由Git忽略。
+
+正式六卡为：QQQ组合TTM PE（原始与稳健双口径）、Forward PE、QQQ RV20、QQQ波动率分位、自建风险偏好和纳指期货机构仓位。PE详情路由为`#/indicators/pe`，只展示正式双口径、覆盖、日期、亏损与极值诊断；完整公司市值聚合和排除亏损结果仍只保留在内部模型中。
+
+SEC bulk默认关闭。只有`SEC_BULK_UPDATE_ENABLED=true`、`SEC_USER_AGENT_APP`非空且`SEC_USER_AGENT_EMAIL`为有效邮箱时，Provider合规门禁和运行配置才同时允许请求；每天最多一次。CFTC使用官方TFF Futures Only数据集`gpe5-46if`，`209742`为正式代理，`209747`只作诊断候选；调度器只在Asia/Shanghai周六检查。两类外部源均原子写入、保留最后成功结果且不提交运行数据。
+
+QQQ PE派生结果同时保留原始与WMAD4稳健分母稳定性、价格/财务/权重日期血缘、极值影响和两口径差值。旧覆盖公司“完整总市值/完整总盈利”算法明确标记为诊断对象，不得进入正式QQQ组合PE路径。真实输入的当前可用性和人工边界见`docs/PE_INPUT_AVAILABILITY.md`。
 
 ## 缓存、调度与资源边界
 
@@ -121,6 +153,7 @@ docs/                           # 长期上下文与专项设计文档
 ## 源文件与运行文件
 
 - 应进入 Git：源代码、`public/data/*.json`、测试、配置模板、脚本、文档和经确认的评审截图。
+- Provider注册表只保存非敏感结论；账户ID、凭据、会话、订阅账单和真实响应不得进入注册表。
 - 不应进入 Git：`runtime-data/`、`.env`、密钥、日志、缓存、PID、临时文件和机器相关状态。
 - `node_modules/` 是本机依赖目录并被忽略；当前项目没有第三方运行依赖，不应提交。
 
@@ -129,6 +162,6 @@ docs/                           # 长期上下文与专项设计文档
 - 数据库模块：不存在。
 - 缩略图生成、媒体上传、视频处理、HLS 和查重：不存在。
 - 登录、权限、多用户和会话：不存在。
-- IBKR、持仓读取、下单和交易队列：不存在。
+- IBKR正式连接、持仓读取、下单和交易队列：不存在；当前只有禁用的Provider登记和非敏感预检查文档。
 
 若未来引入上述模块，必须同时更新本文件、`PROJECT_CONTEXT.md`、`DECISIONS.md`、`TESTING.md` 和运行数据忽略/清理策略，不能沿用本节假设。

@@ -18,6 +18,8 @@ npm.cmd run check
 1. `server.js`、`public/app.js` 和 UI 评审服务语法检查。
 2. 产品数据契约检查：9阶段、8期权、6指标、7范围、固定顺序、必填字段和引用。
 3. Node 自动测试：缓存、结构校验、来源错误分类、限流、调度、许可边界和故障回退。
+4. Provider登记检查：固定状态枚举、必填字段、重复ID、附加条件和`enabled`硬门禁。
+5. 自计算指标检查：有界CSV、SEC字段/季度TTM、QQQ原始PE与WMAD4稳健PE、实现波动率、历史分位、风险偏好、CFTC候选合约和人工Forward PE边界。
 
 单独运行测试：
 
@@ -58,9 +60,10 @@ Invoke-RestMethod http://127.0.0.1:48101/api/market-data/status
 
 通过标准：
 
-- `/api/health` 返回 HTTP 200、`ok: true`、`marketData: "ready"`，版本与 `package.json` 一致（当前为 `0.3.0-dev`）。
-- 指标接口返回 6 个指标；默认许可未确认时 VIX/VXN 为 unavailable，其余四卡为 demo。
-- 状态接口时区为 Asia/Shanghai，Cboe 权限为 not-confirmed。
+- `/api/health` 返回 HTTP 200、`ok: true`、`marketData: "ready"`，版本与 `package.json` 一致（当前为 `0.4.0-dev`）。
+- 指标接口返回 6 个指标；没有本地导入或运行缓存时，QQQ组合TTM PE、Forward PE、QQQ RV20、QQQ波动率分位、自建风险偏好和纳指期货机构仓位均独立显示 `unavailable`。
+- 状态接口时区为 Asia/Shanghai，并返回Provider的技术状态、合规状态、登记启用值和实际启用值。
+- SEC与CFTC只有在合规登记和运行配置同时满足时才可实际启用；IBKR、Twelve Data、Alpha Vantage和Cboe保持未选择或禁用，环境变量不能绕过登记门禁。
 - 没有外部网络、没有 `FRED_API_KEY` 时仍能启动。
 
 ## HTTP 与安全检查
@@ -116,8 +119,35 @@ Invoke-RestMethod http://127.0.0.1:48101/api/market-data/status
 - 反复重启、周末跳过、预算跨日重置。
 - 多请求并发锁、手动刷新冷却、指标与提供方每日上限。
 - 许可未确认时不读取或展示旧在线缓存。
+- 环境变量不能绕过`pending_written_confirmation`等未批准Provider状态。
 
-`tests/review-server.js` 只用于展示六种 UI 状态，来源必须显示“UI验收夹具（非真实行情）”。它不进入正式启动路径，不访问第三方。
+## 自计算指标检查点B
+
+自动测试还必须覆盖：
+
+- CSV大小/行数/字段、标题、UTF-8文本、权重总和、重复ticker/日期、日期乱序、缺失或异常价格；
+- SEC GAAP/IFRS字段回退、修订优先、重复事实、四季度TTM、10-K/10-Q防重复和显式拆股调整；
+- QQQ PE财务/价格覆盖率、币种不一致、显式价格/财务日期、原始正负盈利影响、排除亏损诊断、原始/稳健近零或负分母；
+- 独立30成分纯虚构fixture的无极值、正/负极值、普通亏损、大权重/多个极值、MAD为0、小于20成分、正式80成分门槛、极值权重10%门槛、顺序/权重缩放不变性、非有限输入和拆股错误；
+- RV10/20/60最小样本、复权收盘价、日对数收益率、缺失交易日不插值；
+- RV20分位只报告1/3/5/10年实际可用范围，不补模拟历史；
+- `RISK-APPETITE-v1-EW`方向调整、等权贡献、缺失不补0和至少5/7覆盖门槛；
+- Forward PE的固定methodology、来源、录入时间、重复与过期；
+- CFTC目标合约缺失，以及单个派生计算失败不影响其他结果。
+
+自动测试只使用虚构或官方格式合成fixture，不读取用户真实`runtime-data/`，不请求SEC、CFTC、IBKR、Twelve Data或Alpha Vantage。正式运行验证必须使用独立端口；缺少SEC邮箱时确认无外部请求，CFTC真实请求只能由获批Provider和周六调度或受控手动刷新触发。
+
+检查点B还需验证：六卡独立状态、PE双曲线与详情页、`provisional`和`quality_warning`并存、财务/价格覆盖门槛、SEC每日一次、CFTC周六一次、旧缓存回退、无缓存错误、完全断网启动以及运行数据持续被Git忽略。
+
+## IBKR隔离探测边界
+
+- 当前主机没有TWS、IB Gateway或Client Portal Gateway，因此没有可执行的IBKR探测脚本。
+- 后续只有在用户安装官方组件、本人完成登录并确认只读API设置后，才能在`scripts/data-source-probes/ibkr/`新增探测代码。
+- 探测输出必须写入`runtime-data/data-source-probes/ibkr/`或操作系统临时目录，不得写入脚本目录、fixture或Git。
+- 探测只允许合约搜索、行情权限模式和历史日线；不得请求账户、持仓、余额或订单信息。
+- 48101现有服务不得用于探测；使用独立空闲端口或仅连接IBKR本机Socket端口。
+
+`tests/review-server.js` 只用于展示 UI 状态，来源必须显示“UI验收合成夹具（非真实行情）”。它不进入正式启动路径，不访问第三方。
 
 ## 数据库、媒体与生成文件检查
 
@@ -127,11 +157,13 @@ Invoke-RestMethod http://127.0.0.1:48101/api/market-data/status
 
 - `node` 或 `npm` 不可识别：安装/确认官方 Node.js 18+，或在当前 PowerShell 修正 PATH；不要改项目脚本规避环境问题。
 - 48101 被占用：查明监听 PID，使用临时端口测试；不要终止未知服务。
-- VIX/VXN 显示 unavailable：默认许可未确认时是预期行为，不是抓取故障。
+- 自计算指标显示 unavailable：缺少对应本地导入或官方运行缓存时是预期行为，不得用演示值或零补齐。
 - 没有 `FRED_API_KEY`：当前是预期配置，不影响启动。
 - 单缓存损坏：服务应隔离文件并保持其他卡与健康检查可用。
 - 缺失资源返回 404：Hash Router 下是预期行为。
 
 ## 最近确认的基线
 
-2026-07-14，`feature/v0.3-live-market-data` 执行 `npm.cmd run check`：17 项测试通过，0 失败；浏览器检查覆盖四种视口、主要路由、主题、弹窗、历史导航和控制台。真实设备和 ZeroTier 跨设备验收仍待确认。
+2026-07-15，`feature/v0.4-compliant-market-data-waterfall` 检查点A.1执行`npm.cmd run check`：53项测试通过、0失败；QQQ PE专项18项通过。专项测试包括30成分无极值、正/负/普通亏损、大权重/多个极值、MAD为0、样本不足、原始/稳健近零分母、极值权重超过10%、顺序和权重尺度不变性、非有限输入及显式日期校验。固定9阶段、8期权、6个现有首页指标、7范围和Provider合规门禁仍有效。没有UI变化、真实数据读取或全量计算，不重新生成截图。真实设备和ZeroTier跨设备验收仍待确认。
+
+2026-07-15，检查点B按`package.json`中的完整check命令逐项执行：69项测试通过、0失败；固定9阶段、8期权、6项新指标和7范围不变。独立端口48218正式进程返回`/api/health` HTTP 200，无本地输入时六卡均为`unavailable`且可离线启动。应用内浏览器已验证首页、两类阶段详情、期权工具、阶段对比、指标说明和PE详情；375×812、768×1024、1024×1366、1440×900无页面级横向溢出，深浅主题、指标弹窗Escape关闭及焦点返回正常，控制台0错误。真实设备、局域网与ZeroTier仍待用户环境验收。

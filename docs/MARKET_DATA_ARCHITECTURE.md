@@ -8,6 +8,7 @@
 
 ```text
 已批准的官方来源
+  -> provider compliance registry（状态与附加条件硬门禁）
   -> source adapter（下载、解析）
   -> schema validation（日期、数值、顺序、异常值）
   -> cache store（临时文件 + 原子替换）
@@ -17,6 +18,8 @@
 ```
 
 浏览器访问首页、指标说明或其他页面时只请求本网站的 `/api/market-data/*`。页面访问不会触发任何第三方请求。
+
+正式启用还要求Provider注册状态为`approved`，或`approved_with_conditions`且附加条件全部满足，并明确设置`enabled=true`。环境变量只是第二确认，不能覆盖注册状态。
 
 ## 模块边界
 
@@ -30,6 +33,9 @@ server/
     scheduler.js      # Asia/Shanghai 调度与有限重试
     service.js        # 组合演示配置、缓存和在线来源
     logger.js         # 有界抓取日志
+    provider-compliance.js # Provider登记校验与启用判定
+config/
+  market-data-providers.json # 非敏感合规状态；不得保存凭据或真实响应
 runtime-data/         # 不提交；运行时缓存、状态和日志
 tests/
   fixtures/market-data/
@@ -106,3 +112,9 @@ tests/
 5. 审计后无可用来源：显示 unavailable。
 
 任何情况下都不因外部来源失败而使 `/api/health` 或静态页面失效。
+
+## v0.4自计算扩展
+
+检查点B已通过`server/self-calculated/coordinator.js`把`server/imports/`、`server/derived-indicators/`、SEC bulk和CFTC TFF接入正式服务。详细数据层次、SEC/CFTC边界和资源限制见`SELF_CALCULATED_MARKET_DATA_DESIGN.md`，PE与风险偏好口径分别见对应规格文档。
+
+派生状态增加`insufficient_coverage`、`manual`与`provisional`，并允许独立`quality_warning`。覆盖不足时值必须为`null`；人工Forward PE必须携带来源、口径、数据日期和录入时间。首页、调度器和内部API已切换到新六卡，但Hash Router、端口和Node.js原生服务保持不变。
