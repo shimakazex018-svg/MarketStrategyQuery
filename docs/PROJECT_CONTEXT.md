@@ -29,13 +29,14 @@
 
 ## 当前稳定状态
 
-- 稳定版本：`main` 上的 `v0.3.0`，提交 `e8290d89416cd2f7915ed648f15f08d9fa71117c`。
-- 当前开发分支：`feature/v0.4-compliant-market-data-waterfall`。
+- 稳定版本：`main` 上的 `v0.4.0`；v0.4功能合并提交为 `a0eb46ea612dbe37254acf886b4d6a56c1cf1c66`。
+- 下一开发分支：`feature/v0.5-public-web-data-providers`；创建后尚未开始公开网页数据源开发。
 - v0.4检查点B已把自计算数据层接入正式内部API与首页。`PE-Q1-RAW-v1`和`PE-Q1-ROBUST-WMAD4-v1`在同一张卡及PE详情页展示；排除亏损版和旧完整公司总市值/总盈利方法仍仅作内部诊断。
 - IBKR登记为`not_tested`、`pending_written_confirmation`、`not_selected_by_owner`、`enabled=false`；Twelve Data和Alpha Vantage为`deferred`。未安装组件、未登录、未请求数据。
 - 当前没有用户本地持仓、价格、Forward PE或SEC运行输入时，六张新卡均可独立显示`unavailable`并保持离线启动；不会回退到旧VIX/VXN或演示数值。
 - Cboe和IBKR在Provider注册表中均为 `pending_written_confirmation`、`enabled=false`；旧环境变量不能绕过注册表门禁。Twelve Data和Alpha Vantage为`not_evaluated`、`enabled=false`。
 - 正式首页六卡现为原始/稳健QQQ组合TTM PE、Forward PE人工录入、QQQ RV20、RV20历史分位、自建风险偏好和Nasdaq期货机构仓位代理。
+- v0.4的发布边界是自计算市场指标MVP、真实数据输入基础设施、原始和稳健QQQ PE计算、SEC/CFTC接入框架、本地CSV导入及完整数据质量状态；它不是全部真实行情、官方QQQ PE、官方VIX/VXN或实时数据正式版。
 
 ## 当前数据与生成目录
 

@@ -2,7 +2,8 @@
 
 ## 当前状态
 
-- 分支：`feature/v0.4-compliant-market-data-waterfall`。
+- 稳定版本：`v0.4.0`；v0.4功能合并提交为`a0eb46ea612dbe37254acf886b4d6a56c1cf1c66`。
+- 当前开发分支：`feature/v0.5-public-web-data-providers`，起点为v0.4发布后的最新main；尚未开始WorldPEratio或其他公开网页数据源开发。
 - 检查点B代码已完成：正式六卡、SEC/CFTC受控来源、本地导入、派生协调器、前端状态、PE双口径详情和异常测试。
 - `PE-Q1-RAW-v1`保留普通亏损公司；`PE-Q1-ROBUST-WMAD4-v1`在E/P层按加权中位数/MAD四倍稳健尺度Winsorize。内部市值聚合和排除亏损值不在正式页面展示。
 - SEC Provider虽通过合规登记，但默认不请求；必须同时设置`SEC_BULK_UPDATE_ENABLED=true`、`SEC_USER_AGENT_APP`和有效`SEC_USER_AGENT_EMAIL`。
@@ -26,7 +27,7 @@
 1. 用户按模板提供本地持仓、价格和Forward PE；不得将其提交Git。
 2. 如用户决定启用SEC，在本机环境变量中配置应用名、联系邮箱和开关；不要在聊天或仓库中记录邮箱。
 3. 在真实输入可用后复核覆盖率、日期差、质量标记和历史范围；不得把初步估算升级为fresh，除非全部门槛满足。
-4. 当前分支提交并推送后等待用户验收；不合并main、不创建v0.4.0标签。
+4. 开始任何公开网页数据源开发前，重新审计来源定义、机器可读性、稳定性、许可、缓存与内部展示边界。
 
 ## 禁止边界
 
