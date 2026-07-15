@@ -238,4 +238,18 @@ Git 管理源代码、产品 JSON、配置模板、测试、文档和确认后�
 MAD为0、有效样本少于20、边界不可计算或非有限输入时必须标记`robust_method_unavailable`，不得回退固定阈值。正式全量阶段至少80个有效成分；受影响权重超过10%时结果仅供诊断并标记`quality_warning`。旧“总市值/总盈利”方法使用覆盖公司的完整市值和净利润，未按QQQ权重构造统一名义组合，只能标记为诊断算法；排除亏损算法同样只输出`excludeLossDiagnosticPE`。正式输入必须保留并校验权重、价格和财务日期。未来首页与PE有关的正式卡只显示原始与稳健两种自计算结果，且不得宣称等同或复制Invesco、Nasdaq、WorldPEratio指标。
 
 ### Status
-有效；检查点A.1以30成分纯虚构fixture验证，尚未进入检查点B或正式首页。
+有效；检查点A.1以30成分纯虚构fixture验证，检查点B已接入正式内部API、首页双口径卡和PE详情页。
+
+## DEC-018：检查点B采用本地输入、SEC bulk和CFTC TFF的受控组合
+
+### Decision
+正式六卡固定为QQQ组合TTM PE、Forward PE、QQQ RV20、QQQ波动率分位、自建风险偏好和纳指期货机构仓位。SEC只使用官方nightly companyfacts bulk ZIP，并同时要求显式更新开关、应用名和有效联系邮箱；每天最多一次。CFTC只使用官方`gpe5-46if` TFF Futures Only数据集，`209742`为正式代理、`209747`只作诊断，每周六Asia/Shanghai检查。QQQ持仓、复权价格和Forward PE继续由用户本地CSV提供，不新增网页抓取或临时行情Provider。
+
+### Reason
+在不引入数据库、第三方运行依赖或专有行情授权的前提下，使正式指标可追溯、可离线启动并受明确请求预算控制。
+
+### Impact
+`provisional`表示结果为可追溯初步估算，`quality_warning`是独立质量维度；二者可以同时存在。覆盖低于财务70%或价格80%、分母不稳定或结果非正有限时必须使用`insufficient_coverage`并返回`null`。
+
+### Status
+有效

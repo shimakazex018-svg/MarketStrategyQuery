@@ -45,6 +45,8 @@
 
 | Provider | 目标指标 | 技术状态 | 合规状态 | 启用 |
 | --- | --- | --- | --- | --- |
+| SEC EDGAR companyfacts bulk | QQQ组合TTM PE | 官方bulk适配器已实现；运行时需显式本地配置 | `approved_with_conditions` / `selected` | 是；但默认运行配置关闭 |
+| CFTC Public Reporting TFF | 纳指期货机构仓位 | 官方Socrata适配器已实现 | `approved` / `selected` | 是 |
 | Cboe官方历史CSV | VIX、VXN | 适配器已实现，生产未访问 | `pending_written_confirmation` / `deferred` | 否 |
 | Interactive Brokers | VIX、VXN | 未测试，用户当前不选择 | `pending_written_confirmation` / `not_selected_by_owner` | 否 |
 | Twelve Data | QQQ价格候选 | 未测试 | `not_evaluated` / `deferred` | 否 |

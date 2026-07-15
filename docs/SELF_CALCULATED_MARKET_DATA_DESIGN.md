@@ -41,7 +41,7 @@ runtime-data/logs/         # 有界日志，不入 Git
 
 Nasdaq 机构仓位代理必须基于 CFTC Traders in Financial Futures（TFF）报告，因为 Asset Manager/Institutional 与 Leveraged Funds 是 TFF 分类；Legacy 报告的 Commercial/Non-Commercial 不可替代。
 
-候选合约为 E-mini Nasdaq-100（CFTC contract market code `209742`）与 Micro E-mini Nasdaq-100（`209747`）。二者目前只是候选，不代表已选定正式序列。正式接入前还要核对 TFF futures-only 数据集中的合约名称、代码连续性、历史覆盖与修订行为。
+E-mini Nasdaq-100（CFTC contract market code `209742`）已选为正式仓位代理；Micro E-mini Nasdaq-100（`209747`）仅保留为诊断候选，不进入正式卡片。正式实现使用TFF Futures Only数据集`gpe5-46if`，保留报告日期、发布头信息（如存在）和独立抓取时间。
 
 候选计算字段：Asset Manager long/short、Leveraged Funds long/short、Total Open Interest、净头寸、净头寸占未平仓量比例及 3/5 年历史分位。数据日期和发布日期分别保存；每周最多检查一次，修订或缺失必须显式标记。
 

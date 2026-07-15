@@ -115,6 +115,6 @@ tests/
 
 ## v0.4自计算扩展
 
-检查点A新增`server/imports/`与`server/derived-indicators/`，但尚未接入正式服务。详细数据层次、SEC/CFTC边界和资源限制见`SELF_CALCULATED_MARKET_DATA_DESIGN.md`，PE与风险偏好口径分别见对应规格文档。
+检查点B已通过`server/self-calculated/coordinator.js`把`server/imports/`、`server/derived-indicators/`、SEC bulk和CFTC TFF接入正式服务。详细数据层次、SEC/CFTC边界和资源限制见`SELF_CALCULATED_MARKET_DATA_DESIGN.md`，PE与风险偏好口径分别见对应规格文档。
 
-派生状态增加`insufficient_coverage`与`manual`。覆盖不足时值必须为`null`；人工Forward PE必须携带来源、口径、数据日期和录入时间。检查点A不改变现有首页六卡、调度器或外部请求路径。
+派生状态增加`insufficient_coverage`、`manual`与`provisional`，并允许独立`quality_warning`。覆盖不足时值必须为`null`；人工Forward PE必须携带来源、口径、数据日期和录入时间。首页、调度器和内部API已切换到新六卡，但Hash Router、端口和Node.js原生服务保持不变。

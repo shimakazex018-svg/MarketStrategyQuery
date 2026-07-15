@@ -112,9 +112,9 @@ docs/                           # 长期上下文与专项设计文档
   -> indicator card / SVG history
 ```
 
-统一页面模型允许`loading/fresh/stale/error/demo/unavailable/insufficient_coverage/manual`；QQQ PE离线派生结果另有`robust_method_unavailable`和`quality_warning`，尚未接入页面schema。正式首页要到检查点B才评审接入。无数据使用`null`，不使用0或未标记模拟点。单指标失败不影响其他指标、健康检查或静态策略页面。
+统一页面模型允许`loading/fresh/stale/error/demo/unavailable/insufficient_coverage/manual/provisional/quality_warning`。`quality_warning`是与主状态并列的质量维度，允许与`provisional`同时存在。无数据使用`null`，不使用0或未标记模拟点。单指标失败不影响其他指标、健康检查或静态策略页面。
 
-## 自计算数据流（检查点A）
+## 自计算数据流（检查点B）
 
 ```text
 虚构fixture / 用户未来本地CSV
@@ -124,7 +124,11 @@ docs/                           # 长期上下文与专项设计文档
   -> 覆盖率、算法版本、输入日期和诊断
 ```
 
-检查点A没有把该流接入`server.js`或正式API，也没有下载SEC/CFTC数据。检查点B才会把`runtime-data/imports|normalized|derived`接入内部API；原始、标准化和派生文件必须分层且继续忽略。
+`server/self-calculated/coordinator.js`已将该流接入正式内部API。启动时只读取本地导入、运行缓存和已存在的官方源缓存，不因浏览器访问触发外部请求。原始、标准化和派生文件分层位于`runtime-data/sources|imports|normalized|derived|market-data`并继续由Git忽略。
+
+正式六卡为：QQQ组合TTM PE（原始与稳健双口径）、Forward PE、QQQ RV20、QQQ波动率分位、自建风险偏好和纳指期货机构仓位。PE详情路由为`#/indicators/pe`，只展示正式双口径、覆盖、日期、亏损与极值诊断；完整公司市值聚合和排除亏损结果仍只保留在内部模型中。
+
+SEC bulk默认关闭。只有`SEC_BULK_UPDATE_ENABLED=true`、`SEC_USER_AGENT_APP`非空且`SEC_USER_AGENT_EMAIL`为有效邮箱时，Provider合规门禁和运行配置才同时允许请求；每天最多一次。CFTC使用官方TFF Futures Only数据集`gpe5-46if`，`209742`为正式代理，`209747`只作诊断候选；调度器只在Asia/Shanghai周六检查。两类外部源均原子写入、保留最后成功结果且不提交运行数据。
 
 QQQ PE派生结果同时保留原始与WMAD4稳健分母稳定性、价格/财务/权重日期血缘、极值影响和两口径差值。旧覆盖公司“完整总市值/完整总盈利”算法明确标记为诊断对象，不得进入正式QQQ组合PE路径。真实输入的当前可用性和人工边界见`docs/PE_INPUT_AVAILABILITY.md`。
 

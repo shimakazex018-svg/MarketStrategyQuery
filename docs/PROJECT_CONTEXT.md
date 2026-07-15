@@ -3,7 +3,7 @@
 ## 项目名称与用途
 
 - 名称：Market Cycle Strategy。
-- 当前开发版本：`0.3.0-dev`（来自 `package.json`）。
+- 当前开发版本：`0.4.0-dev`（来自 `package.json`）。
 - 用途：个人市场周期、独立仓位区间、期权策略和辅助指标查询网站。
 - 产品性质：信息整理与场景推演工具，不是个性化投资建议，不保证收益或本金。
 
@@ -23,7 +23,7 @@
 - QQQ、SOXX、SOXL、现金/SGOV 的独立允许仓位区间与资产规则。
 - 八种固定期权策略的单策略详情、损益公式、管理规则与风险边界。
 - 六张指标卡、七个时间范围、状态元数据和历史曲线结构。
-- 现有首页指标状态支持 `loading`、`fresh`、`stale`、`error`、`demo`、`unavailable`；派生内核另支持尚未接入首页的 `insufficient_coverage`、`manual`。
+- 首页指标状态支持 `loading`、`fresh`、`stale`、`error`、`demo`、`unavailable`、`provisional`、`insufficient_coverage` 和 `manual`，并可独立显示 `quality_warning`。
 - 深浅主题、Hash Router、键盘/触摸交互和响应式布局。
 - Node.js 静态服务、健康检查和内部市场数据 API。
 
@@ -31,11 +31,11 @@
 
 - 稳定版本：`main` 上的 `v0.3.0`，提交 `e8290d89416cd2f7915ed648f15f08d9fa71117c`。
 - 当前开发分支：`feature/v0.4-compliant-market-data-waterfall`。
-- v0.4自计算指标检查点A.1已完成`PE-Q1-RAW-v1`原始PE与`PE-Q1-ROBUST-WMAD4-v1`稳健PE；稳健法在E/P层使用加权中位数/MAD与4倍尺度Winsorize，排除亏损版和旧完整公司总市值/总盈利方法仅作诊断。输出已包含分母稳定性、日期血缘、极值影响和两口径差值；当前尚未接入新的真实数据或正式首页。
+- v0.4检查点B已把自计算数据层接入正式内部API与首页。`PE-Q1-RAW-v1`和`PE-Q1-ROBUST-WMAD4-v1`在同一张卡及PE详情页展示；排除亏损版和旧完整公司总市值/总盈利方法仍仅作内部诊断。
 - IBKR登记为`not_tested`、`pending_written_confirmation`、`not_selected_by_owner`、`enabled=false`；Twelve Data和Alpha Vantage为`deferred`。未安装组件、未登录、未请求数据。
-- 没有任何真实指标通过全部接入门槛：VIX/VXN 为 `unavailable`；QQQ组合TTM PE、Forward PE、恐慌贪婪指数、基金经理仓位指数为 `demo`。
+- 当前没有用户本地持仓、价格、Forward PE或SEC运行输入时，六张新卡均可独立显示`unavailable`并保持离线启动；不会回退到旧VIX/VXN或演示数值。
 - Cboe和IBKR在Provider注册表中均为 `pending_written_confirmation`、`enabled=false`；旧环境变量不能绕过注册表门禁。Twelve Data和Alpha Vantage为`not_evaluated`、`enabled=false`。
-- 正式首页仍显示v0.3的六卡定义；检查点B才会评审原始/稳健QQQ组合TTM PE、Forward PE人工录入、QQQ RV20、RV20历史分位、自建风险偏好和Nasdaq期货机构仓位代理的最终卡片编排。
+- 正式首页六卡现为原始/稳健QQQ组合TTM PE、Forward PE人工录入、QQQ RV20、RV20历史分位、自建风险偏好和Nasdaq期货机构仓位代理。
 
 ## 当前数据与生成目录
 
@@ -61,8 +61,8 @@
 - 真实市场数据受来源定义、机器接口和再展示许可阻塞。
 - GitHub仓库当前为公开仓库；建议改为private，但本项目仍必须按公开仓库标准排除密钥、会话和运行数据。
 - IBKR路线已由用户延期；若未来恢复，仍需用户选择并安装官方组件、人工登录和书面许可确认。
-- QQQ PE已确定原始与稳健双口径；检查点B仍需验证至少80个有效成分和不超过10%的极值处理权重。风险偏好最终权重仍待用户审定。
-- 检查点B仍缺真实QQQ成分/权重、复权价格、合规SEC bulk输入、确认后的CFTC TFF合约序列和人工Forward PE记录；输入可用性与人工/自动边界见`docs/PE_INPUT_AVAILABILITY.md`。
+- QQQ PE已确定原始与稳健双口径；至少80个有效成分和不超过10%的极值处理权重已由虚构fixture覆盖，仍需用户真实本地输入验证实际覆盖率。风险偏好最终权重仍待用户审定。
+- 真实QQQ成分/权重、复权价格和Forward PE仍需用户本地CSV。SEC bulk只有在本机显式配置应用名、联系邮箱和更新开关后才允许下载；CFTC正式选择`209742`，但运行缓存不进入Git。
 - 不自动判断市场阶段，不提供自动仓位建议。
 - 不读取IBKR账户、持仓或余额，不执行交易；当前只登记非敏感Provider评估结果。
 - 没有登录、多用户、数据库、后台编辑器、回测或历史策略记录。
@@ -73,7 +73,7 @@
 
 - `adjacentStages` 仍保留在阶段 JSON 中用于兼容，但当前详情页不渲染。
 - `#/options` 继续兼容并回退到首个策略；具体策略使用 `#/options/:id`。
-- 旧的“六张卡全部是模拟指标”描述已不再准确；当前必须按每张卡的 `demo` 或 `unavailable` 状态说明。
+- 旧的“六张卡全部是模拟指标”描述已不再准确；当前必须按每张卡的真实状态说明，验收夹具必须明确标记为非真实行情。
 - 没有确认已废弃的服务端 API。若未来废弃接口，必须在本文件和架构文档中明确标注。
 
 ## 不得随意修改的内容
@@ -81,7 +81,7 @@
 - 九阶段名称、顺序和 ID。
 - 八种期权策略名称、分类和 ID。
 - 当前仓位区间、期权推荐等级、公式、DTE 和行权价逻辑，除非用户明确要求金融内容校准。
-- 检查点A/A.1不得修改正式首页六个指标；检查点B再确定包含原始/稳健PE的最终卡片编排。七个时间范围、Hash Router、默认端口和原生 Node.js 技术栈保持不变。
+- 七个时间范围、Hash Router、默认端口和原生Node.js技术栈保持不变。检查点B没有增加数据库、框架、第三方依赖、自动阶段判断或交易功能。
 - 数据源许可门槛与“未获许可不抓取、不缓存、不展示”的默认边界。
 
 ## 运行数据保护
