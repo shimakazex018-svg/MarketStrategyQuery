@@ -8,11 +8,17 @@ const ALGORITHM_VERSION = RAW_ALGORITHM_VERSION;
 const DEFAULT_THRESHOLDS = Object.freeze({
   financialCoverage: 0.90,
   priceCoverage: 0.95,
+  provisionalFinancialCoverage: 0.70,
+  provisionalPriceCoverage: 0.80,
   denominatorEpsilon: 1e-10,
   minimumRobustComponents: 20,
   minimumFormalComponents: 80,
   robustMadMultiplier: 4,
-  maximumOutlierWeight: 0.10
+  maximumOutlierWeight: 0.10,
+  maximumFreshWeightPriceBusinessDays: 5,
+  provisionalWeightPriceBusinessDays: 20,
+  maximumRawRobustRelativeDifference: 0.25,
+  majorConstituentWeight: 0.02
 });
 
 function finiteNumeric(value) {
@@ -54,6 +60,19 @@ function denominatorStability(value, epsilon) {
     absoluteDenominator: Number.isFinite(value) ? Math.abs(value) : null,
     epsilon
   };
+}
+
+function businessDayDistance(left, right) {
+  if (!left || !right) return null;
+  const start = new Date(`${left < right ? left : right}T00:00:00Z`);
+  const end = new Date(`${left < right ? right : left}T00:00:00Z`);
+  if (Number.isNaN(start.valueOf()) || Number.isNaN(end.valueOf())) return null;
+  let count = 0;
+  for (let cursor = new Date(start.valueOf()); cursor < end; cursor.setUTCDate(cursor.getUTCDate() + 1)) {
+    const weekday = cursor.getUTCDay();
+    if (weekday !== 0 && weekday !== 6) count += 1;
+  }
+  return count;
 }
 
 function epsNetIncomeDiagnostics(components, tolerance = 1e-6) {
@@ -147,6 +166,8 @@ function calculateQqqPe(components, options = {}) {
   const eligible = components.filter(component => positive(component.price) && finiteNumeric(component.ttmEps) && compatibleCurrency(component));
   const priceDates = dateSummary(eligible, 'priceAsOf', 'weightAsOf', { requireExplicit: options.requireExplicitDates === true });
   const financialDates = dateSummary(eligible, 'financialAsOf', 'weightAsOf', { requireExplicit: options.requireExplicitDates === true });
+  const weightAsOf = weightDateValid ? [...weightDates][0] : null;
+  const weightPriceBusinessDays = businessDayDistance(weightAsOf, priceDates.value);
 
   const contributions = eligible.map(component => {
     const normalizedWeight = Number(component.weight) / totalWeight;
@@ -177,7 +198,17 @@ function calculateQqqPe(components, options = {}) {
 
   const formalCountEligible = !options.formalFullUniverse || eligible.length >= thresholds.minimumFormalComponents;
   if (!formalCountEligible) addFlag('valid_component_count_below_80');
-  const baseQualityEligible = financialCoverage.coverageRatio >= thresholds.financialCoverage
+  if (weightPriceBusinessDays !== null && weightPriceBusinessDays > thresholds.maximumFreshWeightPriceBusinessDays) addFlag('weight_price_date_gap_exceeds_5_business_days');
+  if (weightPriceBusinessDays !== null && weightPriceBusinessDays > thresholds.provisionalWeightPriceBusinessDays) addFlag('weight_price_date_gap_exceeds_20_business_days');
+  const mvpPolicy = options.statusPolicy === 'mvp';
+  const minimumCoverageEligible = financialCoverage.coverageRatio >= thresholds.provisionalFinancialCoverage
+    && priceCoverage.coverageRatio >= thresholds.provisionalPriceCoverage;
+  const traceableDates = weightDateValid && priceDates.complete && financialDates.complete;
+  const minimumQualityEligible = minimumCoverageEligible
+    && traceableDates
+    && currencyMismatches.length === 0
+    && rawEarningsYield !== null;
+  const legacyBaseQualityEligible = financialCoverage.coverageRatio >= thresholds.financialCoverage
     && priceCoverage.coverageRatio >= thresholds.priceCoverage
     && weightDateValid
     && priceDates.consistent
@@ -185,8 +216,9 @@ function calculateQqqPe(components, options = {}) {
     && currencyMismatches.length === 0
     && formalCountEligible
     && rawEarningsYield !== null;
+  const baseQualityEligible = mvpPolicy ? minimumQualityEligible : legacyBaseQualityEligible;
   const rawPE = baseQualityEligible ? inversePositiveYield(rawEarningsYield, thresholds.denominatorEpsilon) : null;
-  const rawStatus = baseQualityEligible && rawPE !== null ? (options.validStatus || 'demo') : 'insufficient_coverage';
+  let rawStatus = baseQualityEligible && rawPE !== null ? (options.validStatus || (mvpPolicy ? 'provisional' : 'demo')) : 'insufficient_coverage';
 
   let weightedMedianEarningsYield = null;
   let weightedMAD = null;
@@ -290,9 +322,57 @@ function calculateQqqPe(components, options = {}) {
   const rawRobustDifference = rawPE !== null && robustPE !== null
     ? { signed: robustPE - rawPE, absolute: Math.abs(robustPE - rawPE) }
     : null;
+  const rawRobustRelativeDifference = rawRobustDifference && rawPE > 0
+    ? rawRobustDifference.absolute / rawPE
+    : null;
+  if (rawRobustRelativeDifference !== null && rawRobustRelativeDifference > thresholds.maximumRawRobustRelativeDifference) {
+    addFlag('raw_robust_difference_abnormally_large');
+  }
+  const missingTickers = [...new Set([
+    ...priceCoverage.missingTickers,
+    ...financialCoverage.missingTickers
+  ])].sort();
+  const majorMissingTickers = components
+    .filter(component => missingTickers.includes(component.ticker) && Number(component.weight) / totalWeight >= thresholds.majorConstituentWeight)
+    .map(component => component.ticker)
+    .sort();
+  if (majorMissingTickers.length) addFlag('major_constituent_missing');
+  const externalQualityFlags = Array.isArray(options.qualityFlags) ? options.qualityFlags : [];
+  externalQualityFlags.forEach(addFlag);
+
+  let qualityStatus = null;
+  if (mvpPolicy) {
+    const rawStable = denominatorStability(rawEarningsYield, thresholds.denominatorEpsilon).stable;
+    const robustStable = denominatorStability(robustEarningsYield, thresholds.denominatorEpsilon).stable;
+    const warning = outlierWeight > thresholds.maximumOutlierWeight
+      || (weightPriceBusinessDays !== null && weightPriceBusinessDays > thresholds.maximumFreshWeightPriceBusinessDays)
+      || majorMissingTickers.length > 0
+      || rawRobustRelativeDifference > thresholds.maximumRawRobustRelativeDifference
+      || externalQualityFlags.length > 0;
+    if (warning) {
+      qualityStatus = 'quality_warning';
+      addFlag('quality_warning');
+    }
+    const freshEligible = rawPE !== null && robustPE !== null
+      && financialCoverage.coverageRatio >= thresholds.financialCoverage
+      && priceCoverage.coverageRatio >= thresholds.priceCoverage
+      && traceableDates && priceDates.consistent
+      && rawStable && robustStable
+      && outlierWeight <= thresholds.maximumOutlierWeight
+      && (weightPriceBusinessDays === null || weightPriceBusinessDays <= thresholds.maximumFreshWeightPriceBusinessDays)
+      && currencyMismatches.length === 0
+      && !externalQualityFlags.length;
+    if (rawPE === null || robustPE === null || !minimumQualityEligible || !rawStable || !robustStable) {
+      status = 'insufficient_coverage';
+      rawStatus = rawPE === null ? 'insufficient_coverage' : 'provisional';
+    } else status = freshEligible ? 'fresh' : 'provisional';
+    robustStatus = robustPE === null ? 'insufficient_coverage' : status;
+  }
 
   return {
     status,
+    qualityStatus,
+    statusMessage: status === 'provisional' ? '初步估算，部分成分数据缺失或日期并非完全一致。' : null,
     rawStatus,
     robustStatus,
     value: null,
@@ -318,14 +398,19 @@ function calculateQqqPe(components, options = {}) {
     outlierCount: affectedConstituents.length,
     outlierWeight,
     rawRobustDifference,
+    rawRobustRelativeDifference,
     lossMakingCount: lossMaking.length,
     lossMakingWeight,
     financialCoverageWeight: financialCoverage.coverageRatio,
     priceCoverageWeight: priceCoverage.coverageRatio,
     affectedConstituents,
     qualityFlags,
+    missingConstituentCount: missingTickers.length,
+    missingTickers,
+    majorMissingTickers,
     dataNature: options.dataNature || 'synthetic_fixture',
-    weightAsOf: weightDateValid ? [...weightDates][0] : null,
+    weightAsOf,
+    weightPriceBusinessDays,
     dataDate: priceDates.value,
     dataDates: {
       weightAsOf: weightDateValid ? [...weightDates][0] : null,
@@ -338,6 +423,7 @@ function calculateQqqPe(components, options = {}) {
     },
     validComponentCount: eligible.length,
     componentCount: components.length,
+    calculatedAt: (options.calculatedAt instanceof Date ? options.calculatedAt : new Date(options.calculatedAt || Date.now())).toISOString(),
     currencyMismatches,
     nonFiniteTickers,
     coverage: { price: priceCoverage, methodAFinancial: financialCoverage, methodBFinancial: methodBFinancialCoverage },
@@ -377,6 +463,7 @@ module.exports = {
   RAW_ALGORITHM_VERSION,
   ROBUST_ALGORITHM_VERSION,
   DEFAULT_THRESHOLDS,
+  businessDayDistance,
   calculateQqqPe,
   weightedMedian
 };

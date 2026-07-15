@@ -40,4 +40,6 @@ test('validates state and latest date consistency', () => {
   assert.equal(valid.value, 12);
   assert.throws(() => validateModel({ id: 'vix', status: 'unknown', value: 1, asOf: null, history: [] }), /status/);
   assert.throws(() => validateModel({ id: 'vix', status: 'fresh', value: 1, asOf: '2024-01-02', history: [{ date: '2024-01-03', value: 1 }] }), /latest/);
+  assert.equal(validateModel({ id: 'pe', status: 'provisional', value: 24, asOf: null, history: [] }).status, 'provisional');
+  assert.equal(validateModel({ id: 'pe', status: 'quality_warning', value: 24, asOf: null, history: [] }).status, 'quality_warning');
 });

@@ -314,3 +314,44 @@ test('split-adjustment error is exposed as an outlier and high affected weight w
   assert.equal(result.status, 'quality_warning');
   assert.ok(result.qualityFlags.includes('outlier_weight_exceeds_10_percent'));
 });
+
+test('MVP quality policy distinguishes fresh, provisional and insufficient coverage', () => {
+  const dated = robustFixture.map(component => ({
+    ...component,
+    priceAsOf: '2026-01-02',
+    financialAsOf: '2025-12-31'
+  }));
+  const fresh = calculateQqqPe(dated, { statusPolicy: 'mvp', requireExplicitDates: true });
+  assert.equal(fresh.status, 'fresh');
+  assert.equal(fresh.qualityStatus, null);
+
+  const provisionalInput = dated.map((component, index) => index < 6 ? { ...component, ttmEps: null } : component);
+  const provisional = calculateQqqPe(provisionalInput, { statusPolicy: 'mvp', requireExplicitDates: true });
+  assert.equal(provisional.status, 'provisional');
+  assert.equal(provisional.financialCoverageWeight, 0.8);
+  assert.match(provisional.statusMessage, /初步估算/);
+  assert.equal(provisional.rawPE > 0, true);
+  assert.equal(provisional.robustPE > 0, true);
+
+  const insufficientInput = dated.map((component, index) => index < 10 ? { ...component, ttmEps: null } : component);
+  const insufficient = calculateQqqPe(insufficientInput, { statusPolicy: 'mvp', requireExplicitDates: true });
+  assert.equal(insufficient.status, 'insufficient_coverage');
+  assert.equal(insufficient.rawPE, null);
+  assert.ok(insufficient.financialCoverageWeight < 0.7);
+});
+
+test('MVP quality warning coexists with provisional and reports weight-price date gap', () => {
+  const dated = robustFixture.map(component => ({
+    ...component,
+    weightAsOf: '2026-01-02',
+    priceAsOf: '2026-01-20',
+    financialAsOf: '2025-12-31'
+  }));
+  dated[29] = { ...dated[29], weight: 10, ttmEps: 200 };
+  const result = calculateQqqPe(dated, { statusPolicy: 'mvp', requireExplicitDates: true });
+  assert.equal(result.status, 'provisional');
+  assert.equal(result.qualityStatus, 'quality_warning');
+  assert.ok(result.weightPriceBusinessDays > 5);
+  assert.ok(result.qualityFlags.includes('weight_price_date_gap_exceeds_5_business_days'));
+  assert.ok(result.qualityFlags.includes('quality_warning'));
+});
