@@ -1,6 +1,6 @@
 'use strict';
 
-const VALID_STATUSES = new Set(['loading', 'fresh', 'stale', 'error', 'demo', 'unavailable']);
+const VALID_STATUSES = new Set(['loading', 'fresh', 'stale', 'error', 'demo', 'unavailable', 'insufficient_coverage', 'manual']);
 const RANGE_DAYS = Object.freeze({ '1M': 31, '3M': 93, '6M': 186, '1Y': 366, '3Y': 1_096, '5Y': 1_827, '10Y': 3_653 });
 const RANGE_KEYS = Object.freeze(Object.keys(RANGE_DAYS));
 
