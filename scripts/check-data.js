@@ -115,7 +115,7 @@ indicators.forEach(indicator => {
 
 rangeLabels.forEach(label => assert(appSource.includes(`'${label}'`), `前端时间范围缺少：${label}`));
 rangeKeys.forEach(key => assert(appSource.includes(`'${key}'`), `前端时间范围键缺少：${key}`));
-assertExactList(providerRegistry.providers.map(provider => provider.providerId), ['cboe', 'ibkr'], 'Provider登记');
-providerRegistry.providers.forEach(provider => assert(provider.enabled === false, `${provider.providerId}在第一检查点必须保持禁用`));
+assertExactList(providerRegistry.providers.map(provider => provider.providerId), ['cboe', 'ibkr', 'twelve-data', 'alpha-vantage'], 'Provider登记');
+providerRegistry.providers.forEach(provider => assert(provider.enabled === false, `${provider.providerId}在自计算指标检查点必须保持禁用`));
 
 console.log('Data check passed: 9 complete stages, 8 complete options, 6 indicators, 7 ranges, and all references are valid.');

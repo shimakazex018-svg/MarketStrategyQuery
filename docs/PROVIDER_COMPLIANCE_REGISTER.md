@@ -26,6 +26,7 @@
 | `targetIndicators` | 计划支持的本站指标ID |
 | `technicalStatus` | 当前主机和适配器技术状态 |
 | `complianceStatus` | 上述固定合规状态 |
+| `selectionStatus` | 产品路线选择：`selected`、`deferred`或`not_selected_by_owner` |
 | `accountRequirement` | 账户条件，不记录账户ID |
 | `subscriptionRequirement` | 订阅或协议要求，不记录账单信息 |
 | `internalDisplayAllowed` | 是否已确认允许本人内部网页展示 |
@@ -44,12 +45,14 @@
 
 | Provider | 目标指标 | 技术状态 | 合规状态 | 启用 |
 | --- | --- | --- | --- | --- |
-| Cboe官方历史CSV | VIX、VXN | 适配器已实现，生产未访问 | `pending_written_confirmation` | 否 |
-| Interactive Brokers | VIX、VXN | 本机组件缺失，未登录、未请求数据 | `pending_written_confirmation` | 否 |
+| Cboe官方历史CSV | VIX、VXN | 适配器已实现，生产未访问 | `pending_written_confirmation` / `deferred` | 否 |
+| Interactive Brokers | VIX、VXN | 未测试，用户当前不选择 | `pending_written_confirmation` / `not_selected_by_owner` | 否 |
+| Twelve Data | QQQ价格候选 | 未测试 | `not_evaluated` / `deferred` | 否 |
+| Alpha Vantage | QQQ价格候选 | 未测试 | `not_evaluated` / `deferred` | 否 |
 
-IBKR尚未验证具体账户类型、订阅、VIX/VXN合约搜索、历史日线返回或数据模式。当前状态不允许创建正式适配器、不允许保存测试值，也不允许在页面显示IBKR来源数据。
+IBKR尚未验证具体账户类型、订阅、VIX/VXN合约搜索、历史日线返回或数据模式。用户因运行复杂度、人工认证、潜在订阅成本和券商账户耦合，决定当前阶段不采用IBKR；这不代表技术或许可失败。当前状态不允许创建正式适配器、不允许保存测试值，也不允许在页面显示IBKR来源数据。
 
-Twelve Data和Alpha Vantage尚未进入本瀑布阶段，不在本检查点做技术或许可评价。
+Twelve Data和Alpha Vantage均为`deferred`，本阶段不继续技术或许可评价，也不请求其接口。
 
 ## 复核原则
 
@@ -57,4 +60,3 @@ Twelve Data和Alpha Vantage尚未进入本瀑布阶段，不在本检查点做�
 - 任何批准都必须精确到目标指标、数据类型、展示范围、缓存和历史保存用途。
 - 批准证据不得包含账户ID、用户名、密码、验证码、Cookie或Token。
 - Provider被拒绝、许可过期或附加条件不再满足时，必须先禁用，再处理旧缓存；旧缓存不得继续展示。
-

@@ -12,11 +12,18 @@ const VALID_COMPLIANCE_STATUSES = new Set([
   'not_evaluated'
 ]);
 
+const VALID_SELECTION_STATUSES = new Set([
+  'selected',
+  'deferred',
+  'not_selected_by_owner'
+]);
+
 const REQUIRED_TEXT_FIELDS = [
   'providerId',
   'providerName',
   'technicalStatus',
   'complianceStatus',
+  'selectionStatus',
   'accountRequirement',
   'subscriptionRequirement',
   'cacheRetention',
@@ -51,6 +58,7 @@ function validateProvider(provider) {
   }
   if (!/^[a-z0-9-]+$/.test(provider.providerId)) throw new TypeError('provider.providerId is invalid');
   if (!VALID_COMPLIANCE_STATUSES.has(provider.complianceStatus)) throw new TypeError('provider.complianceStatus is invalid');
+  if (!VALID_SELECTION_STATUSES.has(provider.selectionStatus)) throw new TypeError('provider.selectionStatus is invalid');
   if (!Array.isArray(provider.targetIndicators) || !provider.targetIndicators.length) throw new TypeError('provider.targetIndicators must be a non-empty array');
   if (new Set(provider.targetIndicators).size !== provider.targetIndicators.length) throw new TypeError('provider.targetIndicators contains duplicates');
   for (const indicatorId of provider.targetIndicators) {
@@ -88,6 +96,7 @@ function providerById(registry, providerId) {
 
 module.exports = {
   VALID_COMPLIANCE_STATUSES,
+  VALID_SELECTION_STATUSES,
   isComplianceApproved,
   isProviderEffectivelyEnabled,
   loadProviderRegistry,

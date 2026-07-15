@@ -17,6 +17,7 @@ function provider(overrides = {}) {
     targetIndicators: ['vix'],
     technicalStatus: 'synthetic_test_only',
     complianceStatus: 'approved',
+    selectionStatus: 'selected',
     accountRequirement: 'none',
     subscriptionRequirement: 'none',
     internalDisplayAllowed: true,
@@ -34,11 +35,12 @@ function provider(overrides = {}) {
   };
 }
 
-test('production registry is valid and all first-checkpoint providers are disabled', () => {
+test('production registry is valid and all deferred providers are disabled', () => {
   const registry = loadProviderRegistry(path.join(__dirname, '..'));
-  assert.deepEqual(registry.providers.map(item => item.providerId), ['cboe', 'ibkr']);
+  assert.deepEqual(registry.providers.map(item => item.providerId), ['cboe', 'ibkr', 'twelve-data', 'alpha-vantage']);
   assert.equal(registry.providers.every(item => item.enabled === false), true);
   assert.equal(registry.providers.every(item => isProviderEffectivelyEnabled(item) === false), true);
+  assert.equal(registry.providers.find(item => item.providerId === 'ibkr').selectionStatus, 'not_selected_by_owner');
 });
 
 test('pending, rejected, unavailable and not-evaluated providers cannot be enabled', () => {
@@ -56,3 +58,7 @@ test('registry rejects duplicate provider ids', () => {
   assert.throws(() => validateProviderRegistry({ schemaVersion: 1, providers: [provider(), provider()] }), /duplicate providerId/);
 });
 
+test('provider selection status is explicit and validated', () => {
+  assert.throws(() => validateProvider(provider({ selectionStatus: 'unknown' })), /selectionStatus/);
+  assert.equal(validateProvider(provider({ selectionStatus: 'deferred', enabled: false })).selectionStatus, 'deferred');
+});
