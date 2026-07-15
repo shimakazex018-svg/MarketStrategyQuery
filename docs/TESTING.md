@@ -19,6 +19,7 @@ npm.cmd run check
 2. 产品数据契约检查：9阶段、8期权、6指标、7范围、固定顺序、必填字段和引用。
 3. Node 自动测试：缓存、结构校验、来源错误分类、限流、调度、许可边界和故障回退。
 4. Provider登记检查：固定状态枚举、必填字段、重复ID、附加条件和`enabled`硬门禁。
+5. 自计算指标检查：有界CSV、SEC字段/季度TTM、QQQ PE双算法、实现波动率、历史分位、风险偏好、CFTC候选合约和人工Forward PE边界。
 
 单独运行测试：
 
@@ -120,6 +121,21 @@ Invoke-RestMethod http://127.0.0.1:48101/api/market-data/status
 - 许可未确认时不读取或展示旧在线缓存。
 - 环境变量不能绕过`pending_written_confirmation`等未批准Provider状态。
 
+## 自计算指标检查点A
+
+自动测试还必须覆盖：
+
+- CSV大小/行数/字段、标题、UTF-8文本、权重总和、重复ticker/日期、日期乱序、缺失或异常价格；
+- SEC GAAP/IFRS字段回退、修订优先、重复事实、四季度TTM、10-K/10-Q防重复和显式拆股调整；
+- QQQ PE财务/价格覆盖率、币种不一致、亏损公司两版本、近零或负分母；
+- RV10/20/60最小样本、复权收盘价、日对数收益率、缺失交易日不插值；
+- RV20分位只报告1/3/5/10年实际可用范围，不补模拟历史；
+- `RISK-APPETITE-v1-EW`方向调整、等权贡献、缺失不补0和至少5/7覆盖门槛；
+- Forward PE的固定methodology、来源、录入时间、重复与过期；
+- CFTC目标合约缺失，以及单个派生计算失败不影响其他结果。
+
+检查点A测试只使用虚构fixture，不读取`runtime-data/`，不请求SEC、CFTC、IBKR、Twelve Data或Alpha Vantage。正式首页和既有六卡仍按v0.3页面回归标准检查。
+
 ## IBKR隔离探测边界
 
 - 当前主机没有TWS、IB Gateway或Client Portal Gateway，因此没有可执行的IBKR探测脚本。
@@ -145,4 +161,4 @@ Invoke-RestMethod http://127.0.0.1:48101/api/market-data/status
 
 ## 最近确认的基线
 
-2026-07-15，`feature/v0.4-compliant-market-data-waterfall` 第一检查点执行 `npm.cmd run check`：22项测试通过、0失败；9阶段、8期权、6指标、7范围和Provider合规门禁有效。没有UI变化，未重新生成截图。真实设备和ZeroTier跨设备验收仍待确认。
+2026-07-15，`feature/v0.4-compliant-market-data-waterfall` 自计算指标检查点A执行`npm.cmd run check`：42项测试通过、0失败；固定9阶段、8期权、6个现有首页指标、7范围和Provider合规门禁仍有效。没有UI变化，不重新生成截图。真实设备和ZeroTier跨设备验收仍待确认。

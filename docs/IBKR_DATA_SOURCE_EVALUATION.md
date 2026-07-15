@@ -1,5 +1,7 @@
 # IBKR个人内部市场数据预检查
 
+> 当前路线状态（2026-07-15）：用户已选择本阶段不采用IBKR，登记为`not_tested`、`pending_written_confirmation`、`not_selected_by_owner`、`enabled=false`。下文保留为历史预检查记录，不是当前实施计划，也不代表IBKR技术或许可失败。
+
 检查日期：2026-07-15（Asia/Hong_Kong）  
 检查范围：非敏感本机能力、IBKR官方API资料和本人内部使用许可边界。  
 结论性质：工程与合规预检查，不是法律意见。
@@ -109,4 +111,3 @@ Codex不得代替用户登录、读取密码管理器、保存2FA、接受协议
 - 市场数据订阅设置：<https://www.ibkrguides.com/clientportal/usersettings/marketdatasubscriptions.htm>
 - IBKR市场数据定价：<https://www.interactivebrokers.com/en/pricing/market-data-pricing.php>
 - IBKR市场数据协议样本：<https://investors.interactivebrokers.com/en/accounts/forms-and-disclosures-market-data.php>
-

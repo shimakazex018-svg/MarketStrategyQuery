@@ -2,64 +2,39 @@
 
 ## Last Completed Task
 
-完成v0.4第一检查点：固化个人内部市场数据使用边界，建立Provider合规硬门禁，并完成IBKR非敏感本机与官方资料预检查。由于本机缺少IBKR组件且许可需要书面确认，已按瀑布规则停止，未进入Twelve Data。
+完成v0.4“自计算市场指标系统”检查点A：路线调整、离线导入、SEC/PE计算、实现波动率与分位、等权风险偏好、CFTC候选仓位、Forward PE人工结构和边界测试。没有修改正式首页、没有全量抓取。
 
 ## Current State
 
 - 当前分支：`feature/v0.4-compliant-market-data-waterfall`。
-- v0.4起点与稳定基线：`main@e8290d89416cd2f7915ed648f15f08d9fa71117c`，标签`v0.3.0`。
-- Provider注册表当前包含Cboe与IBKR，两者均为`pending_written_confirmation`、`enabled=false`。
-- 本机未发现TWS、IB Gateway或Client Portal Gateway；没有登录、2FA、订阅、合约或行情请求。
-- VIX/VXN 当前 unavailable；QQQ组合TTM PE、Forward PE、恐慌贪婪指数、基金经理仓位指数当前 demo。
+- 稳定基线仍为`main@e8290d89416cd2f7915ed648f15f08d9fa71117c` / `v0.3.0`；当前分支未合并main。
+- IBKR：`not_tested`、`pending_written_confirmation`、`not_selected_by_owner`、`enabled=false`。
+- Twelve Data与Alpha Vantage：`not_evaluated`、`deferred`、`enabled=false`。
+- Cboe保持待书面确认和禁用；没有新的真实数据来源被启用。
+- 正式首页仍是v0.3六卡；新六项定义仅存在于规格和计算内核，等待检查点B。
 
-## Recently Changed Files
+## Implemented Boundaries
 
-- `docs/MARKET_DATA_USAGE_BOUNDARY.md`
-- `docs/PROVIDER_COMPLIANCE_REGISTER.md`
-- `config/market-data-providers.json`
-- `server/market-data/provider-compliance.js`
-- `docs/IBKR_DATA_SOURCE_EVALUATION.md`
-- `docs/IBKR_SUPPORT_INQUIRY.md`
-- 市场数据配置、服务门禁、测试和长期维护文档
+- CSV默认最大2 MiB、10,000行、单字段4,096字符；原始文件hash、导入时间、来源与行数进入manifest。
+- QQQ PE正式门槛：财务覆盖权重90%、价格覆盖权重95%、权重日期明确、币种一致、结果有限正数。
+- PE不选择默认算法或亏损版本；风险偏好只实现`RISK-APPETITE-v1-EW`，最终权重未审定。
+- SEC/CFTC本轮只有设计与虚构fixture；没有网络请求、真实缓存或运行数据提交。
 
 ## Validation
 
-- `npm.cmd run check`：22项通过、0失败；9阶段、8期权、6指标、7范围及引用有效。
-- 未批准Provider不能被旧环境变量启用；`approved_with_conditions`必须明确满足全部条件。
-- 没有UI变化，v0.3截图、manifest和contact sheet未修改。
-- 48101现有服务未终止、未重启、未修改。
+- 官方Node.js 24.18.0 LTS与npm 11.16.0已安装到用户本地程序目录并加入用户PATH。
+- `npm.cmd run check`通过42项测试、0失败；固定9阶段、8期权、6个现有指标、7范围不变。
+- 没有UI变化，不需要截图；v0.3视觉归档未修改。
 
-## Known Issues
+## Decisions Required Before Checkpoint B
 
-- IBKR内部显示、LAN/私人ZeroTier访问、本地缓存与历史保存：待书面确认。
-- 本机需要用户确认后安装官方TWS，并由用户本人完成登录和2FA。
-- VIX/VXN具体合约、历史日线、数据模式和账户订阅：未技术验证。
-- Cboe自动缓存与再展示许可、QQQ组合TTM PE正式来源和完整口径：待确认。
-- 真实 iPad/iPhone、目标局域网、ZeroTier 和 Windows 防火墙跨设备验收：待确认。
-- 金融策略内容仍需用户或合格专业人士最终审定。
+1. QQQ PE正式默认使用哪种算法，以及包含亏损还是排除亏损并重归一化；
+2. 风险偏好最终分项映射、权重和最低覆盖率；
+3. CFTC TFF选择`209742`、`209747`或明确组合方法；
+4. 用户提供QQQ成分/权重日期、QQQ及成分复权价格、Forward PE人工记录；
+5. 用户提供本地`SEC_USER_AGENT_APP`和`SEC_USER_AGENT_EMAIL`后，才允许SEC自动下载；
+6. 检查点B是否批准使用SEC nightly companyfacts bulk ZIP和CFTC官方PRE数据。
 
-## Risks
+## Next Task Boundary
 
-- 默认监听 `0.0.0.0` 且没有登录鉴权，只应在可信局域网或 ZeroTier 网络使用。
-- GitHub仓库当前为PUBLIC；建议改为private，但不得以private替代数据许可和运行数据隔离。
-- 当前实际运行数据目录 `runtime-data/` 已被忽略；未来可能出现的通用 `data/`、`cache/`、缩略图、HLS 和 SQLite 文件尚无预防性忽略规则。它们当前不存在，不应在本任务修改 `.gitignore`。
-- 测试夹具和演示数据不得描述为真实行情。
-
-## Recommended Next Task
-
-等待用户决定是否继续IBKR：
-
-1. 是否授权安装IBKR官方TWS；
-2. 用户本人是否能完成登录并保持Read-Only API；
-3. 是否先向IBKR客服发送`docs/IBKR_SUPPORT_INQUIRY.md`并等待书面答复；
-4. 是否确认现有账户类型和订阅状态，但不要提供账户ID或凭据。
-
-在上述事项完成前不要运行IBKR行情探测，也不要进入Twelve Data。
-
-## Notes for Next Codex Session
-
-1. 严格按`AGENTS.md`顺序读取长期文档，再读用途边界、Provider登记和IBKR评估。
-2. 开始前检查分支、HEAD、上游和工作树，保留用户未提交改动。
-3. 登录、2FA、协议接受和订阅购买只能由用户本人执行。
-4. 后续探测脚本只能写入`scripts/data-source-probes/ibkr/`，输出写入`runtime-data/`或TEMP。
-5. 不得读取账户、持仓、余额、订单或任何凭据；运行数据不得删除、移动或提交。
+在用户验收检查点A前停止。不得进入全量SEC/CFTC数据、正式首页六卡、图表、移动端或截图工作；不得恢复IBKR、Twelve Data或Alpha Vantage，也不得合并main。

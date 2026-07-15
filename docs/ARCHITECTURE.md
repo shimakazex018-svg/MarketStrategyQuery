@@ -37,6 +37,9 @@ config/
 server/
   data-sources/                 # 外部来源下载和解析适配器
   market-data/                  # 市场数据服务模块
+  imports/                      # 有界CSV、权重、价格和人工输入校验
+  derived-indicators/           # SEC/PE、RV、分位、风险偏好和COT纯计算内核
+templates/imports/              # 仅含虚构数据的导入模板
 scripts/                        # 数据检查、启动和防火墙辅助脚本
 tests/                          # Node 自动测试与 UI 评审夹具服务
 runtime-data/market-data/       # 运行缓存、请求状态和日志；不进入 Git
@@ -76,6 +79,13 @@ docs/                           # 长期上下文与专项设计文档
 - `service.js`：组合静态定义、缓存、许可决策、来源和状态回退。
 - `logger.js`：有界日志轮转，防止磁盘持续增长。
 - `http-api.js`：内部 API 路由、范围校验和可信网段手动刷新限制。
+- `server/imports/`：最大2 MiB、10,000行的CSV解析，校验ticker、日期、权重、价格、来源和人工Forward PE，并生成SHA-256导入manifest。
+- `server/derived-indicators/sec-facts.js`：可配置GAAP/IFRS字段优先级、修订去重、季度TTM和显式拆股口径调整。
+- `qqq-pe.js`：比较加权盈利收益率与覆盖样本总市值/总盈利两种方法，同时输出包含亏损与排除亏损版本；不选择默认值。
+- `realized-volatility.js` / `volatility-percentile.js`：基于复权收盘价计算RV10/20/60与1/3/5/10年实际可用分位。
+- `risk-appetite.js`：`RISK-APPETITE-v1-EW`七分项等权原型；缺失不补0，至少5/7可用。
+- `cot-positioning.js`：TFF候选合约字段计算；`209742`和`209747`仍未正式选定。
+- `runner.js`：逐指标捕获计算错误，避免单项失败中断其他派生结果。
 
 ## 主要 API
 
@@ -102,7 +112,19 @@ docs/                           # 长期上下文与专项设计文档
   -> indicator card / SVG history
 ```
 
-合法状态为 `loading/fresh/stale/error/demo/unavailable`。无数据使用 `null`，不使用 0 或未标记模拟点。单指标失败不影响其他指标、健康检查或静态策略页面。
+统一模型允许 `loading/fresh/stale/error/demo/unavailable/insufficient_coverage/manual`。后两种当前只供检查点A派生内核使用，正式首页要到检查点B才接入。无数据使用 `null`，不使用 0 或未标记模拟点。单指标失败不影响其他指标、健康检查或静态策略页面。
+
+## 自计算数据流（检查点A）
+
+```text
+虚构fixture / 用户未来本地CSV
+  -> 有界导入与SHA-256 manifest
+  -> 标准化记录
+  -> 独立派生计算
+  -> 覆盖率、算法版本、输入日期和诊断
+```
+
+检查点A没有把该流接入`server.js`或正式API，也没有下载SEC/CFTC数据。检查点B才会把`runtime-data/imports|normalized|derived`接入内部API；原始、标准化和派生文件必须分层且继续忽略。
 
 ## 缓存、调度与资源边界
 

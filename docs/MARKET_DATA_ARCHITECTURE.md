@@ -112,3 +112,9 @@ tests/
 5. 审计后无可用来源：显示 unavailable。
 
 任何情况下都不因外部来源失败而使 `/api/health` 或静态页面失效。
+
+## v0.4自计算扩展
+
+检查点A新增`server/imports/`与`server/derived-indicators/`，但尚未接入正式服务。详细数据层次、SEC/CFTC边界和资源限制见`SELF_CALCULATED_MARKET_DATA_DESIGN.md`，PE与风险偏好口径分别见对应规格文档。
+
+派生状态增加`insufficient_coverage`与`manual`。覆盖不足时值必须为`null`；人工Forward PE必须携带来源、口径、数据日期和录入时间。检查点A不改变现有首页六卡、调度器或外部请求路径。

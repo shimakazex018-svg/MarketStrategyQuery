@@ -1,5 +1,23 @@
 # 变更日志
 
+## 2026-07-15 - v0.4自计算市场指标检查点A
+
+### Changed
+- 当前阶段不继续IBKR、Twelve Data或Alpha Vantage；保留历史评估与合规硬门禁，全部保持禁用。
+- 定义检查点B目标六项为自计算QQQ组合TTM PE、Forward PE人工录入、QQQ RV20、RV20历史分位、自建风险偏好和Nasdaq期货机构仓位代理。
+- 统一状态扩展`insufficient_coverage`与`manual`；正式首页仍保持v0.3六卡，未改前端。
+
+### Added
+- 新增有界CSV解析、QQQ成分权重/价格/人工Forward PE导入和仅含虚构数据的模板。
+- 新增SEC GAAP/IFRS字段映射、修订去重、四季度TTM和显式拆股调整内核。
+- 新增QQQ PE加权盈利收益率与覆盖样本总市值/总盈利两种候选算法，均比较亏损处理版本。
+- 新增RV10/20/60、RV20历史分位、`RISK-APPETITE-v1-EW`、CFTC TFF候选仓位和逐指标故障隔离。
+
+### Validation
+- `npm.cmd run check`通过42项测试、0失败；固定9阶段、8期权、6个现有指标和7范围不变。
+- 测试覆盖CSV错误、SEC修订/重叠/GAAP/IFRS/拆股、覆盖不足、币种、亏损、近零/负PE、波动率样本、Forward PE过期、COT缺失和单项故障隔离。
+- 所有fixture均为虚构数据；未下载SEC bulk、未请求CFTC/IBKR/Twelve Data/Alpha Vantage，也未修改正式页面或截图。
+
 ## 2026-07-15 - v0.4第一检查点：个人用途与Provider合规门禁
 
 ### Added
