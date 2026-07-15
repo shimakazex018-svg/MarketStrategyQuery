@@ -1,5 +1,44 @@
 # 变更日志
 
+## 2026-07-14 - 建立 Codex 长期上下文管理体系
+
+### Changed
+- 规范八份长期文档的职责边界、读取顺序和任务结束更新规则。
+- 将项目上下文、架构、测试方法和交接状态更新到当前 v0.3 开发分支事实。
+- 将长期技术选择整理为带编号、原因、影响和状态的决策记录。
+- 将待办整理为 High、Medium、Low、Done、Deferred 和 Cancelled 状态。
+
+### Added
+- 在 `AGENTS.md` 中增加修改前后检查、Git、运行数据保护和文档维护规则。
+- 记录当前实际运行目录与未来通用缓存、媒体和 SQLite 忽略规则的待确认风险。
+
+### Files
+- `AGENTS.md`
+- `docs/PROJECT_CONTEXT.md`
+- `docs/ARCHITECTURE.md`
+- `docs/DECISIONS.md`
+- `docs/TODO.md`
+- `docs/TESTING.md`
+- `docs/CHANGELOG.md`
+- `docs/HANDOFF.md`
+
+### Validation
+- 检查八份文档齐全、边界与互相引用。
+- 执行 `git diff --check`、`git status` 和现有 `npm.cmd run check`。
+
+### Notes
+- 本次只修改文档；没有修改业务代码、配置、脚本、接口或运行数据。
+- 当前不存在数据库、缩略图或 HLS；未修改 `.gitignore`。
+
+## v0.3 在线市场数据接入候选 — 2026-07-14
+
+- 完成 VIX、VXN、QQQ组合TTM PE、Forward PE、恐慌贪婪指数和基金经理仓位候选来源审计；没有来源通过全部接入门槛，未伪造正式实时接入。
+- 新增原生 Node 市场数据服务、原子缓存、有界日志、请求预算、重试调度、手动刷新冷却和内部 API；默认不请求第三方。
+- 指标卡支持 loading、fresh、stale、error、demo、unavailable，显示数据日期、来源、更新时间、状态和实际可用时间范围；无数据不再使用 0。
+- 历史曲线由内部 API 数据驱动并限制为最多 240 点；单指标失败不影响其他指标和静态策略页面。
+- 增加 17 项自动测试及只读 UI 状态验收夹具；夹具明确标注为非真实行情。
+- 未增加框架、第三方依赖、数据库、自动阶段判断、IBKR、登录或交易功能。
+
 ## v0.2 信息架构与核心页面可读性 — 2026-07-14
 
 - 阶段详情按概览、仓位、执行动作、资产逻辑、识别条件、期权和风险重排；相邻阶段区别不再显示。

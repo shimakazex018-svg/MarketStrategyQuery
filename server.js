@@ -4,6 +4,14 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const { URL } = require('url');
+const packageJson = require('./package.json');
+const { CacheStore } = require('./server/market-data/cache-store');
+const { loadMarketDataConfig } = require('./server/market-data/config');
+const { handleMarketDataApi, sendJson } = require('./server/market-data/http-api');
+const { BoundedLogger } = require('./server/market-data/logger');
+const { RequestLimiter } = require('./server/market-data/request-limiter');
+const { MarketDataScheduler } = require('./server/market-data/scheduler');
+const { MarketDataService } = require('./server/market-data/service');
 
 const HOST = process.env.HOST || '0.0.0.0';
 const PORT = Number(process.env.PORT || 48101);
@@ -63,14 +71,16 @@ function sendFile(res, filePath) {
   });
 }
 
-const server = http.createServer((req, res) => {
-  try {
+function createHttpServer(marketDataService) {
+  return http.createServer(async (req, res) => {
+    try {
     const requestUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
     if (requestUrl.pathname === '/api/health') {
-      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-      res.end(JSON.stringify({ ok: true, version: '0.1.0' }));
+      sendJson(res, 200, { ok: true, version: packageJson.version, marketData: 'ready' });
       return;
     }
+
+    if (await handleMarketDataApi(req, res, requestUrl, marketDataService)) return;
 
     const filePath = safeResolve(requestUrl.pathname);
     if (!filePath) {
@@ -79,15 +89,48 @@ const server = http.createServer((req, res) => {
       return;
     }
     sendFile(res, filePath);
-  } catch (error) {
-    console.error(error);
-    res.writeHead(500, { 'Content-Type': 'text/plain; charset=utf-8' });
-    res.end('Server error');
-  }
-});
+    } catch (error) {
+      console.error(error);
+      if (!res.headersSent) sendJson(res, 500, { error: 'server-error' });
+      else res.end();
+    }
+  });
+}
 
-server.listen(PORT, HOST, () => {
-  console.log(`Market Cycle Strategy v0.1 running on http://${HOST}:${PORT}`);
-  console.log(`LAN example: http://192.168.31.153:${PORT}`);
-  console.log(`ZeroTier: http://<zerotier-ip>:${PORT}`);
-});
+async function createMarketDataService(rootDir = __dirname, options = {}) {
+  const config = options.config || loadMarketDataConfig(rootDir);
+  const cacheStore = options.cacheStore || new CacheStore(config.runtimeDir);
+  const limiter = options.limiter || new RequestLimiter(cacheStore, config, options.now);
+  const logger = options.logger || new BoundedLogger(cacheStore.logsDir);
+  const marketDataService = new MarketDataService({
+    rootDir, config, cacheStore, limiter, logger,
+    fetchImpl: options.fetchImpl,
+    now: options.now
+  });
+  await marketDataService.init({ startupRefresh: options.startupRefresh !== false });
+  return marketDataService;
+}
+
+async function start() {
+  const marketDataService = await createMarketDataService();
+  const scheduler = new MarketDataScheduler(marketDataService, { timezone: marketDataService.config.timezone });
+  const server = createHttpServer(marketDataService);
+  scheduler.start();
+
+  server.on('close', () => scheduler.stop());
+  server.listen(PORT, HOST, () => {
+    console.log(`Market Cycle Strategy v${packageJson.version} running on http://${HOST}:${PORT}`);
+    console.log(`LAN example: http://192.168.31.153:${PORT}`);
+    console.log(`ZeroTier: http://<zerotier-ip>:${PORT}`);
+  });
+  return { server, marketDataService, scheduler };
+}
+
+if (require.main === module) {
+  start().catch(error => {
+    console.error('Unable to start server:', error);
+    process.exitCode = 1;
+  });
+}
+
+module.exports = { createHttpServer, createMarketDataService, safeResolve, sendFile, start };

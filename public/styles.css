@@ -344,7 +344,7 @@ button { color: inherit; }
 .metric-card {
   position: relative;
   overflow: hidden;
-  min-height: 330px;
+  min-height: 500px;
   padding: 22px;
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
@@ -354,6 +354,7 @@ button { color: inherit; }
 }
 .metric-card:hover { transform: translateY(-5px); box-shadow: var(--shadow-hover); border-color: var(--line-strong); }
 .metric-top { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; }
+.metric-top > div:first-child { min-width: 0; }
 .metric-title-row { display: flex; align-items: center; gap: 8px; }
 .metric-name { margin: 0; font-size: 19px; letter-spacing: -.02em; }
 .metric-info-button {
@@ -410,6 +411,7 @@ body.dialog-open { overflow: hidden; }
 .metric-value { text-align: right; }
 .metric-value strong { display: block; font-size: 29px; line-height: 1; letter-spacing: -.04em; }
 .metric-value span { color: var(--text-soft); font-size: 12px; }
+.metric-value-skeleton { display: inline-block; width: 76px; height: 29px; border-radius: 8px; background: linear-gradient(90deg, var(--surface-muted), var(--line), var(--surface-muted)); background-size: 220% 100%; animation: metric-loading 1.2s linear infinite; }
 .metric-status {
   display: inline-flex;
   align-items: center;
@@ -422,10 +424,18 @@ body.dialog-open { overflow: hidden; }
   font-size: 12px;
   font-weight: 700;
 }
+.metric-status-row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; min-height: 38px; margin-top: 10px; color: var(--text-soft); font-size: 11px; }
+.metric-status-row .metric-status { margin-top: 0; }
+.metric-status[data-status="fresh"] { background: var(--positive-soft); color: var(--positive); }
+.metric-status[data-status="stale"] { background: var(--warning-soft); color: var(--warning); }
+.metric-status[data-status="error"] { background: var(--danger-soft); color: var(--danger); }
+.metric-status[data-status="demo"], .metric-status[data-status="loading"] { background: var(--accent-soft); color: var(--accent-strong); }
+.metric-status[data-status="unavailable"] { border: 1px solid var(--line); background: var(--surface-muted); color: var(--text-soft); }
 .metric-chart { display: block; width: 100%; height: 126px; margin-top: 18px; overflow: visible; }
 .metric-chart .area { fill: url(#metricGradient); opacity: .28; }
 .metric-chart .line { fill: none; stroke: var(--accent); stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
 .metric-chart .baseline { stroke: var(--line-strong); stroke-dasharray: 4 6; }
+.metric-chart-empty { display: grid; place-items: center; width: 100%; height: 126px; margin-top: 18px; border: 1px dashed var(--line-strong); border-radius: 14px; background: var(--surface-muted); color: var(--text-soft); font-size: 12px; }
 .range-tabs { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 16px; }
 .range-tab {
   min-width: 40px;
@@ -439,7 +449,16 @@ body.dialog-open { overflow: hidden; }
   cursor: pointer;
 }
 .range-tab:hover, .range-tab.active { background: var(--surface-muted); color: var(--text); }
+.range-tab:disabled { opacity: .38; cursor: not-allowed; }
+.range-tab:disabled:hover { background: transparent; color: var(--text-soft); }
+.metric-data-meta { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 7px 14px; margin: 14px 0 0; padding: 12px; border-radius: 12px; background: var(--surface-muted); }
+.metric-data-meta div { min-width: 0; }
+.metric-data-meta dt { color: var(--text-soft); font-size: 10px; font-weight: 750; letter-spacing: .05em; }
+.metric-data-meta dd { margin: 3px 0 0; overflow-wrap: anywhere; color: var(--text); font-size: 11px; }
+.metric-data-meta .metric-stale-note { grid-column: 1 / -1; }
 .metric-explain { margin: 14px 0 0; color: var(--text-soft); font-size: 13px; }
+
+@keyframes metric-loading { to { background-position: -220% 0; } }
 
 .notice {
   display: flex;
@@ -797,7 +816,7 @@ body.dialog-open { overflow: hidden; }
   .cycle-inspector { align-items: flex-start; flex-direction: column; min-height: 154px; padding: 14px 16px; }
   .cycle-inspector .button { width: 100%; }
   .metric-grid, .content-grid, .option-grid, .asset-rule-grid, .scenario-grid, .option-leg-grid, .option-planning-grid, .management-grid, .option-risk-grid, .performance-grid { grid-template-columns: 1fr; }
-  .metric-card { min-height: 310px; }
+  .metric-card { min-height: 500px; }
   .metric-info-button { width: 44px; height: 44px; }
   .dialog-backdrop { align-items: end; padding: 0; }
   .indicator-dialog { width: 100%; max-height: min(86vh, 760px); border-radius: 22px 22px 0 0; }
@@ -808,6 +827,7 @@ body.dialog-open { overflow: hidden; }
   .asset-detail-panel dl, .source-grid { grid-template-columns: 1fr; }
   .allocation-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .indicator-row { grid-template-columns: 1fr; }
+  .metric-data-meta { grid-template-columns: 1fr; }
   .card-heading-row, .option-header { align-items: flex-start; flex-direction: column; }
   .option-badges { justify-content: flex-start; }
   .variable-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }

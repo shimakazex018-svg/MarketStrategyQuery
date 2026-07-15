@@ -1,8 +1,8 @@
 [
   {
     "id":"pe",
-    "name":"PE",
-    "subtitle":"纳斯达克100静态市盈率（演示）",
+    "name":"QQQ组合TTM PE",
+    "subtitle":"Invesco QQQ持仓组合估值（演示）",
     "value":31.8,
     "unit":"x",
     "percentile":78,
@@ -13,12 +13,15 @@
     "marketRelation":"高位震荡或加速上涨阶段可能伴随较高估值；下跌阶段的估值变化同时取决于价格和已实现盈利。",
     "limitations":"盈利周期、指数成分变化和统计口径会影响跨期可比性，不能单独据此判断阶段。",
     "meaning":"价格与过去盈利的比值，用于观察当前估值水平。",
-    "limits":"盈利周期和指数成分变化会影响可比性。"
+    "limits":"盈利周期和基金持仓变化会影响可比性。",
+    "dataMode":"demo",
+    "demoSource":"站点静态演示场景",
+    "demoMessage":"演示数据 / Invesco正式机器来源暂不可用"
   },
   {
     "id":"forward-pe",
-    "name":"前瞻PE",
-    "subtitle":"基于未来盈利预期（演示）",
+    "name":"Forward PE",
+    "subtitle":"预测口径待审定（演示）",
     "value":27.1,
     "unit":"x",
     "percentile":74,
@@ -29,12 +32,15 @@
     "marketRelation":"上涨后期可能同时出现较高价格和乐观盈利预期；下跌阶段若预期下修，前瞻PE未必随价格同步下降。",
     "limitations":"分析师预测会持续修订，数据口径和覆盖范围可能变化，不能单独确认趋势反转。",
     "meaning":"价格与未来十二个月预期盈利的比值。",
-    "limits":"分析师盈利预测会变化，历史数据口径也可能不完全一致。"
+    "limits":"分析师盈利预测会变化，FTM与下一财年口径不能混用。",
+    "dataMode":"demo",
+    "demoSource":"站点静态演示场景",
+    "demoMessage":"演示数据 / Forward口径与正式来源待审定"
   },
   {
     "id":"vix",
     "name":"VIX",
-    "subtitle":"标普500隐含波动率（演示）",
+    "subtitle":"标普500隐含波动率 · 官方来源许可待确认",
     "value":16.4,
     "unit":"",
     "percentile":34,
@@ -45,12 +51,14 @@
     "marketRelation":"从震荡下跌转向恐慌暴跌时常伴随VIX快速抬升，但波动率回落本身不能证明右侧反转成立。",
     "limitations":"主要对应标普500，不能完全代表QQQ或半导体风险，也会受期权供需和事件影响。",
     "meaning":"由标普500期权价格推导的约30天预期波动率。",
-    "limits":"主要反映标普500，不完全等同于QQQ和半导体风险。"
+    "limits":"主要反映标普500，不完全等同于QQQ和半导体风险。",
+    "dataMode":"unavailable",
+    "unavailableMessage":"Cboe数据存储与再展示许可待确认"
   },
   {
     "id":"vxn",
     "name":"VXN",
-    "subtitle":"纳斯达克100隐含波动率（演示）",
+    "subtitle":"纳斯达克100隐含波动率 · 官方来源许可待确认",
     "value":19.7,
     "unit":"",
     "percentile":39,
@@ -61,7 +69,9 @@
     "marketRelation":"VXN相对VIX更快上升时，可辅助识别科技风险正在扩散；回落仍需结合价格结构和广度确认阶段改善。",
     "limitations":"期权供需、财报与宏观事件会造成偏离，单一时点不能代表完整趋势。",
     "meaning":"由纳斯达克100期权价格推导的约30天预期波动率。",
-    "limits":"期权供需和事件风险会使短期数值明显偏离长期均值。"
+    "limits":"期权供需和事件风险会使短期数值明显偏离长期均值。",
+    "dataMode":"unavailable",
+    "unavailableMessage":"Cboe数据存储与再展示许可待确认"
   },
   {
     "id":"fear-greed",
@@ -77,7 +87,10 @@
     "marketRelation":"加速上涨阶段可能接近贪婪极端，恐慌暴跌阶段可能接近恐慌极端，但极值不能独立标记周期拐点。",
     "limitations":"不同提供方的构成、权重和发布时间不同，复合分数也可能掩盖内部指标分化。",
     "meaning":"将动量、波动、市场广度等情绪信息合成0至100分。",
-    "limits":"不同数据提供方的构成和权重可能不同。"
+    "limits":"不同数据提供方的构成和权重可能不同。",
+    "dataMode":"demo",
+    "demoSource":"站点静态演示场景",
+    "demoMessage":"演示数据 / 无通过门槛的正式机器来源"
   },
   {
     "id":"manager-exposure",
@@ -93,6 +106,9 @@
     "marketRelation":"上涨后期的高仓位可提示增量买盘空间收窄，下跌阶段的快速降仓会加大波动，但都需要价格和广度确认。",
     "limitations":"样本代表性、调查周期和发布时间存在滞后，不能等同于全部机构持仓。",
     "meaning":"用标准化指数表达主动基金经理的股票风险敞口。",
-    "limits":"样本、统计周期和数据发布时间存在滞后。"
+    "limits":"样本、统计周期和数据发布时间存在滞后。",
+    "dataMode":"demo",
+    "demoSource":"站点静态演示场景",
+    "demoMessage":"演示数据 / NAAIM候选来源未提供公开机器接口"
   }
 ]

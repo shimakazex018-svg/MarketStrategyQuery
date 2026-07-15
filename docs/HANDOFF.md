@@ -1,45 +1,63 @@
-# 项目交接
+# HANDOFF
 
-## 当前状态
+## Last Completed Task
 
-- 版本：v0.2 信息架构评审候选 / `package.json` 仍为 0.1.0（未发布、未合并）。
-- 形态：可本地运行、内容结构完整且完成核心页面可读性优化的静态策略网站。
-- 技术栈：原生 HTML/CSS/JavaScript、JSON、Node.js 原生 HTTP。
-- 默认地址：`0.0.0.0:48101`；从本机使用 `http://127.0.0.1:48101`。
-- 持久化与外部服务：无。
-- Git：稳定基线 `main@c5c02fce4329793609dc175c5b5f3104ab6ffc14`；当前开发分支 `feature/v0.2-information-architecture`，不得在用户确认前合并。
+建立并规范 Codex 长期上下文管理文档体系。八份文档现在分别承担工作规则、当前事实、当前架构、长期决策、任务状态、当前验证、历史记录和最新交接职责。
 
-## 最近验证
+## Current State
 
-日期：2026-07-14。
+- 当前分支：`feature/v0.3-live-market-data`。
+- 当前代码 HEAD：`1cb21a654baedcc4d1c5ccefe90d8fa043d9a110`。
+- 稳定基线：`main@160345eeeefca763b05233fdae76a43025a85516`，标签 `v0.2.0`。
+- v0.3 数据源审计、市场数据基础设施、六状态 UI、17 项自动测试和评审截图已完成并推送开发分支，尚未合并 main。
+- 本次只修改八份 Markdown；业务代码、配置、脚本、接口和运行数据未修改。
+- VIX/VXN 当前 unavailable；QQQ组合TTM PE、Forward PE、恐慌贪婪指数、基金经理仓位指数当前 demo。
 
-已完成语法、完整数据契约、HTTP、真实浏览器路由与交互、标签和折叠键盘操作、期权浏览器历史、指标弹窗焦点返回、深浅主题及四种视口长内容溢出检查。实际 iPad/iPhone 设备和目标 ZeroTier 网络仍需用户验收，详见 `TESTING.md`。
+## Recently Changed Files
 
-## 已知问题
+- `AGENTS.md`
+- `docs/PROJECT_CONTEXT.md`
+- `docs/ARCHITECTURE.md`
+- `docs/DECISIONS.md`
+- `docs/TODO.md`
+- `docs/TESTING.md`
+- `docs/CHANGELOG.md`
+- `docs/HANDOFF.md`
 
-- 阶段和期权字段已覆盖冻结内容范围；具体仓位边界、期权参数逻辑和金融文案仍需用户或合格专业人士审定。
-- 当前系统命令行环境可能没有 Node/npm；部署机需要安装 Node.js 18+。Codex 本轮使用随附 Node 进行等价检查。
-- 主题只跟随系统初始偏好并在当前页面会话切换，刷新后不持久化；v0.1 未要求保存偏好。
-- 识别图片字段已预留但全部为 `null`；周期波形是手工静态示意，不代表真实QQQ行情。
+## Validation
 
-## 下一步
+- 八份目标文档存在且边界清晰。
+- `git diff --check`：通过。
+- `npm.cmd run check`：17 项通过、0 失败；9阶段、8期权、6指标、7范围及引用有效。
+- Git 差异应只包含上述八份文档。
 
-1. 用户查看 `previews/review-v0.2-information-architecture/` 与本地网站，确认信息层级后再决定是否合并。
-2. 后续独立批次再处理阶段对比页，不与本分支混合。
-3. 逐阶段审定金融内容，并在真实设备及目标局域网/ZeroTier 环境执行人工验收。
+## Known Issues
 
-## 重要文件
+- Cboe 自动缓存与再展示许可：待确认。
+- QQQ组合TTM PE 正式机器来源和完整口径：待确认。
+- 真实 iPad/iPhone、目标局域网、ZeroTier 和 Windows 防火墙跨设备验收：待确认。
+- 金融策略内容仍需用户或合格专业人士最终审定。
 
-- 产品边界：`AGENTS.md`、`PROJECT_CONTEXT.md`、`DECISIONS.md`。
-- 业务数据：`public/data/stages.json`、`options.json`、`indicators.json`；静态周期形态：`cycle-shape.json`。
-- 页面逻辑与样式：`public/app.js`、`public/styles.css`。
-- 服务：`server.js`。
-- 验证：`scripts/check-data.js`、`TESTING.md`。
-- 未完成项：`TODO.md`。
+## Risks
 
-## 部署注意事项
+- 默认监听 `0.0.0.0` 且没有登录鉴权，只应在可信局域网或 ZeroTier 网络使用。
+- 当前实际运行数据目录 `runtime-data/` 已被忽略；未来可能出现的通用 `data/`、`cache/`、缩略图、HLS 和 SQLite 文件尚无预防性忽略规则。它们当前不存在，不应在本任务修改 `.gitignore`。
+- 测试夹具和演示数据不得描述为真实行情。
 
-- 启动前确认 48101 未被未知进程占用。
-- 保持 `0.0.0.0` 监听以支持局域网和 ZeroTier，但不要配置公网穿透。
-- Windows 防火墙只开放 TCP 48101 的 Private 入站规则，不关闭防火墙。
-- 该版本没有登录鉴权，必须限定在可信局域网或 ZeroTier 网络中使用。
+## Recommended Next Task
+
+先由用户审阅本次文档体系和 v0.3 评审截图，再决定是否：
+
+1. 提交本次文档改动；
+2. 合并 `feature/v0.3-live-market-data` 到 `main`；
+3. 继续处理外部数据许可或金融内容审定。
+
+未经用户明确批准，不要自行合并 main、创建 `v0.3.0` 标签或启用真实数据抓取。
+
+## Notes for Next Codex Session
+
+1. 严格按 `AGENTS.md` 的顺序读取七份上下文文档。
+2. 再读取新任务涉及的源码和专项市场数据文档，不能只凭本交接文件修改代码。
+3. 开始前检查分支、HEAD、上游和工作树，保留用户未提交改动。
+4. 若本次文档改动仍未提交，不要覆盖；先向用户确认提交要求。
+5. 运行数据不得删除、移动或提交。
