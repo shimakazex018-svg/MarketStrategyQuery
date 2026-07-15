@@ -27,6 +27,48 @@ function compatibleCurrency(component) {
   return !component.financialCurrency || !component.priceCurrency || component.financialCurrency === component.priceCurrency;
 }
 
+function dateSummary(components, field, fallbackField, { requireExplicit = false } = {}) {
+  const explicitValues = components.map(component => component[field]).filter(Boolean);
+  const values = components.map(component => component[field] || (!requireExplicit ? component[fallbackField] : null)).filter(Boolean);
+  const unique = [...new Set(values)].sort();
+  return {
+    value: unique.length === 1 && values.length === components.length ? unique[0] : null,
+    values: unique,
+    complete: values.length === components.length,
+    consistent: unique.length === 1 && values.length === components.length,
+    provenance: explicitValues.length === components.length ? 'explicit' : requireExplicit ? 'missing' : 'legacy_fallback'
+  };
+}
+
+function denominatorStability(value, epsilon) {
+  let classification = 'unavailable';
+  if (Number.isFinite(value)) {
+    if (Math.abs(value) <= epsilon) classification = 'near_zero';
+    else if (value < 0) classification = 'negative';
+    else classification = 'stable_positive';
+  }
+  return {
+    stable: classification === 'stable_positive',
+    classification,
+    denominator: Number.isFinite(value) ? value : null,
+    absoluteDenominator: Number.isFinite(value) ? Math.abs(value) : null,
+    epsilon
+  };
+}
+
+function epsNetIncomeDiagnostics(components, tolerance = 1e-6) {
+  const affectedConstituents = [];
+  for (const component of components) {
+    if (!finiteNumeric(component.ttmEps) || !finiteNumeric(component.ttmNetIncome) || !positive(component.dilutedShares)) continue;
+    const reportedEps = Number(component.ttmEps);
+    const impliedEps = Number(component.ttmNetIncome) / Number(component.dilutedShares);
+    const scale = Math.max(Math.abs(reportedEps), Math.abs(impliedEps), 1e-12);
+    const relativeDifference = Math.abs(reportedEps - impliedEps) / scale;
+    if (relativeDifference > tolerance) affectedConstituents.push({ ticker: component.ticker, reportedEps, impliedEps, relativeDifference });
+  }
+  return { consistent: affectedConstituents.length === 0, tolerance, affectedConstituents };
+}
+
 function hasNonFiniteFinancialInput(component) {
   return [component.price, component.ttmEps].some(value => value !== null && value !== undefined && value !== '' && !Number.isFinite(Number(value)));
 }
@@ -103,6 +145,8 @@ function calculateQqqPe(components, options = {}) {
   const weightDates = new Set(components.map(component => component.weightAsOf).filter(Boolean));
   const weightDateValid = weightDates.size === 1 && components.every(component => component.weightAsOf);
   const eligible = components.filter(component => positive(component.price) && finiteNumeric(component.ttmEps) && compatibleCurrency(component));
+  const priceDates = dateSummary(eligible, 'priceAsOf', 'weightAsOf', { requireExplicit: options.requireExplicitDates === true });
+  const financialDates = dateSummary(eligible, 'financialAsOf', 'weightAsOf', { requireExplicit: options.requireExplicitDates === true });
 
   const contributions = eligible.map(component => {
     const normalizedWeight = Number(component.weight) / totalWeight;
@@ -124,6 +168,8 @@ function calculateQqqPe(components, options = {}) {
   if (financialCoverage.coverageRatio < thresholds.financialCoverage) addFlag('financial_coverage_below_threshold');
   if (priceCoverage.coverageRatio < thresholds.priceCoverage) addFlag('price_coverage_below_threshold');
   if (!weightDateValid) addFlag('weight_date_invalid');
+  if (!priceDates.consistent) addFlag('price_date_invalid');
+  if (!financialDates.complete) addFlag('financial_date_missing');
   if (currencyMismatches.length) addFlag('currency_mismatch');
   if (nonFiniteTickers.length) addFlag('non_finite_input');
   if (rawEarningsYield !== null && Math.abs(rawEarningsYield) <= thresholds.denominatorEpsilon) addFlag('unstable_denominator');
@@ -134,6 +180,8 @@ function calculateQqqPe(components, options = {}) {
   const baseQualityEligible = financialCoverage.coverageRatio >= thresholds.financialCoverage
     && priceCoverage.coverageRatio >= thresholds.priceCoverage
     && weightDateValid
+    && priceDates.consistent
+    && financialDates.complete
     && currencyMismatches.length === 0
     && formalCountEligible
     && rawEarningsYield !== null;
@@ -144,6 +192,7 @@ function calculateQqqPe(components, options = {}) {
   let weightedMAD = null;
   let lowerBound = null;
   let upperBound = null;
+  let robustScale = null;
   let robustEarningsYield = null;
   let robustPE = null;
   let affectedConstituents = [];
@@ -157,7 +206,7 @@ function calculateQqqPe(components, options = {}) {
       deviation: Math.abs((Number(component.ttmEps) / Number(component.price)) - weightedMedianEarningsYield)
     }));
     weightedMAD = weightedMedian(deviations, component => component.deviation);
-    const robustScale = weightedMAD === null ? null : 1.4826 * weightedMAD;
+    robustScale = weightedMAD === null ? null : 1.4826 * weightedMAD;
     lowerBound = robustScale === null ? null : weightedMedianEarningsYield - thresholds.robustMadMultiplier * robustScale;
     upperBound = robustScale === null ? null : weightedMedianEarningsYield + thresholds.robustMadMultiplier * robustScale;
     robustMethodAvailable = Number.isFinite(weightedMedianEarningsYield) && Number.isFinite(weightedMAD) && weightedMAD > 0
@@ -198,6 +247,7 @@ function calculateQqqPe(components, options = {}) {
     weightedMAD = Number.isFinite(weightedMAD) ? weightedMAD : null;
     lowerBound = Number.isFinite(lowerBound) ? lowerBound : null;
     upperBound = Number.isFinite(upperBound) ? upperBound : null;
+    robustScale = Number.isFinite(robustScale) ? robustScale : null;
     robustEarningsYield = null;
     robustPE = null;
     affectedConstituents = [];
@@ -223,6 +273,23 @@ function calculateQqqPe(components, options = {}) {
 
   const aggregateIncludingLosses = peFromAggregate(components, { excludeLosses: false, epsilon: thresholds.denominatorEpsilon });
   const aggregateExcludingLosses = peFromAggregate(components, { excludeLosses: true, epsilon: thresholds.denominatorEpsilon });
+  const aggregateComponents = components.filter(component => positive(component.price) && positive(component.dilutedShares)
+    && finiteNumeric(component.ttmNetIncome) && compatibleCurrency(component));
+  const sharePriceDateAlignment = aggregateComponents.map(component => ({
+    ticker: component.ticker,
+    priceAsOf: component.priceAsOf || null,
+    dilutedSharesAsOf: component.dilutedSharesAsOf || component.financialAsOf || null,
+    aligned: Boolean(component.priceAsOf && (component.dilutedSharesAsOf || component.financialAsOf)
+      && component.priceAsOf === (component.dilutedSharesAsOf || component.financialAsOf))
+  }));
+  const aggregateDiagnostics = {
+    epsNetIncome: epsNetIncomeDiagnostics(aggregateComponents),
+    sharePriceDatesAligned: sharePriceDateAlignment.length > 0 && sharePriceDateAlignment.every(component => component.aligned),
+    sharePriceDateAlignment
+  };
+  const rawRobustDifference = rawPE !== null && robustPE !== null
+    ? { signed: robustPE - rawPE, absolute: Math.abs(robustPE - rawPE) }
+    : null;
 
   return {
     status,
@@ -235,15 +302,22 @@ function calculateQqqPe(components, options = {}) {
     excludeLossDiagnosticPE: excludeLoss.value,
     rawEarningsYield,
     robustEarningsYield,
+    denominatorStability: {
+      raw: denominatorStability(rawEarningsYield, thresholds.denominatorEpsilon),
+      robust: denominatorStability(robustEarningsYield, thresholds.denominatorEpsilon)
+    },
     algorithmRaw: RAW_ALGORITHM_VERSION,
     algorithmRobust: ROBUST_ALGORITHM_VERSION,
     algorithmVersion: RAW_ALGORITHM_VERSION,
     weightedMedianEarningsYield,
+    weightedMedian: weightedMedianEarningsYield,
     weightedMAD,
+    robustScale,
     lowerBound,
     upperBound,
     outlierCount: affectedConstituents.length,
     outlierWeight,
+    rawRobustDifference,
     lossMakingCount: lossMaking.length,
     lossMakingWeight,
     financialCoverageWeight: financialCoverage.coverageRatio,
@@ -252,6 +326,16 @@ function calculateQqqPe(components, options = {}) {
     qualityFlags,
     dataNature: options.dataNature || 'synthetic_fixture',
     weightAsOf: weightDateValid ? [...weightDates][0] : null,
+    dataDate: priceDates.value,
+    dataDates: {
+      weightAsOf: weightDateValid ? [...weightDates][0] : null,
+      priceAsOf: priceDates.value,
+      priceDateValues: priceDates.values,
+      financialAsOfStart: financialDates.values[0] || null,
+      financialAsOfEnd: financialDates.values.at(-1) || null,
+      priceDateProvenance: priceDates.provenance,
+      financialDateProvenance: financialDates.provenance
+    },
     validComponentCount: eligible.length,
     componentCount: components.length,
     currencyMismatches,
@@ -278,6 +362,8 @@ function calculateQqqPe(components, options = {}) {
         eligible: methodBFinancialCoverage.coverageRatio >= thresholds.financialCoverage
           && priceCoverage.coverageRatio >= thresholds.priceCoverage && weightDateValid && currencyMismatches.length === 0,
         diagnosticOnly: true,
+        calculationObject: 'covered_companies_full_market_cap_to_full_net_income_not_qqq_weighted_portfolio',
+        diagnostics: aggregateDiagnostics,
         includingLosses: aggregateIncludingLosses,
         excludingLosses: aggregateExcludingLosses
       }

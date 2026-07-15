@@ -101,6 +101,14 @@ test('QQQ PE raw calculation preserves losses and keeps exclusion as a diagnosti
   assert.notEqual(result.methods.weightedEarningsYield.includingLosses.value, result.methods.aggregateMarketCapToEarnings.includingLosses.value);
   assert.equal(result.defaultMethod, null);
   assert.equal(result.value, null);
+  assert.equal(result.algorithmRaw, 'PE-Q1-RAW-v1');
+  assert.equal(result.denominatorStability.raw.classification, 'stable_positive');
+  assert.equal(result.dataDate, '2026-01-02');
+  assert.equal(result.dataDates.priceDateProvenance, 'legacy_fallback');
+  assert.equal(result.methods.aggregateMarketCapToEarnings.diagnosticOnly, true);
+  assert.match(result.methods.aggregateMarketCapToEarnings.calculationObject, /full_market_cap/);
+  assert.equal(result.methods.aggregateMarketCapToEarnings.diagnostics.epsNetIncome.consistent, true);
+  assert.equal(result.methods.aggregateMarketCapToEarnings.diagnostics.sharePriceDatesAligned, false);
 });
 
 test('QQQ PE refuses low coverage, currency mismatch, near-zero and negative denominators', () => {
@@ -131,6 +139,8 @@ test('robust PE matches raw PE when the 30-component fixture has no outliers', (
   assert.equal(result.lossMakingCount, 3);
   assertClose(result.lossMakingWeight, 0.1);
   assert.ok(result.weightedMAD > 0);
+  assertClose(result.robustScale, 1.4826 * result.weightedMAD);
+  assert.deepEqual(result.rawRobustDifference, { signed: 0, absolute: 0 });
   assert.ok(result.lowerBound < -0.03);
   assert.ok(result.upperBound > 0.135);
 });
@@ -143,6 +153,36 @@ test('robust PE winsorizes one extreme positive earnings yield without deleting 
   assert.equal(result.affectedConstituents[0].direction, 'upper');
   assert.ok(result.affectedConstituents[0].adjustedEarningsYield < result.affectedConstituents[0].originalEarningsYield);
   assert.ok(result.rawPE < result.robustPE);
+  assert.ok(result.rawRobustDifference.signed > 0);
+  assertClose(result.rawRobustDifference.absolute, Math.abs(result.robustPE - result.rawPE));
+});
+
+test('explicit price and financial dates are reported and inconsistent price dates block formal output', () => {
+  const dated = robustFixture.map(component => ({
+    ...component,
+    priceAsOf: '2026-01-02',
+    financialAsOf: '2025-12-31',
+    dilutedSharesAsOf: '2025-12-31'
+  }));
+  const valid = calculateQqqPe(dated, { requireExplicitDates: true });
+  assert.equal(valid.status, 'demo');
+  assert.equal(valid.dataDate, '2026-01-02');
+  assert.deepEqual(valid.dataDates, {
+    weightAsOf: '2026-01-02',
+    priceAsOf: '2026-01-02',
+    priceDateValues: ['2026-01-02'],
+    financialAsOfStart: '2025-12-31',
+    financialAsOfEnd: '2025-12-31',
+    priceDateProvenance: 'explicit',
+    financialDateProvenance: 'explicit'
+  });
+  assert.equal(valid.methods.aggregateMarketCapToEarnings.diagnostics.sharePriceDatesAligned, false);
+
+  const inconsistent = dated.map((component, index) => index === 0 ? { ...component, priceAsOf: '2026-01-03' } : component);
+  const rejected = calculateQqqPe(inconsistent, { requireExplicitDates: true });
+  assert.equal(rejected.rawPE, null);
+  assert.equal(rejected.status, 'insufficient_coverage');
+  assert.ok(rejected.qualityFlags.includes('price_date_invalid'));
 });
 
 test('robust PE winsorizes one extreme loss but keeps ordinary loss makers unchanged', () => {
@@ -215,6 +255,25 @@ test('near-zero, raw-negative and robust-negative earnings yields never produce 
   assert.equal(robustNegative.robustPE, null);
   assert.ok(robustNegative.robustEarningsYield < 0);
   assert.ok(robustNegative.qualityFlags.includes('non_positive_robust_earnings_yield'));
+
+  const symmetricNearZero = Array.from({ length: 30 }, (_, index) => {
+    const signed = index < 15 ? index - 15 : index - 14;
+    return {
+      ticker: `ZERO${String(index + 1).padStart(2, '0')}`,
+      weight: 1,
+      weightAsOf: '2026-01-02',
+      priceAsOf: '2026-01-02',
+      financialAsOf: '2025-12-31',
+      price: 100,
+      ttmEps: signed,
+      priceCurrency: 'USD',
+      financialCurrency: 'USD'
+    };
+  });
+  const robustNearZero = calculateQqqPe(symmetricNearZero, { requireExplicitDates: true });
+  assert.equal(robustNearZero.robustPE, null);
+  assert.equal(robustNearZero.denominatorStability.robust.classification, 'near_zero');
+  assert.ok(robustNearZero.qualityFlags.includes('unstable_denominator'));
 });
 
 test('input order and global weight scale do not change robust PE results', () => {
