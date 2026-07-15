@@ -10,6 +10,8 @@ v0.4 当前阶段不继续 IBKR、Twelve Data 或 Alpha Vantage。系统改用�
 
 QQQ PE补充免责声明：原始PE反映全部有效成分的实际正负盈利影响；稳健PE只在E/P层抑制加权MAD统计极值。两者均不等同于Invesco、Nasdaq或WorldPEratio官方指标，也不声称复制WorldPEratio的具体算法。
 
+QQQ PE真实输入的官方机器来源、用户本地CSV边界和检查点B前置条件见`docs/PE_INPUT_AVAILABILITY.md`。旧覆盖公司完整总市值/完整净利润方法仅用于诊断，不属于QQQ正式组合PE。
+
 ## 数据分层
 
 ```text

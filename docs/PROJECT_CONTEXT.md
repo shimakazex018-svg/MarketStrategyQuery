@@ -31,7 +31,7 @@
 
 - 稳定版本：`main` 上的 `v0.3.0`，提交 `e8290d89416cd2f7915ed648f15f08d9fa71117c`。
 - 当前开发分支：`feature/v0.4-compliant-market-data-waterfall`。
-- v0.4自计算指标检查点A.1已完成`PE-Q1-RAW-v1`原始PE与`PE-Q1-ROBUST-WMAD4-v1`稳健PE；稳健法在E/P层使用加权中位数/MAD与4倍尺度Winsorize，排除亏损版仅作诊断。当前尚未接入新的真实数据或正式首页。
+- v0.4自计算指标检查点A.1已完成`PE-Q1-RAW-v1`原始PE与`PE-Q1-ROBUST-WMAD4-v1`稳健PE；稳健法在E/P层使用加权中位数/MAD与4倍尺度Winsorize，排除亏损版和旧完整公司总市值/总盈利方法仅作诊断。输出已包含分母稳定性、日期血缘、极值影响和两口径差值；当前尚未接入新的真实数据或正式首页。
 - IBKR登记为`not_tested`、`pending_written_confirmation`、`not_selected_by_owner`、`enabled=false`；Twelve Data和Alpha Vantage为`deferred`。未安装组件、未登录、未请求数据。
 - 没有任何真实指标通过全部接入门槛：VIX/VXN 为 `unavailable`；QQQ组合TTM PE、Forward PE、恐慌贪婪指数、基金经理仓位指数为 `demo`。
 - Cboe和IBKR在Provider注册表中均为 `pending_written_confirmation`、`enabled=false`；旧环境变量不能绕过注册表门禁。Twelve Data和Alpha Vantage为`not_evaluated`、`enabled=false`。
@@ -62,7 +62,7 @@
 - GitHub仓库当前为公开仓库；建议改为private，但本项目仍必须按公开仓库标准排除密钥、会话和运行数据。
 - IBKR路线已由用户延期；若未来恢复，仍需用户选择并安装官方组件、人工登录和书面许可确认。
 - QQQ PE已确定原始与稳健双口径；检查点B仍需验证至少80个有效成分和不超过10%的极值处理权重。风险偏好最终权重仍待用户审定。
-- 检查点B仍缺真实QQQ成分/权重、复权价格、合规SEC bulk输入、确认后的CFTC TFF合约序列和人工Forward PE记录。
+- 检查点B仍缺真实QQQ成分/权重、复权价格、合规SEC bulk输入、确认后的CFTC TFF合约序列和人工Forward PE记录；输入可用性与人工/自动边界见`docs/PE_INPUT_AVAILABILITY.md`。
 - 不自动判断市场阶段，不提供自动仓位建议。
 - 不读取IBKR账户、持仓或余额，不执行交易；当前只登记非敏感Provider评估结果。
 - 没有登录、多用户、数据库、后台编辑器、回测或历史策略记录。

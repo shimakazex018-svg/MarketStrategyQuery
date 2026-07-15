@@ -126,6 +126,8 @@ docs/                           # 长期上下文与专项设计文档
 
 检查点A没有把该流接入`server.js`或正式API，也没有下载SEC/CFTC数据。检查点B才会把`runtime-data/imports|normalized|derived`接入内部API；原始、标准化和派生文件必须分层且继续忽略。
 
+QQQ PE派生结果同时保留原始与WMAD4稳健分母稳定性、价格/财务/权重日期血缘、极值影响和两口径差值。旧覆盖公司“完整总市值/完整总盈利”算法明确标记为诊断对象，不得进入正式QQQ组合PE路径。真实输入的当前可用性和人工边界见`docs/PE_INPUT_AVAILABILITY.md`。
+
 ## 缓存、调度与资源边界
 
 - 缓存根目录：`runtime-data/market-data/`；服务启动优先读缓存。

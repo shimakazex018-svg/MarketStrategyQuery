@@ -6,9 +6,22 @@
 
 检查点 A 只使用虚构小样本 fixture 验证计算内核，不下载 SEC bulk 文件、不请求约 100 家公司的网络数据，也不修改正式首页卡片。
 
+## 方法A与旧方法B的计算对象
+
+检查点A最初同时保留了两个候选实现。两者的计算对象并不相同：
+
+- 方法A是本规格的正式原始PE：先对每只成分计算`TTM EPS / adjusted price`，再按QQQ输入权重归一化加权，最后取组合盈利收益率的倒数。
+- 旧方法B计算`Σ(adjusted price × diluted weighted-average shares) / Σ(TTM net income)`。它使用样本公司的完整市场总市值和完整净利润，没有用QQQ权重把各公司缩放到统一名义组合。
+
+因此旧方法B标记为`diagnosticOnly`，计算对象明确为“覆盖公司完整市场总市值对完整净利润”，不得作为QQQ正式组合PE。稀释加权平均股数是报告期间平均量，也不等同于价格日期的期末实际流通股数；该诊断只有在EPS、净利润、稀释股数、拆股口径和日期血缘均一致时才有解释价值。
+
+6成分纯虚构fixture中，方法A为`24.0385`，旧方法B为`22.0468`，相对方法A低约`8.285%`。原因不是“亏损处理不同”，而是旧方法B隐含使用完整公司市值权重（约26.53%、16.98%、31.83%、12.73%、6.63%、5.31%），不同于fixture的QQQ输入权重（25%、20%、18%、15%、12%、10%）；盈利较高成分被显著增权、亏损成分被减权，因而得到更低PE。
+
+若方法B改为统一名义组合，令每只成分的持股数为`notional × normalizedWeight_i / adjustedPrice_i`，则组合市值为`notional`，组合盈利为`notional × Σ(normalizedWeight_i × TTM_EPS_i / adjustedPrice_i)`。在EPS/净利润、股数、价格、拆股、币种和日期完全一致时，其结果理论上与方法A等价。当前旧方法B没有执行这一步缩放，因此只保留为诊断算法。
+
 ## 输入与血缘
 
-每个成分至少保存：ticker、权重、权重日期、价格、价格日期、价格口径、TTM EPS 或 TTM 归母净利润、稀释股数、币种、使用的 XBRL 标签、报告期、表单、filing accession、是否回退映射和置信度。
+每个成分至少保存：ticker、权重、权重日期、价格、价格日期、价格口径、TTM EPS 或 TTM 归母净利润、稀释股数、稀释股数对应期间、财务数据日期、币种、使用的 XBRL 标签、报告期、表单、filing accession、是否回退映射和置信度。正式输入不得用权重日期静默代替价格或财务日期；旧fixture只允许兼容回退并明确标记`legacy_fallback`。
 
 价格默认口径为复权收盘价。若价格币种与财务币种不一致，且没有明确汇率和汇率日期，该成分不得进入计算。
 
@@ -76,7 +89,12 @@ rawPE = 1 / portfolioEarningsYieldRaw
 
 ## 输出契约
 
-至少输出：`rawPE`、`robustPE`、`excludeLossDiagnosticPE`、两个组合盈利收益率、两个算法版本、weighted median/MAD、上下界、极值数量/权重、亏损数量/权重、财务/价格覆盖权重、受影响成分和`qualityFlags`。另输出`rawStatus`与`robustStatus`，避免原始PE可用但稳健方法不可用时混淆。
+至少输出：`rawPE`、`robustPE`、`excludeLossDiagnosticPE`、两个组合盈利收益率、两个算法版本、`weightedMedian`、`weightedMAD`、`robustScale`、上下界、极值数量/权重、亏损数量/权重、财务/价格覆盖权重、受影响成分、`rawRobustDifference`和`qualityFlags`。另输出：
+
+- `denominatorStability.raw/robust`：区分稳定正值、稳定非正值、近零和非有限分母；
+- `dataDate/dataDates`：价格、财务和权重日期范围及是否来自旧fixture兼容回退；
+- `rawStatus/robustStatus`：避免原始PE可用但稳健方法不可用时混淆；
+- `methods.aggregateMarketCapToEarnings`：旧方法B的`diagnosticOnly`、计算对象、EPS/净利润一致性和价格/股数日期对齐诊断。
 
 ## 覆盖率与拒绝条件
 
