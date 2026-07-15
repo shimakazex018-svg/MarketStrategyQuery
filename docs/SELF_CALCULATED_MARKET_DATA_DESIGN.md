@@ -4,9 +4,11 @@
 
 v0.4 当前阶段不继续 IBKR、Twelve Data 或 Alpha Vantage。系统改用“用户本地导入 + 官方公共财务/持仓数据 + 可审计派生计算”。本设计不授权自动交易、账户读取、网页抓取或第三方专有指标复制。
 
-正式首页未来六张卡的目标定义是：自计算 QQQ 组合 TTM PE、Forward PE 人工录入、QQQ 20 日实现波动率、QQQ 波动率历史分位、自建风险偏好指数、Nasdaq 期货机构仓位代理。
+正式首页未来与QQQ TTM PE有关的卡只使用`PE-Q1-RAW-v1`原始PE和`PE-Q1-ROBUST-WMAD4-v1`稳健PE；排除亏损版仅作内部诊断。其他目标仍包括Forward PE人工录入、QQQ 20日实现波动率、QQQ波动率历史分位、自建风险偏好指数和Nasdaq期货机构仓位代理，实际首页卡片编排留到检查点B。
 
 统一免责声明：**自建指标，不等同于 Cboe VIX、VXN 或任何第三方专有指数。**
+
+QQQ PE补充免责声明：原始PE反映全部有效成分的实际正负盈利影响；稳健PE只在E/P层抑制加权MAD统计极值。两者均不等同于Invesco、Nasdaq或WorldPEratio官方指标，也不声称复制WorldPEratio的具体算法。
 
 ## 数据分层
 
@@ -53,6 +55,8 @@ Nasdaq 机构仓位代理必须基于 CFTC Traders in Financial Futures（TFF）
 - SEC bulk 文件在检查点 B 必须流式/分批处理，不能整体长期驻留内存。
 - 派生结果按指标拆分，保留算法版本和覆盖率；运行数据继续由 `.gitignore` 排除。
 - 单指标失败不得阻止其他指标计算或网站脱机启动。
+- 稳健PE不得静默回退固定PE阈值；MAD为0、小于20个有效成分、边界不可计算或存在非有限输入时标记`robust_method_unavailable`。
+- 正式全量阶段要求至少80个有效成分；极值处理权重超过10%时只保留诊断并标记`quality_warning`，不得标记`fresh`。
 
 ## 官方资料
 
@@ -60,4 +64,3 @@ Nasdaq 机构仓位代理必须基于 CFTC Traders in Financial Futures（TFF）
 - SEC Developer Resources / Fair Access：<https://www.sec.gov/about/developer-resources>
 - CFTC Commitments of Traders：<https://www.cftc.gov/MarketReports/CommitmentsofTraders/index.htm>
 - CFTC Public Reporting FAQ：<https://publicreporting.cftc.gov/stories/s/Public-Reporting-FAQ/inwp-fmhz/>
-

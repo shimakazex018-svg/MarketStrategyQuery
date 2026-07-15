@@ -2,7 +2,7 @@
 
 ## Last Completed Task
 
-完成v0.4“自计算市场指标系统”检查点A：路线调整、离线导入、SEC/PE计算、实现波动率与分位、等权风险偏好、CFTC候选仓位、Forward PE人工结构和边界测试。没有修改正式首页、没有全量抓取。
+完成检查点A.1原始与稳健QQQ TTM PE双口径：`PE-Q1-RAW-v1`保留全部正负盈利，`PE-Q1-ROBUST-WMAD4-v1`在E/P层按weighted median/MAD和4倍稳健尺度Winsorize。没有修改正式首页、读取真实数据或进入全量计算。
 
 ## Current State
 
@@ -12,29 +12,33 @@
 - Twelve Data与Alpha Vantage：`not_evaluated`、`deferred`、`enabled=false`。
 - Cboe保持待书面确认和禁用；没有新的真实数据来源被启用。
 - 正式首页仍是v0.3六卡；新六项定义仅存在于规格和计算内核，等待检查点B。
+- 与PE有关的未来正式首页卡只显示原始PE和稳健PE；排除全部亏损的`excludeLossDiagnosticPE`仅供内部诊断。
 
 ## Implemented Boundaries
 
 - CSV默认最大2 MiB、10,000行、单字段4,096字符；原始文件hash、导入时间、来源与行数进入manifest。
-- QQQ PE正式门槛：财务覆盖权重90%、价格覆盖权重95%、权重日期明确、币种一致、结果有限正数。
-- PE不选择默认算法或亏损版本；风险偏好只实现`RISK-APPETITE-v1-EW`，最终权重未审定。
+- QQQ PE门槛：财务覆盖权重90%、价格覆盖权重95%、权重日期明确、币种一致、盈利收益率有限；正式全量有效成分至少80，极值处理权重不超过10%。
+- 稳健法MAD为0、有效成分少于20、边界不可计算或出现非有限输入时标记`robust_method_unavailable`，不使用固定PE阈值回退。
+- 风险偏好只实现`RISK-APPETITE-v1-EW`，最终权重未审定。
 - SEC/CFTC本轮只有设计与虚构fixture；没有网络请求、真实缓存或运行数据提交。
 
 ## Validation
 
 - 官方Node.js 24.18.0 LTS与npm 11.16.0已安装到用户本地程序目录并加入用户PATH。
-- `npm.cmd run check`通过42项测试、0失败；固定9阶段、8期权、6个现有指标、7范围不变。
+- `npm.cmd run check`通过52项测试、0失败；QQQ PE专项17项通过，固定9阶段、8期权、6个现有指标、7范围不变。
+- 30成分基线fixture：rawPE与robustPE均为16.438356，weighted median为0.0625、weighted MAD为0.0375、边界为[-0.15989, 0.28489]，极值权重0。
+- 单个极端正盈利：rawPE 11.152416、robustPE 15.190719，受影响权重3.3333%；单个极端亏损：rawPE 35.087719、robustPE 17.697967，受影响权重3.3333%。
+- 大权重极值：rawPE 3.336185、robustPE 7.084211，受影响权重25.6410%，状态`quality_warning`而不是`fresh`。
 - 没有UI变化，不需要截图；v0.3视觉归档未修改。
 
 ## Decisions Required Before Checkpoint B
 
-1. QQQ PE正式默认使用哪种算法，以及包含亏损还是排除亏损并重归一化；
-2. 风险偏好最终分项映射、权重和最低覆盖率；
-3. CFTC TFF选择`209742`、`209747`或明确组合方法；
-4. 用户提供QQQ成分/权重日期、QQQ及成分复权价格、Forward PE人工记录；
-5. 用户提供本地`SEC_USER_AGENT_APP`和`SEC_USER_AGENT_EMAIL`后，才允许SEC自动下载；
-6. 检查点B是否批准使用SEC nightly companyfacts bulk ZIP和CFTC官方PRE数据。
+1. 风险偏好最终分项映射、权重和最低覆盖率；
+2. CFTC TFF选择`209742`、`209747`或明确组合方法；
+3. 用户提供QQQ成分/权重日期、QQQ及成分复权价格、Forward PE人工记录；
+4. 用户提供本地`SEC_USER_AGENT_APP`和`SEC_USER_AGENT_EMAIL`后，才允许SEC自动下载；
+5. 检查点B是否批准使用SEC nightly companyfacts bulk ZIP和CFTC官方PRE数据。
 
 ## Next Task Boundary
 
-在用户验收检查点A前停止。不得进入全量SEC/CFTC数据、正式首页六卡、图表、移动端或截图工作；不得恢复IBKR、Twelve Data或Alpha Vantage，也不得合并main。
+在检查点A.1结束后停止。不得进入全量SEC/CFTC数据、正式首页六卡、图表、移动端或截图工作；不得恢复IBKR、Twelve Data或Alpha Vantage，也不得合并main。

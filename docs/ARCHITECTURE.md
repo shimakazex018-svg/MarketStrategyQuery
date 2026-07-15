@@ -81,7 +81,7 @@ docs/                           # 长期上下文与专项设计文档
 - `http-api.js`：内部 API 路由、范围校验和可信网段手动刷新限制。
 - `server/imports/`：最大2 MiB、10,000行的CSV解析，校验ticker、日期、权重、价格、来源和人工Forward PE，并生成SHA-256导入manifest。
 - `server/derived-indicators/sec-facts.js`：可配置GAAP/IFRS字段优先级、修订去重、季度TTM和显式拆股口径调整。
-- `qqq-pe.js`：比较加权盈利收益率与覆盖样本总市值/总盈利两种方法，同时输出包含亏损与排除亏损版本；不选择默认值。
+- `qqq-pe.js`：输出保留全部正负盈利的原始加权E/P，以及基于weighted median/MAD、1.4826尺度和4倍边界的稳健E/P；极值只Winsorize、不删成分、不改权重。排除亏损与旧聚合市值法只保留为诊断。
 - `realized-volatility.js` / `volatility-percentile.js`：基于复权收盘价计算RV10/20/60与1/3/5/10年实际可用分位。
 - `risk-appetite.js`：`RISK-APPETITE-v1-EW`七分项等权原型；缺失不补0，至少5/7可用。
 - `cot-positioning.js`：TFF候选合约字段计算；`209742`和`209747`仍未正式选定。
@@ -112,7 +112,7 @@ docs/                           # 长期上下文与专项设计文档
   -> indicator card / SVG history
 ```
 
-统一模型允许 `loading/fresh/stale/error/demo/unavailable/insufficient_coverage/manual`。后两种当前只供检查点A派生内核使用，正式首页要到检查点B才接入。无数据使用 `null`，不使用 0 或未标记模拟点。单指标失败不影响其他指标、健康检查或静态策略页面。
+统一页面模型允许`loading/fresh/stale/error/demo/unavailable/insufficient_coverage/manual`；QQQ PE离线派生结果另有`robust_method_unavailable`和`quality_warning`，尚未接入页面schema。正式首页要到检查点B才评审接入。无数据使用`null`，不使用0或未标记模拟点。单指标失败不影响其他指标、健康检查或静态策略页面。
 
 ## 自计算数据流（检查点A）
 

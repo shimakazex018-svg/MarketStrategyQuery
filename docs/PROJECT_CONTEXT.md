@@ -31,11 +31,11 @@
 
 - 稳定版本：`main` 上的 `v0.3.0`，提交 `e8290d89416cd2f7915ed648f15f08d9fa71117c`。
 - 当前开发分支：`feature/v0.4-compliant-market-data-waterfall`。
-- v0.4自计算指标检查点A已完成本地导入、SEC字段/TTM、QQQ PE双算法、实现波动率、历史分位、等权风险偏好、CFTC候选仓位和Forward PE人工结构；当前尚未接入新的真实数据或正式首页。
+- v0.4自计算指标检查点A.1已完成`PE-Q1-RAW-v1`原始PE与`PE-Q1-ROBUST-WMAD4-v1`稳健PE；稳健法在E/P层使用加权中位数/MAD与4倍尺度Winsorize，排除亏损版仅作诊断。当前尚未接入新的真实数据或正式首页。
 - IBKR登记为`not_tested`、`pending_written_confirmation`、`not_selected_by_owner`、`enabled=false`；Twelve Data和Alpha Vantage为`deferred`。未安装组件、未登录、未请求数据。
 - 没有任何真实指标通过全部接入门槛：VIX/VXN 为 `unavailable`；QQQ组合TTM PE、Forward PE、恐慌贪婪指数、基金经理仓位指数为 `demo`。
 - Cboe和IBKR在Provider注册表中均为 `pending_written_confirmation`、`enabled=false`；旧环境变量不能绕过注册表门禁。Twelve Data和Alpha Vantage为`not_evaluated`、`enabled=false`。
-- 正式首页仍显示v0.3的六卡定义；检查点B目标才是自计算QQQ组合TTM PE、Forward PE人工录入、QQQ RV20、RV20历史分位、自建风险偏好、Nasdaq期货机构仓位代理。
+- 正式首页仍显示v0.3的六卡定义；检查点B才会评审原始/稳健QQQ组合TTM PE、Forward PE人工录入、QQQ RV20、RV20历史分位、自建风险偏好和Nasdaq期货机构仓位代理的最终卡片编排。
 
 ## 当前数据与生成目录
 
@@ -61,7 +61,7 @@
 - 真实市场数据受来源定义、机器接口和再展示许可阻塞。
 - GitHub仓库当前为公开仓库；建议改为private，但本项目仍必须按公开仓库标准排除密钥、会话和运行数据。
 - IBKR路线已由用户延期；若未来恢复，仍需用户选择并安装官方组件、人工登录和书面许可确认。
-- QQQ PE默认算法与亏损公司版本、风险偏好最终权重尚待用户审定。
+- QQQ PE已确定原始与稳健双口径；检查点B仍需验证至少80个有效成分和不超过10%的极值处理权重。风险偏好最终权重仍待用户审定。
 - 检查点B仍缺真实QQQ成分/权重、复权价格、合规SEC bulk输入、确认后的CFTC TFF合约序列和人工Forward PE记录。
 - 不自动判断市场阶段，不提供自动仓位建议。
 - 不读取IBKR账户、持仓或余额，不执行交易；当前只登记非敏感Provider评估结果。
@@ -81,7 +81,7 @@
 - 九阶段名称、顺序和 ID。
 - 八种期权策略名称、分类和 ID。
 - 当前仓位区间、期权推荐等级、公式、DTE 和行权价逻辑，除非用户明确要求金融内容校准。
-- 检查点A不得修改正式首页六个指标；检查点B按已批准的新六项定义实施。七个时间范围、Hash Router、默认端口和原生 Node.js 技术栈保持不变。
+- 检查点A/A.1不得修改正式首页六个指标；检查点B再确定包含原始/稳健PE的最终卡片编排。七个时间范围、Hash Router、默认端口和原生 Node.js 技术栈保持不变。
 - 数据源许可门槛与“未获许可不抓取、不缓存、不展示”的默认边界。
 
 ## 运行数据保护
