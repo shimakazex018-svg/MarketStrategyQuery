@@ -1,5 +1,35 @@
 # 变更日志
 
+## 2026-07-14 - 建立 Codex 长期上下文管理体系
+
+### Changed
+- 规范八份长期文档的职责边界、读取顺序和任务结束更新规则。
+- 将项目上下文、架构、测试方法和交接状态更新到当前 v0.3 开发分支事实。
+- 将长期技术选择整理为带编号、原因、影响和状态的决策记录。
+- 将待办整理为 High、Medium、Low、Done、Deferred 和 Cancelled 状态。
+
+### Added
+- 在 `AGENTS.md` 中增加修改前后检查、Git、运行数据保护和文档维护规则。
+- 记录当前实际运行目录与未来通用缓存、媒体和 SQLite 忽略规则的待确认风险。
+
+### Files
+- `AGENTS.md`
+- `docs/PROJECT_CONTEXT.md`
+- `docs/ARCHITECTURE.md`
+- `docs/DECISIONS.md`
+- `docs/TODO.md`
+- `docs/TESTING.md`
+- `docs/CHANGELOG.md`
+- `docs/HANDOFF.md`
+
+### Validation
+- 检查八份文档齐全、边界与互相引用。
+- 执行 `git diff --check`、`git status` 和现有 `npm.cmd run check`。
+
+### Notes
+- 本次只修改文档；没有修改业务代码、配置、脚本、接口或运行数据。
+- 当前不存在数据库、缩略图或 HLS；未修改 `.gitignore`。
+
 ## v0.3 在线市场数据接入候选 — 2026-07-14
 
 - 完成 VIX、VXN、QQQ组合TTM PE、Forward PE、恐慌贪婪指数和基金经理仓位候选来源审计；没有来源通过全部接入门槛，未伪造正式实时接入。

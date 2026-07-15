@@ -1,99 +1,134 @@
-# 架构说明
+# 当前系统架构
 
-## 技术边界
+## 整体结构
 
-项目使用原生 HTML、CSS、JavaScript 和 Node.js 原生 HTTP 模块，无第三方运行依赖、构建器、数据库或持久化层。前端由 `public/` 直接提供，策略正文由 JSON 驱动。
+```text
+浏览器
+  -> public/index.html + public/styles.css + public/app.js
+  -> public/data/*.json
+  -> 本站 /api/market-data/*
+       -> market data service
+       -> schema / cache / limiter / scheduler / logger
+       -> 已获批准的数据源适配器（当前默认全部禁用）
 
-## 主要文件
+Node.js 原生 HTTP 服务
+  -> /api/health
+  -> /api/market-data/*
+  -> public/ 静态文件
+```
 
-- `public/index.html`：页面外壳、导航、主题与移动菜单控件。
-- `public/app.js`：状态、数据加载、Hash 路由、模板渲染和交互绑定。
-- `public/styles.css`：主题变量、布局、组件、断点和减少动画规则。
-- `public/data/stages.json`：九阶段及仓位、条件、动作、风险和策略分级。
-- `public/data/options.json`：八类期权工具的核心结构与损益公式。
-- `public/data/indicators.json`：六个模拟指标的文案与展示值。
-- `server.js`：健康检查、安全路径解析、MIME 和静态文件响应。
-- `scripts/check-data.js`：数据数量、固定枚举、引用和时间范围校验。
+项目没有前端框架、打包器、第三方运行依赖、数据库、登录系统或后台任务队列。当前固定数据规模较小，不需要分页、虚拟列表或集中式缓存。
 
-## 页面路由
+## 主要目录
 
-| Hash | 页面 |
+```text
+public/                         # 浏览器可访问的源文件
+  index.html                    # 页面外壳、导航和全局控件
+  app.js                        # Hash 路由、状态、渲染和交互
+  styles.css                    # 主题、布局、组件、响应式和减少动画
+  data/
+    stages.json                 # 九阶段产品源数据
+    options.json                # 八期权产品源数据
+    indicators.json             # 六指标定义、演示/不可用状态配置
+    cycle-shape.json            # 手工归一化周期示意数据
+server.js                       # HTTP 服务组装、健康检查、静态文件
+server/
+  data-sources/                 # 外部来源下载和解析适配器
+  market-data/                  # 市场数据服务模块
+scripts/                        # 数据检查、启动和防火墙辅助脚本
+tests/                          # Node 自动测试与 UI 评审夹具服务
+runtime-data/market-data/       # 运行缓存、请求状态和日志；不进入 Git
+previews/                       # 经确认提交的产品评审截图
+docs/                           # 长期上下文与专项设计文档
+```
+
+## 前端模块
+
+- `public/app.js` 启动时并行加载阶段、期权、指标和周期图 JSON，随后按当前 Hash 渲染页面。
+- 路由固定为 `#/`、`#/stage/:id`、`#/compare`、`#/options`、`#/options/:id`、`#/indicators`；未知 Hash 显示前端 404。
+- 阶段详情按概览、仓位、执行动作、资产逻辑、识别条件、期权和风险组织；动作和资产逻辑同一时间各显示一个面板。
+- 期权工具同一时间完整展示一个策略；最大收益、最大亏损、盈亏平衡和主要风险保持可见。
+- 周期图由 `cycle-shape.json` 驱动 SVG；它是静态示意，不是 QQQ 真实历史。
+- 指标卡只请求本站内部 API；路由切换会取消未完成请求。历史路径在服务端限制点数，避免 SVG、内存和 DOM 无界增长。
+- 主题使用根元素 `data-theme`；断点为 1100px、760px 和 440px；`prefers-reduced-motion` 下动画缩短。
+
+## 产品 JSON 模型
+
+- 阶段：基础定义、识别条件、四资产独立仓位、资产增减配/禁止/风险、期权分级、四种情景动作、切换条件和风险收益边界。
+- `adjacentStages` 只作数据兼容，不参与当前详情页渲染。
+- `recognitionVisual` 为可选图片对象；缺失 `src` 时不创建空白占位。
+- 期权：结构、买卖腿、标的、适用阶段、DTE、行权价、现金流、最大收益/亏损、盈亏平衡、行情表现、Theta、IV、退出、到期、风险和公式变量。
+- 指标定义：当前静态说明与回退配置；运行时统一模型由服务端补充状态、来源、日期、历史和请求元数据。
+- `scripts/check-data.js` 验证固定数量、顺序、必填字段和全部引用。
+
+## 服务端模块
+
+- `server.js`：创建市场数据服务和调度器；处理健康检查、内部 API 和安全静态文件响应。
+- `server/data-sources/cboe-history.js`：Cboe VIX/VXN CSV 适配器；许可开关未确认时不会启用。
+- `server/market-data/config.js`：读取环境变量和运行目录；不解析 `.env` 文件。
+- `schema.js`：统一模型、日期/数值校验、范围过滤和最多 240 点抽样。
+- `cache-store.js`：按指标拆分 JSON，使用临时文件、`fsync` 和原子替换；损坏文件按指标隔离。
+- `request-limiter.js`：持久化每日指标/提供方预算、手动冷却和并发锁。
+- `scheduler.js`：Asia/Shanghai 工作日调度和有限重试。
+- `service.js`：组合静态定义、缓存、许可决策、来源和状态回退。
+- `logger.js`：有界日志轮转，防止磁盘持续增长。
+- `http-api.js`：内部 API 路由、范围校验和可信网段手动刷新限制。
+
+## 主要 API
+
+| 方法与路径 | 作用 |
 | --- | --- |
-| `#/` | 首页、市场周期图和指标卡片 |
-| `#/stage/:id` | 单一阶段详情 |
-| `#/compare` | 九阶段对比 |
-| `#/options` | 八类期权工具 |
-| `#/indicators` | 六类指标说明 |
-| 其他 Hash | 前端 404 页面 |
+| `GET /api/health` | 服务健康与当前包版本 |
+| `GET /api/market-data/status` | 许可、请求预算、缓存错误和指标状态 |
+| `GET /api/market-data/indicators?range=1Y` | 六指标统一响应 |
+| `GET /api/market-data/indicators/:id?range=1Y` | 单指标与指定历史范围 |
+| `POST /api/market-data/refresh/:id` | 受可信网络、冷却、锁和预算约束的维护刷新 |
 
-Hash 不会发送给服务器，因此服务器无需为缺失静态路径回退首页；不存在的文件返回 HTTP 404。
+页面访问和 GET 指标接口不会触发第三方抓取。外部访问只可能来自获批来源的启动过期检查、调度或受限手动刷新。
 
-## 数据加载与渲染
+## 市场数据流与状态
 
-启动时 `loadData()` 并行请求三个 JSON 文件，全部成功后写入内存状态并渲染当前 Hash。失败时显示明确的加载失败提示。页面切换使用 `innerHTML` 重建当前模板，再绑定阶段、时间范围与渐入观察器；当前数据规模固定且很小，不需要分页或虚拟列表。
+```text
+获批机器来源
+  -> source adapter
+  -> schema validation
+  -> atomic cache
+  -> market data service
+  -> internal API
+  -> indicator card / SVG history
+```
 
-## JSON 数据模型
+合法状态为 `loading/fresh/stale/error/demo/unavailable`。无数据使用 `null`，不使用 0 或未标记模拟点。单指标失败不影响其他指标、健康检查或静态策略页面。
 
-- 阶段基础字段：`id/order/name/category/direction/risk/mode/summary/marketDefinition/strategyProfile/conditions`。
-- 阶段结构字段：`adjacentStages/allocations/assetRules/optionGuidance/actionPlan/transitionConditions/returnSources/lossSources/worstCase/invalidation/opportunityCost/riskNotice`。
-- 仓位项：`ticker/range/role`；每阶段固定包含四类标的。`assetRules` 按 ticker 提供 `increaseWhen/reduceWhen/avoidWhen/risk`。
-- 阶段期权分级：`optionGuidance` 将固定八策略完整分入 `recommended/optional/cautious/avoid`，并保留旧 `options` 引用以兼容既有数据。
-- 期权基础字段：`id/name/english/category/purpose/bias/structure/buyLegs/sellLegs/underlyings/idealStages/unsuitableStages`。
-- 期权损益与管理：`cashflow/maxGain/maxLoss/breakeven/dteLogic/strikeLogic/performance/thetaImpact/ivImpact/earlyExit/expiration/risk/opportunityCost/variables/formulaExample`。
-- 指标：`id/name/subtitle/value/unit/percentile/status/explain/meaning/limits`。
+## 缓存、调度与资源边界
 
-渲染层通过 `valueOr()`、`listOr()` 和结构回退处理缺失字段，单个新字段缺失不会让整页崩溃。`scripts/check-data.js` 对完整生产数据执行严格字段与引用检查。
+- 缓存根目录：`runtime-data/market-data/`；服务启动优先读缓存。
+- 单指标每日最多 4 次外部请求；失败后等待 15、60、180 分钟。
+- 单提供方每日最多 20 次；手动刷新冷却 30 分钟并带并发锁。
+- VIX 工作日 07:10、VXN 工作日 07:15，时区 Asia/Shanghai；当前许可未确认，默认不抓取。
+- 请求总超时 15 秒；连接阶段目标预算 10 秒。
+- 同数据日期不重复写入；日志、原始响应和前端历史点均有上限。
 
-## 长内容页面结构
+## 启动流程
 
-阶段详情依次展示状态定义、相邻阶段、识别条件、仓位、资产规则、期权分级、四种情景动作、切换条件、收益亏损和风险边界。期权工具页按单策略宽卡片展示交易腿、损益、DTE、行权价、三种行情表现、Theta、IV、退出与到期；只有变量说明和静态公式示例使用原生 `details` 折叠，最大亏损和主要风险始终可见。
+1. Node 读取 `HOST`、`PORT` 和市场数据环境变量。
+2. 初始化运行目录、缓存、请求状态和有界日志。
+3. 加载 `public/data/indicators.json` 并按许可决策生成 demo/unavailable/缓存模型。
+4. 仅对已批准且过期的来源执行启动检查；周末跳过。
+5. 启动调度器和 HTTP 服务，默认监听 `0.0.0.0:48101`。
+6. 服务关闭时停止调度器定时器。
 
-## 市场周期图
+## 源文件与运行文件
 
-周期图由 `marketCycleSvg()` 生成内联 SVG。九个阶段区域具有 `role="link"`、键盘焦点和 Enter/Space 激活逻辑。窄屏只允许 `.cycle-scroll` 容器横向滚动，页面本身不得横向溢出。
+- 应进入 Git：源代码、`public/data/*.json`、测试、配置模板、脚本、文档和经确认的评审截图。
+- 不应进入 Git：`runtime-data/`、`.env`、密钥、日志、缓存、PID、临时文件和机器相关状态。
+- `node_modules/` 是本机依赖目录并被忽略；当前项目没有第三方运行依赖，不应提交。
 
-## 主题与响应式
+## 不存在或不适用的模块
 
-主题通过根元素 `data-theme` 和 CSS 自定义属性切换，初始值跟随系统偏好。断点为 1100px、760px 和 440px；对应桌面、平板/小桌面和手机布局。所有动画在 `prefers-reduced-motion: reduce` 下缩短至近乎即时。
+- 数据库模块：不存在。
+- 缩略图生成、媒体上传、视频处理、HLS 和查重：不存在。
+- 登录、权限、多用户和会话：不存在。
+- IBKR、持仓读取、下单和交易队列：不存在。
 
-## Node.js 服务
-
-默认读取 `HOST=0.0.0.0`、`PORT=48101`，提供 `/api/health` 与 `public/` 静态文件。路径先解码、规范化并用 `path.relative` 校验，防止越过公开目录；缺失文件返回 404，静态文件按扩展名返回 MIME，并启用 `nosniff`。
-
-## 真实数据接口边界
-
-当前没有外部请求、缓存、定时任务或账户数据。未来若获准接入真实数据，应通过独立服务接口提供，并明确来源许可、请求频率、缓存淘汰、缺失值、更新时间、限流和故障降级；不得直接把密钥或券商连接放进浏览器代码。
-
-## v0.2 阶段详情信息架构
-
-阶段详情页按“概览、仓位、执行动作、资产逻辑、识别条件、期权、风险”组织。仓位区间始终可见；执行动作和资产逻辑使用单选标签页，同一时间只渲染一个面板的可见状态，键盘可用方向键切换。
-
-`adjacentStages` 为兼容历史数据继续保留，但当前不参与详情页渲染。`recognitionVisual` 是可选对象，可包含 `src/alt/title/caption/source/period`；当 `src` 缺失或为空时不创建图片或空白占位，文字识别条件仍可独立显示。
-
-## v0.2 期权工具信息架构
-
-期权工具页使用“策略目录 + 单策略详情”，同一时间只完整显示一种策略。`#/options/:id` 保存当前选择，因而支持刷新恢复和浏览器前进、后退；`#/options` 安全回退到第一种固定策略。分类筛选只读取现有 `category`，不改变策略分类或金融字段。
-
-最大收益、最大亏损、盈亏平衡点和主要风险始终显示；交易设计、市场表现、时间与波动率、管理规则、公式与变量按组折叠。移动端以原生选择框替代桌面目录，避免把双栏强行压缩到窄屏。
-
-## v0.2 市场周期图
-
-`public/data/cycle-shape.json` 保存九阶段的手工归一化静态点位、紧凑摘要和非实时声明，阶段 ID 必须与 `stages.json` 一一对应。`marketCycleSvg()` 只负责把数据映射为平滑 SVG 曲线、标记和可访问交互区域，因此未来替换获准的历史片段时不需要重写图形组件。
-
-该数据不是实时或历史QQQ精确数据，运行时不请求外部行情。窄屏仅允许 `.cycle-scroll` 容器横向滚动；页面根节点不得产生横向溢出。
-
-## v0.2 指标说明弹窗
-
-`indicators.json` 在旧有 `meaning/limits` 兼容字段之外提供 `definition/interpretation/marketRelation/limitations`。首页只创建一个可复用对话框外壳，点击指标信息按钮后以 `textContent` 写入当前指标内容，避免重复 DOM 和正文硬编码。
-
-对话框具备 `role="dialog"`、模态语义、Escape及遮罩关闭、焦点约束与关闭后焦点返回。移动端显示为底部抽屉且正文内部滚动；指标数值继续是静态演示值，不进行网络请求或阶段自动判断。
-
-## v0.3 市场数据边界
-
-浏览器只访问本站 `/api/market-data/*`，页面加载不会直接请求第三方。`server/market-data/` 将数据源适配、结构校验、原子缓存、请求预算、调度、日志和 HTTP API 分离；单指标故障不会阻断其他指标或静态策略页面。服务启动先读本地缓存，缓存损坏按指标隔离；未确认来源许可时，即使存在旧缓存也不向页面展示。
-
-当前数据源审计没有发现同时满足定义、机器可读、Windows 可访问和公开再展示许可门槛的正式来源，因此 VIX/VXN 返回 `unavailable`，QQQ组合TTM PE、Forward PE、恐慌贪婪指数和基金经理仓位指数返回 `demo`。实现保留受控 Cboe 适配器，但只有显式设置 `CBOE_DATA_LICENSE_CONFIRMED=true` 后才允许请求；默认不会发起外部请求。
-
-指标响应统一支持 `loading/fresh/stale/error/demo/unavailable`。在线模型包含数值、数据日期、来源、最近尝试、最近成功、下次允许时间、可用时间范围及有界历史点；无缓存失败时使用 `null`，不以 0 伪装数据。历史曲线最多向前端返回 240 点，避免长期缓存和 DOM/SVG 无界增长。
-
-缓存位于被 Git 忽略的 `runtime-data/market-data/`，采用临时文件加重命名的原子写入。日志和可选原始响应均有文件大小或保留数量上限；没有数据库、长期无限缓存或浏览器端密钥。
+若未来引入上述模块，必须同时更新本文件、`PROJECT_CONTEXT.md`、`DECISIONS.md`、`TESTING.md` 和运行数据忽略/清理策略，不能沿用本节假设。
