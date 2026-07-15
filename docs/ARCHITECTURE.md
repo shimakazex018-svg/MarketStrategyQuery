@@ -32,6 +32,8 @@ public/                         # 浏览器可访问的源文件
     indicators.json             # 六指标定义、演示/不可用状态配置
     cycle-shape.json            # 手工归一化周期示意数据
 server.js                       # HTTP 服务组装、健康检查、静态文件
+config/
+  market-data-providers.json    # 非敏感Provider合规登记与启用状态
 server/
   data-sources/                 # 外部来源下载和解析适配器
   market-data/                  # 市场数据服务模块
@@ -66,6 +68,7 @@ docs/                           # 长期上下文与专项设计文档
 - `server.js`：创建市场数据服务和调度器；处理健康检查、内部 API 和安全静态文件响应。
 - `server/data-sources/cboe-history.js`：Cboe VIX/VXN CSV 适配器；许可开关未确认时不会启用。
 - `server/market-data/config.js`：读取环境变量和运行目录；不解析 `.env` 文件。
+- `provider-compliance.js`：验证Provider字段、合规状态和`enabled`不变量；环境变量不能绕过该门禁。
 - `schema.js`：统一模型、日期/数值校验、范围过滤和最多 240 点抽样。
 - `cache-store.js`：按指标拆分 JSON，使用临时文件、`fsync` 和原子替换；损坏文件按指标隔离。
 - `request-limiter.js`：持久化每日指标/提供方预算、手动冷却和并发锁。
@@ -90,6 +93,7 @@ docs/                           # 长期上下文与专项设计文档
 
 ```text
 获批机器来源
+  -> Provider合规登记硬门禁
   -> source adapter
   -> schema validation
   -> atomic cache
@@ -121,6 +125,7 @@ docs/                           # 长期上下文与专项设计文档
 ## 源文件与运行文件
 
 - 应进入 Git：源代码、`public/data/*.json`、测试、配置模板、脚本、文档和经确认的评审截图。
+- Provider注册表只保存非敏感结论；账户ID、凭据、会话、订阅账单和真实响应不得进入注册表。
 - 不应进入 Git：`runtime-data/`、`.env`、密钥、日志、缓存、PID、临时文件和机器相关状态。
 - `node_modules/` 是本机依赖目录并被忽略；当前项目没有第三方运行依赖，不应提交。
 
@@ -129,6 +134,6 @@ docs/                           # 长期上下文与专项设计文档
 - 数据库模块：不存在。
 - 缩略图生成、媒体上传、视频处理、HLS 和查重：不存在。
 - 登录、权限、多用户和会话：不存在。
-- IBKR、持仓读取、下单和交易队列：不存在。
+- IBKR正式连接、持仓读取、下单和交易队列：不存在；当前只有禁用的Provider登记和非敏感预检查文档。
 
 若未来引入上述模块，必须同时更新本文件、`PROJECT_CONTEXT.md`、`DECISIONS.md`、`TESTING.md` 和运行数据忽略/清理策略，不能沿用本节假设。

@@ -18,6 +18,7 @@ npm.cmd run check
 1. `server.js`、`public/app.js` 和 UI 评审服务语法检查。
 2. 产品数据契约检查：9阶段、8期权、6指标、7范围、固定顺序、必填字段和引用。
 3. Node 自动测试：缓存、结构校验、来源错误分类、限流、调度、许可边界和故障回退。
+4. Provider登记检查：固定状态枚举、必填字段、重复ID、附加条件和`enabled`硬门禁。
 
 单独运行测试：
 
@@ -61,6 +62,7 @@ Invoke-RestMethod http://127.0.0.1:48101/api/market-data/status
 - `/api/health` 返回 HTTP 200、`ok: true`、`marketData: "ready"`，版本与 `package.json` 一致（当前为 `0.3.0-dev`）。
 - 指标接口返回 6 个指标；默认许可未确认时 VIX/VXN 为 unavailable，其余四卡为 demo。
 - 状态接口时区为 Asia/Shanghai，Cboe 权限为 not-confirmed。
+- 状态接口同时返回Provider的技术状态、合规状态、登记启用值和实际启用值；第一检查点的Cboe与IBKR实际启用值均为false。
 - 没有外部网络、没有 `FRED_API_KEY` 时仍能启动。
 
 ## HTTP 与安全检查
@@ -116,6 +118,15 @@ Invoke-RestMethod http://127.0.0.1:48101/api/market-data/status
 - 反复重启、周末跳过、预算跨日重置。
 - 多请求并发锁、手动刷新冷却、指标与提供方每日上限。
 - 许可未确认时不读取或展示旧在线缓存。
+- 环境变量不能绕过`pending_written_confirmation`等未批准Provider状态。
+
+## IBKR隔离探测边界
+
+- 当前主机没有TWS、IB Gateway或Client Portal Gateway，因此没有可执行的IBKR探测脚本。
+- 后续只有在用户安装官方组件、本人完成登录并确认只读API设置后，才能在`scripts/data-source-probes/ibkr/`新增探测代码。
+- 探测输出必须写入`runtime-data/data-source-probes/ibkr/`或操作系统临时目录，不得写入脚本目录、fixture或Git。
+- 探测只允许合约搜索、行情权限模式和历史日线；不得请求账户、持仓、余额或订单信息。
+- 48101现有服务不得用于探测；使用独立空闲端口或仅连接IBKR本机Socket端口。
 
 `tests/review-server.js` 只用于展示六种 UI 状态，来源必须显示“UI验收夹具（非真实行情）”。它不进入正式启动路径，不访问第三方。
 
@@ -134,4 +145,4 @@ Invoke-RestMethod http://127.0.0.1:48101/api/market-data/status
 
 ## 最近确认的基线
 
-2026-07-14，`feature/v0.3-live-market-data` 执行 `npm.cmd run check`：17 项测试通过，0 失败；浏览器检查覆盖四种视口、主要路由、主题、弹窗、历史导航和控制台。真实设备和 ZeroTier 跨设备验收仍待确认。
+2026-07-15，`feature/v0.4-compliant-market-data-waterfall` 第一检查点执行 `npm.cmd run check`：22项测试通过、0失败；9阶段、8期权、6指标、7范围和Provider合规门禁有效。没有UI变化，未重新生成截图。真实设备和ZeroTier跨设备验收仍待确认。

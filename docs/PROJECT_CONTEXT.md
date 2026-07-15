@@ -29,16 +29,18 @@
 
 ## 当前稳定状态
 
-- 稳定版本：`main` 上的 `v0.2.0`，提交 `160345eeeefca763b05233fdae76a43025a85516`。
-- 当前开发分支：`feature/v0.3-live-market-data`。
-- v0.3 已完成数据源审计、市场数据基础设施、前端六状态、自动测试与评审截图，但尚未合并 `main`，也没有 `v0.3.0` 标签。
+- 稳定版本：`main` 上的 `v0.3.0`，提交 `e8290d89416cd2f7915ed648f15f08d9fa71117c`。
+- 当前开发分支：`feature/v0.4-compliant-market-data-waterfall`。
+- v0.4第一检查点已固化个人内部使用边界和Provider合规登记硬门禁；当前尚未接入新的真实数据。
+- IBKR非敏感预检查确认本机没有TWS、IB Gateway或Client Portal Gateway，未执行登录、订阅、合约或行情请求。
 - 没有任何真实指标通过全部接入门槛：VIX/VXN 为 `unavailable`；QQQ组合TTM PE、Forward PE、恐慌贪婪指数、基金经理仓位指数为 `demo`。
-- 默认 `CBOE_DATA_LICENSE_CONFIRMED=false`，正式服务不会访问 Cboe。
+- Cboe和IBKR在Provider注册表中均为 `pending_written_confirmation`、`enabled=false`；旧环境变量不能绕过注册表门禁。
 
 ## 当前数据与生成目录
 
 | 路径 | 性质 | Git 状态 | 说明 |
 | --- | --- | --- | --- |
+| `config/market-data-providers.json` | 非敏感合规配置 | 跟踪 | Provider状态、用途与启用门禁；不包含凭据或真实数据 |
 | `public/data/` | 产品源数据 | 跟踪 | 阶段、期权、指标和周期图 JSON；不是运行缓存 |
 | `runtime-data/market-data/latest/` | 运行数据 | 忽略 | 每指标最新缓存；当前可为空 |
 | `runtime-data/market-data/state/` | 运行数据 | 忽略 | 请求预算和最近状态 |
@@ -52,8 +54,10 @@
 ## 当前已知限制
 
 - 真实市场数据受来源定义、机器接口和再展示许可阻塞。
+- GitHub仓库当前为公开仓库；建议改为private，但本项目仍必须按公开仓库标准排除密钥、会话和运行数据。
+- IBKR继续验证需要用户选择并安装官方组件、人工登录和书面许可确认。
 - 不自动判断市场阶段，不提供自动仓位建议。
-- 不读取账户、持仓或 IBKR，不执行交易。
+- 不读取IBKR账户、持仓或余额，不执行交易；当前只登记非敏感Provider评估结果。
 - 没有登录、多用户、数据库、后台编辑器、回测或历史策略记录。
 - 真实 iPhone/iPad、目标局域网、ZeroTier 和 Windows 防火墙跨设备验收：待确认。
 - 金融策略文案、仓位区间和期权参数仍需用户或合格专业人士最终审定。

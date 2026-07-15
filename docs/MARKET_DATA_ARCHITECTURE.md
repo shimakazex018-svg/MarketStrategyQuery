@@ -8,6 +8,7 @@
 
 ```text
 已批准的官方来源
+  -> provider compliance registry（状态与附加条件硬门禁）
   -> source adapter（下载、解析）
   -> schema validation（日期、数值、顺序、异常值）
   -> cache store（临时文件 + 原子替换）
@@ -17,6 +18,8 @@
 ```
 
 浏览器访问首页、指标说明或其他页面时只请求本网站的 `/api/market-data/*`。页面访问不会触发任何第三方请求。
+
+正式启用还要求Provider注册状态为`approved`，或`approved_with_conditions`且附加条件全部满足，并明确设置`enabled=true`。环境变量只是第二确认，不能覆盖注册状态。
 
 ## 模块边界
 
@@ -30,6 +33,9 @@ server/
     scheduler.js      # Asia/Shanghai 调度与有限重试
     service.js        # 组合演示配置、缓存和在线来源
     logger.js         # 有界抓取日志
+    provider-compliance.js # Provider登记校验与启用判定
+config/
+  market-data-providers.json # 非敏感合规状态；不得保存凭据或真实响应
 runtime-data/         # 不提交；运行时缓存、状态和日志
 tests/
   fixtures/market-data/

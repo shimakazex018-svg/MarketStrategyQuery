@@ -1,5 +1,22 @@
 # 变更日志
 
+## 2026-07-15 - v0.4第一检查点：个人用途与Provider合规门禁
+
+### Added
+- 固化仅限本人、本机/家庭局域网/私人ZeroTier、非盈利且不再分发的市场数据使用边界。
+- 新增非敏感Provider注册表、状态校验模块和环境变量之前的正式启用硬门禁。
+- 新增IBKR非敏感本机预检查、官方资料评估和未发送的英文客服询问模板。
+
+### Validation
+- GitHub仓库当前为PUBLIC；未修改可见性，建议用户改为private。
+- 本机未发现TWS、IB Gateway、Client Portal Gateway或典型API监听端口；未安装、未登录、未请求行情。
+- `npm.cmd run check`通过22项测试、0失败；固定9阶段、8期权、6指标和7范围不变。
+
+### Notes
+- Cboe与IBKR均为`pending_written_confirmation`、`enabled=false`；VIX/VXN继续unavailable。
+- 因需要安装官方组件、用户人工登录、订阅确认和书面许可，本检查点停止；未进入Twelve Data。
+- 没有UI变化，未修改v0.3截图或评审清单。
+
 ## 2026-07-14 - 建立 Codex 长期上下文管理体系
 
 ### Changed

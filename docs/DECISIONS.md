@@ -183,3 +183,31 @@ Git 管理源代码、产品 JSON、配置模板、测试、文档和确认后�
 
 ### Status
 有效
+
+## DEC-014：市场数据限于本人非公开内部使用
+
+### Decision
+市场数据只允许用户本人通过本机、家庭局域网和私人ZeroTier访问，不提供公开API、下载、注册、转发或第三方访问。
+
+### Reason
+将产品部署边界与数据许可审计使用场景保持一致，降低再分发、安全和隐私风险。
+
+### Impact
+仓库即使公开也只能包含源代码和人工测试数据；运行缓存、会话、密钥和真实历史不得提交。公开部署需要重新评审全部许可和鉴权。
+
+### Status
+有效
+
+## DEC-015：Provider注册表是正式数据硬门禁
+
+### Decision
+使用版本控制的非敏感JSON登记Provider合规状态。只有`approved`，或附加条件全部满足的`approved_with_conditions`，并同时设置`enabled=true`，才能进入正式数据路径。
+
+### Reason
+避免单个环境变量、端点可访问或API成功响应绕过许可结论。
+
+### Impact
+`pending_written_confirmation`、`rejected`、`technically_unavailable`和`not_evaluated`一律禁用；服务启动和自动测试都会验证不变量。
+
+### Status
+有效
