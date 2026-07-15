@@ -79,17 +79,25 @@ test('risk appetite excludes missing inputs, rejects out-of-range scores and gat
   assert.throws(() => calculateRiskAppetite([{ id: COMPONENTS[0].id, score: 101 }]), /between 0 and 100/);
 });
 
-test('CFTC positioning keeps Nasdaq contracts as candidates and handles missing target contract', () => {
+test('CFTC positioning selects 209742 and calculates net ratios with historical percentiles', () => {
   assert.deepEqual(CANDIDATE_CONTRACTS.map(contract => contract.contractCode), ['209742', '209747']);
+  assert.equal(CANDIDATE_CONTRACTS[0].selectionStatus, 'selected_primary');
   assert.equal(calculateCotPositioning([], { contractCode: '209742' }).reason, 'target_contract_missing');
-  const result = calculateCotPositioning([{
-    contractCode: '209742', reportDate: '2026-01-06', publishedAt: '2026-01-09',
-    assetManagerLong: 100, assetManagerShort: 40, leveragedFundsLong: 20, leveragedFundsShort: 70, openInterest: 500
-  }], { contractCode: '209742' });
-  assert.equal(result.assetManagerNet, 60);
+  const rows = Array.from({ length: 60 }, (_, index) => ({
+    contractCode: '209742',
+    reportDate: new Date(Date.UTC(2025, 0, 7 + index * 7)).toISOString().slice(0, 10),
+    publishedAt: '2026-01-09T20:30:00.000Z',
+    assetManagerLong: 100 + index, assetManagerShort: 40,
+    leveragedFundsLong: 20, leveragedFundsShort: 70, openInterest: 500
+  }));
+  const result = calculateCotPositioning(rows, { contractCode: '209742' });
+  assert.equal(result.status, 'fresh');
+  assert.equal(result.assetManagerNet, 119);
   assert.equal(result.leveragedFundsNet, -50);
-  assert.equal(result.value, null);
-  assert.equal(result.defaultMetric, null);
+  assert.ok(Math.abs(result.value - 23.8) < 1e-10);
+  assert.equal(result.defaultMetric, 'asset_manager_net_ratio');
+  assert.equal(result.history.length, 60);
+  assert.equal(result.horizons['1Y'].percentile, 100);
 });
 
 test('derived calculation runner isolates one indicator failure from others', () => {
