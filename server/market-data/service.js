@@ -3,6 +3,7 @@
 const fs = require('fs/promises');
 const path = require('path');
 const { createCboeHistorySource } = require('../data-sources/cboe-history');
+const { isProviderEffectivelyEnabled, providerById } = require('./provider-compliance');
 const { availableRanges, filterHistory, validateModel } = require('./schema');
 const { isWeekend } = require('./scheduler');
 
@@ -166,7 +167,11 @@ class MarketDataService {
 
   isApproved(id) {
     const decision = ONLINE_DECISIONS[id];
-    return Boolean(decision && this.config.enabled && this.config.permissions[decision.permission]);
+    const provider = decision ? providerById(this.config.providerRegistry, decision.provider) : null;
+    return Boolean(decision
+      && this.config.enabled
+      && this.config.permissions[decision.permission]
+      && isProviderEffectivelyEnabled(provider));
   }
 
   isFresh(model, now = this.now()) {
@@ -277,6 +282,13 @@ class MarketDataService {
       enabled: this.config.enabled,
       timezone: this.config.timezone,
       permissions: { cboe: this.config.permissions.cboe ? 'confirmed' : 'not-confirmed' },
+      providers: (this.config.providerRegistry?.providers || []).map(provider => ({
+        providerId: provider.providerId,
+        technicalStatus: provider.technicalStatus,
+        complianceStatus: provider.complianceStatus,
+        enabled: provider.enabled,
+        effectiveEnabled: isProviderEffectivelyEnabled(provider)
+      })),
       fredApiKeyConfigured: this.config.fredApiKeyConfigured,
       requestState: this.limiter.snapshot(),
       cacheErrors: Object.fromEntries(this.cacheErrors),

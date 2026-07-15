@@ -1,6 +1,7 @@
 'use strict';
 
 const path = require('path');
+const { loadProviderRegistry } = require('./provider-compliance');
 
 function booleanEnv(name, fallback) {
   const value = process.env[name];
@@ -14,6 +15,7 @@ function integerEnv(name, fallback, min, max) {
 }
 
 function loadMarketDataConfig(rootDir) {
+  const providerRegistry = loadProviderRegistry(rootDir);
   return {
     enabled: booleanEnv('MARKET_DATA_ENABLED', true),
     timezone: process.env.MARKET_DATA_TIMEZONE || 'Asia/Shanghai',
@@ -23,6 +25,7 @@ function loadMarketDataConfig(rootDir) {
     manualRefreshCooldownMinutes: integerEnv('MARKET_DATA_MANUAL_REFRESH_COOLDOWN_MINUTES', 30, 1, 1_440),
     providerDailyLimit: integerEnv('MARKET_DATA_PROVIDER_DAILY_LIMIT', 20, 1, 20),
     runtimeDir: path.join(rootDir, 'runtime-data', 'market-data'),
+    providerRegistry,
     permissions: {
       cboe: booleanEnv('CBOE_DATA_LICENSE_CONFIRMED', false)
     },

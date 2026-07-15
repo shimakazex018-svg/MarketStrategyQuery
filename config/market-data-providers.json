@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "updatedAt": "2026-07-15",
+  "providers": [
+    {
+      "providerId": "cboe",
+      "providerName": "Cboe official historical CSV",
+      "targetIndicators": ["vix", "vxn"],
+      "technicalStatus": "adapter_available_production_access_disabled",
+      "complianceStatus": "pending_written_confirmation",
+      "accountRequirement": "No account is required for the public CSV endpoint; this does not grant storage or display rights.",
+      "subscriptionRequirement": "Written permission must explicitly cover automated retrieval, local storage and personal dashboard display.",
+      "internalDisplayAllowed": false,
+      "localCacheAllowed": false,
+      "cacheRetention": "none until written permission is received",
+      "historicalStorageAllowed": false,
+      "attributionRequirement": "pending written terms",
+      "writtenConfirmationRequired": true,
+      "termsCheckedAt": "2026-07-14",
+      "technicalCheckedAt": "2026-07-14",
+      "conditionsSatisfied": false,
+      "enabled": false,
+      "notes": "The v0.3 adapter remains testable with synthetic fixtures, but production access is prohibited."
+    },
+    {
+      "providerId": "ibkr",
+      "providerName": "Interactive Brokers",
+      "targetIndicators": ["vix", "vxn"],
+      "technicalStatus": "local_components_missing_not_tested",
+      "complianceStatus": "pending_written_confirmation",
+      "accountRequirement": "A fully open and funded individual account may be required; API market data documentation specifies IBKR Pro for subscriptions.",
+      "subscriptionRequirement": "Exact VIX and VXN entitlements, the Market Data API Agreement and any Cboe index subscription must be confirmed by the user and IBKR.",
+      "internalDisplayAllowed": false,
+      "localCacheAllowed": false,
+      "cacheRetention": "none until IBKR provides written confirmation",
+      "historicalStorageAllowed": false,
+      "attributionRequirement": "pending IBKR and Cboe confirmation",
+      "writtenConfirmationRequired": true,
+      "termsCheckedAt": "2026-07-15",
+      "technicalCheckedAt": "2026-07-15",
+      "conditionsSatisfied": false,
+      "enabled": false,
+      "notes": "No TWS, IB Gateway or Client Portal Gateway was found on the current Windows host. No login or market-data request was attempted."
+    }
+  ]
+}

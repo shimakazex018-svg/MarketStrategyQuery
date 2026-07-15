@@ -2,6 +2,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { loadProviderRegistry } = require('../server/market-data/provider-compliance');
 
 const ROOT = path.join(__dirname, '..');
 
@@ -33,6 +34,7 @@ const options = readJson('public/data/options.json');
 const indicators = readJson('public/data/indicators.json');
 const cycleShape = readJson('public/data/cycle-shape.json');
 const appSource = fs.readFileSync(path.join(ROOT, 'public/app.js'), 'utf8');
+const providerRegistry = loadProviderRegistry(ROOT);
 
 const stageNames = ['高位震荡', '震荡下跌', '单边下跌', '恐慌暴跌', '底部震荡', '右侧反转', '单边上涨', '震荡上涨', '加速上涨／过热'];
 const optionNames = ['Protective Put', 'Collar', 'Put Debit Spread', 'Put Credit Spread', 'Covered Call', 'Cash-Secured Put', 'Call Debit Spread', 'Long Call'];
@@ -113,5 +115,7 @@ indicators.forEach(indicator => {
 
 rangeLabels.forEach(label => assert(appSource.includes(`'${label}'`), `前端时间范围缺少：${label}`));
 rangeKeys.forEach(key => assert(appSource.includes(`'${key}'`), `前端时间范围键缺少：${key}`));
+assertExactList(providerRegistry.providers.map(provider => provider.providerId), ['cboe', 'ibkr'], 'Provider登记');
+providerRegistry.providers.forEach(provider => assert(provider.enabled === false, `${provider.providerId}在第一检查点必须保持禁用`));
 
 console.log('Data check passed: 9 complete stages, 8 complete options, 6 indicators, 7 ranges, and all references are valid.');

@@ -14,13 +14,20 @@ const { MarketDataScheduler } = require('../server/market-data/scheduler');
 const rootDir = path.join(__dirname, '..');
 const validCsv = 'DATE,OPEN,HIGH,LOW,CLOSE\n01/02/2024,10,11,9,10.5\n01/03/2024,11,12,10,11.5\n01/04/2024,12,13,11,12.5\n';
 
+function providerRegistry({ complianceStatus = 'approved', conditionsSatisfied = true, enabled = true } = {}) {
+  return {
+    schemaVersion: 1,
+    providers: [{ providerId: 'cboe', complianceStatus, conditionsSatisfied, enabled }]
+  };
+}
+
 async function createService(t, { permission = true, fetchImpl, now = () => new Date('2026-07-14T00:00:00Z') } = {}) {
   const runtimeDir = await fs.mkdtemp(path.join(os.tmpdir(), 'market-service-test-'));
   t.after(() => fs.rm(runtimeDir, { recursive: true, force: true }));
   const config = {
     enabled: true, timezone: 'Asia/Shanghai', requestTimeoutMs: 50, connectTimeoutMs: 20,
     maxAttemptsPerDay: 4, manualRefreshCooldownMinutes: 30, providerDailyLimit: 20,
-    runtimeDir, permissions: { cboe: permission }, fredApiKeyConfigured: false
+    runtimeDir, providerRegistry: providerRegistry(), permissions: { cboe: permission }, fredApiKeyConfigured: false
   };
   const store = new CacheStore(runtimeDir);
   const limiter = new RequestLimiter(store, config, now);
@@ -45,7 +52,7 @@ test('unapproved sources do not expose a previously written online cache', async
   const config = {
     enabled: true, timezone: 'Asia/Shanghai', requestTimeoutMs: 50, connectTimeoutMs: 20,
     maxAttemptsPerDay: 4, manualRefreshCooldownMinutes: 30, providerDailyLimit: 20,
-    runtimeDir, permissions: { cboe: false }, fredApiKeyConfigured: false
+    runtimeDir, providerRegistry: providerRegistry(), permissions: { cboe: false }, fredApiKeyConfigured: false
   };
   const store = new CacheStore(runtimeDir);
   await store.init();
@@ -76,6 +83,19 @@ test('successful fetch becomes fresh and unchanged data is not appended', async 
   assert.equal(service.models.get('vix').history.length, 3);
 });
 
+test('runtime permission cannot bypass a pending provider compliance decision', async t => {
+  const { service } = await createService(t, { permission: true });
+  service.config.providerRegistry = providerRegistry({
+    complianceStatus: 'pending_written_confirmation',
+    conditionsSatisfied: false,
+    enabled: false
+  });
+  assert.equal(service.isApproved('vix'), false);
+  const result = await service.refresh('vix');
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, 'source-not-approved');
+});
+
 test('failure keeps old cache stale and no-cache failure returns error without affecting other indicators', async t => {
   const { service } = await createService(t, { fetchImpl: async () => new Response(validCsv, { status: 200 }) });
   await service.refresh('vix');
@@ -96,7 +116,7 @@ test('corrupt cache does not prevent offline service startup', async t => {
   t.after(() => fs.rm(runtimeDir, { recursive: true, force: true }));
   await fs.mkdir(path.join(runtimeDir, 'latest'), { recursive: true });
   await fs.writeFile(path.join(runtimeDir, 'latest', 'vix.json'), '{bad', 'utf8');
-  const config = { enabled: true, timezone: 'Asia/Shanghai', requestTimeoutMs: 10, maxAttemptsPerDay: 4, manualRefreshCooldownMinutes: 30, providerDailyLimit: 20, runtimeDir, permissions: { cboe: true }, fredApiKeyConfigured: false };
+  const config = { enabled: true, timezone: 'Asia/Shanghai', requestTimeoutMs: 10, maxAttemptsPerDay: 4, manualRefreshCooldownMinutes: 30, providerDailyLimit: 20, runtimeDir, providerRegistry: providerRegistry(), permissions: { cboe: true }, fredApiKeyConfigured: false };
   const store = new CacheStore(runtimeDir);
   const limiter = new RequestLimiter(store, config);
   const logger = new BoundedLogger(store.logsDir);
