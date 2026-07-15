@@ -3,11 +3,14 @@
 const fs = require('fs/promises');
 const path = require('path');
 const { createCboeHistorySource } = require('../data-sources/cboe-history');
+const { SelfCalculatedCoordinator } = require('../self-calculated/coordinator');
 const { isProviderEffectivelyEnabled, providerById } = require('./provider-compliance');
 const { availableRanges, filterHistory, validateModel } = require('./schema');
 const { isWeekend } = require('./scheduler');
 
 const ONLINE_DECISIONS = Object.freeze({
+  pe: { provider: 'sec-edgar', permission: 'secEdgar', reason: 'SEC bulk update requires explicit local opt-in and a valid user agent' },
+  'nasdaq-cot-positioning': { provider: 'cftc', permission: 'cftc', reason: 'CFTC official public dataset is unavailable' },
   vix: { provider: 'cboe', permission: 'cboe', reason: 'Cboe 数据存储与再展示许可待确认' },
   vxn: { provider: 'cboe', permission: 'cboe', reason: 'Cboe 数据存储与再展示许可待确认' }
 });
@@ -96,7 +99,7 @@ function errorModel(indicator, source, error, limiterState, now) {
 }
 
 class MarketDataService {
-  constructor({ rootDir, config, cacheStore, limiter, logger, fetchImpl = global.fetch, now = () => new Date() }) {
+  constructor({ rootDir, config, cacheStore, limiter, logger, definitions = null, fetchImpl = global.fetch, now = () => new Date() }) {
     this.rootDir = rootDir;
     this.config = config;
     this.cacheStore = cacheStore;
@@ -108,15 +111,34 @@ class MarketDataService {
     this.models = new Map();
     this.sources = new Map();
     this.cacheErrors = new Map();
+    this.coordinator = null;
+    this.definitionOverride = definitions;
   }
 
   async init({ startupRefresh = true } = {}) {
     await this.cacheStore.init();
     const limiterError = await this.limiter.init();
     if (limiterError) await this.logger.log({ at: isoNow(this.now()), event: 'request-state-error', errorType: limiterError.type });
-    this.indicators = JSON.parse(await fs.readFile(path.join(this.rootDir, 'public', 'data', 'indicators.json'), 'utf8'));
+    this.indicators = this.definitionOverride || JSON.parse(await fs.readFile(path.join(this.rootDir, 'public', 'data', 'indicators.json'), 'utf8'));
 
-    for (const id of Object.keys(ONLINE_DECISIONS)) {
+    if (this.config.selfCalculatedMvp) {
+      this.coordinator = new SelfCalculatedCoordinator({
+        rootDir: this.rootDir,
+        runtimeRoot: this.config.runtimeRoot,
+        config: this.config,
+        cacheStore: this.cacheStore,
+        definitions: this.indicators,
+        fetchImpl: this.fetchImpl,
+        now: this.now
+      });
+      await this.coordinator.init();
+      this.models = this.coordinator.models;
+      this.sources.set('pe', this.coordinator.secSource);
+      this.sources.set('nasdaq-cot-positioning', this.coordinator.cftcSource);
+      return this;
+    }
+
+    for (const id of ['vix', 'vxn']) {
       this.sources.set(id, createCboeHistorySource(id, {
         fetchImpl: this.fetchImpl,
         requestTimeoutMs: this.config.requestTimeoutMs
@@ -124,7 +146,7 @@ class MarketDataService {
     }
 
     for (const indicator of this.indicators) {
-      const decision = ONLINE_DECISIONS[indicator.id];
+      const decision = ['vix', 'vxn'].includes(indicator.id) ? ONLINE_DECISIONS[indicator.id] : null;
       if (!decision) {
         this.models.set(indicator.id, demoModel(indicator, this.now()));
         continue;
@@ -174,6 +196,10 @@ class MarketDataService {
       && isProviderEffectivelyEnabled(provider));
   }
 
+  isExternalSelfCalculated(id) {
+    return this.config.selfCalculatedMvp && (id === 'pe' || id === 'nasdaq-cot-positioning');
+  }
+
   isFresh(model, now = this.now()) {
     if (model.status !== 'fresh' || !model.lastSuccessAt) return false;
     const source = this.sources.get(model.id);
@@ -192,6 +218,7 @@ class MarketDataService {
   }
 
   async refresh(id, { kind = 'scheduled', requestSource = 'scheduler' } = {}) {
+    if (this.config.selfCalculatedMvp) return this.refreshSelfCalculated(id, { kind, requestSource });
     const indicator = this.indicatorDefinition(id);
     const source = this.sources.get(id);
     if (!indicator || !source) return { ok: false, statusCode: 404, reason: 'unknown-indicator' };
@@ -266,11 +293,70 @@ class MarketDataService {
     }
   }
 
+  async refreshSelfCalculated(id, { kind = 'scheduled', requestSource = 'scheduler' } = {}) {
+    const indicator = this.indicatorDefinition(id);
+    if (!indicator) return { ok: false, statusCode: 404, reason: 'unknown-indicator' };
+    if (!this.isExternalSelfCalculated(id)) {
+      await this.coordinator.reloadLocalInputs();
+      return { ok: true, indicator: this.getIndicator(id) };
+    }
+    if (!this.isApproved(id)) return { ok: false, statusCode: 409, reason: 'source-not-approved', indicator: this.getIndicator(id) };
+    const source = this.sources.get(id);
+    if (this.isExternalSelfCalculated(id)) {
+      await this.limiter.ensureDay(this.now());
+      const attemptsToday = this.limiter.snapshot().indicators[id]?.attempts || 0;
+      if (attemptsToday >= 1) return { ok: false, statusCode: 429, reason: 'source-daily-limit', indicator: this.getIndicator(id) };
+    }
+    const allowed = await this.limiter.canAttempt(id, source.provider, kind, this.now());
+    if (!allowed.ok) return { ok: false, statusCode: 429, ...allowed, indicator: this.getIndicator(id) };
+    if (!this.limiter.begin(id)) return { ok: false, statusCode: 409, reason: 'in-progress', indicator: this.getIndicator(id) };
+    const attemptAt = this.now();
+    await this.limiter.recordAttempt(id, source.provider, kind, attemptAt);
+    try {
+      const result = await this.coordinator.refresh(id);
+      const successAt = this.now();
+      await this.limiter.recordSuccess(id, successAt);
+      await this.logger.log({
+        at: isoNow(successAt), indicatorId: id, provider: source.provider, event: 'fetch', requestSource,
+        success: result.ok, wroteNewData: result.sourceResult?.status !== 'unchanged',
+        dataDate: this.models.get(id)?.asOf || null
+      });
+      return { ...result, indicator: this.getIndicator(id) };
+    } catch (error) {
+      const failedAt = this.now();
+      const limiterState = await this.limiter.recordFailure(id, error.marketDataType || 'unknown', failedAt);
+      const current = this.models.get(id);
+      const hasUsableValue = current?.value !== null && current?.asOf;
+      const failedModel = {
+        ...current,
+        status: hasUsableValue ? 'stale' : 'error',
+        statusMessage: hasUsableValue ? '外部更新失败，保留最后一次成功结果' : '外部数据请求失败，且没有可用缓存',
+        isStale: Boolean(hasUsableValue),
+        lastAttemptAt: limiterState.lastAttemptAt,
+        nextAllowedAt: limiterState.nextAllowedAt,
+        lastErrorType: limiterState.lastErrorType,
+        servedAt: isoNow(failedAt)
+      };
+      this.models.set(id, validateModel(failedModel));
+      await this.logger.log({
+        at: isoNow(failedAt), indicatorId: id, provider: source.provider, event: 'fetch', requestSource,
+        success: false, errorType: error.marketDataType || 'unknown', dataDate: current?.asOf || null,
+        wroteNewData: false, nextRetryAt: limiterState.nextAllowedAt
+      });
+      return { ok: false, statusCode: 502, reason: error.marketDataType || 'fetch-failed', indicator: this.getIndicator(id) };
+    } finally {
+      this.limiter.end(id);
+    }
+  }
+
   getIndicator(id, range = '1Y') {
     const model = this.models.get(id);
     if (!model) return null;
     const history = filterHistory(model.history || [], range, model.asOf, 240);
-    return { ...model, history, requestedRange: range, servedAt: isoNow(this.now()) };
+    const robustHistory = Array.isArray(model.robustHistory)
+      ? filterHistory(model.robustHistory, range, model.asOf, 240)
+      : undefined;
+    return { ...model, history, ...(robustHistory ? { robustHistory } : {}), requestedRange: range, servedAt: isoNow(this.now()) };
   }
 
   getIndicators(range = '1Y') {
@@ -280,8 +366,13 @@ class MarketDataService {
   getStatus() {
     return {
       enabled: this.config.enabled,
+      mode: this.config.selfCalculatedMvp ? 'self-calculated-mvp' : 'legacy-online',
       timezone: this.config.timezone,
-      permissions: { cboe: this.config.permissions.cboe ? 'confirmed' : 'not-confirmed' },
+      permissions: {
+        cboe: this.config.permissions.cboe ? 'confirmed' : 'not-confirmed',
+        secEdgar: this.config.permissions.secEdgar ? 'configured-and-opted-in' : 'disabled-or-user-agent-missing',
+        cftc: this.config.permissions.cftc ? 'approved' : 'disabled'
+      },
       providers: (this.config.providerRegistry?.providers || []).map(provider => ({
         providerId: provider.providerId,
         technicalStatus: provider.technicalStatus,

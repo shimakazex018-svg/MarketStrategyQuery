@@ -24,7 +24,9 @@ function importPricesCsv(input, options = {}) {
     if (previousDate && record.date <= previousDate) throw new TypeError(`prices for ${ticker} are not in ascending date order`);
     lastDateByTicker.set(ticker, record.date);
     if (!record.sourceName) throw new TypeError(`missing sourceName for ${ticker}`);
-    return { ticker, date: record.date, adjustedClose, sourceName: record.sourceName, row: index + 2 };
+    const currency = record.currency ? String(record.currency).trim().toUpperCase() : null;
+    if (currency && !/^[A-Z]{3}$/.test(currency)) throw new TypeError(`invalid currency for ${ticker}`);
+    return { ticker, date: record.date, adjustedClose, sourceName: record.sourceName, ...(currency ? { currency } : {}), row: index + 2 };
   });
   const sourceNames = new Set(records.map(record => record.sourceName));
   if (sourceNames.size !== 1) throw new TypeError('prices must share one sourceName per import');
@@ -36,4 +38,3 @@ function importPricesCsv(input, options = {}) {
 }
 
 module.exports = { importPricesCsv };
-

@@ -26,6 +26,15 @@ function finiteNonNegative(value) {
   return Number.isFinite(number) && number >= 0 ? number : null;
 }
 
+function classifyError(error) {
+  if (error.marketDataType) return error.marketDataType;
+  if (error.name === 'AbortError' || error.name === 'TimeoutError') return 'timeout';
+  if (error instanceof TypeError && /fetch failed|network/i.test(error.message)) return 'network';
+  if (error instanceof SyntaxError || error instanceof TypeError) return 'validation';
+  if (error instanceof RangeError) return 'response-too-large';
+  return 'network';
+}
+
 function parseTffRows(payload, { contractCode = DEFAULT_CONTRACT, publishedAt = null } = {}) {
   if (!Array.isArray(payload)) throw new TypeError('CFTC TFF payload must be an array');
   const seen = new Set();
@@ -75,7 +84,8 @@ class CftcTffSource {
 
   async fetch({ now = new Date() } = {}) {
     const started = Date.now();
-    const response = await this.fetchImpl(queryUrl(this.contractCode), {
+    try {
+      const response = await this.fetchImpl(queryUrl(this.contractCode), {
       headers: { Accept: 'application/json', 'User-Agent': 'MarketStrategyQuery/0.4 personal-research-dashboard' },
       signal: AbortSignal.timeout(this.requestTimeoutMs)
     });
@@ -106,8 +116,13 @@ class CftcTffSource {
       rows
     };
     if (!unchanged) await atomicJson(filePath, model);
-    return { rows, latestReportDate: latestDate, publishedAt, unchanged, httpStatus: response.status, durationMs: Date.now() - started };
+      return { rows, latestReportDate: latestDate, publishedAt, unchanged, httpStatus: response.status, durationMs: Date.now() - started };
+    } catch (error) {
+      error.marketDataType = classifyError(error);
+      error.durationMs = Date.now() - started;
+      throw error;
+    }
   }
 }
 
-module.exports = { CftcTffSource, DATASET_ID, DATASET_URL, DEFAULT_CONTRACT, parseTffRows, queryUrl };
+module.exports = { CftcTffSource, DATASET_ID, DATASET_URL, DEFAULT_CONTRACT, classifyError, parseTffRows, queryUrl };
