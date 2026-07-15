@@ -9,6 +9,7 @@ const {
   validateProvider,
   validateProviderRegistry
 } = require('../server/market-data/provider-compliance');
+const { loadMarketDataConfig } = require('../server/market-data/config');
 
 function provider(overrides = {}) {
   return {
@@ -35,11 +36,11 @@ function provider(overrides = {}) {
   };
 }
 
-test('production registry is valid and all deferred providers are disabled', () => {
+test('production registry enables only approved SEC and CFTC providers', () => {
   const registry = loadProviderRegistry(path.join(__dirname, '..'));
-  assert.deepEqual(registry.providers.map(item => item.providerId), ['cboe', 'ibkr', 'twelve-data', 'alpha-vantage']);
-  assert.equal(registry.providers.every(item => item.enabled === false), true);
-  assert.equal(registry.providers.every(item => isProviderEffectivelyEnabled(item) === false), true);
+  assert.deepEqual(registry.providers.map(item => item.providerId), ['sec-edgar', 'cftc', 'cboe', 'ibkr', 'twelve-data', 'alpha-vantage']);
+  assert.deepEqual(registry.providers.filter(item => item.enabled).map(item => item.providerId), ['sec-edgar', 'cftc']);
+  assert.deepEqual(registry.providers.filter(item => isProviderEffectivelyEnabled(item)).map(item => item.providerId), ['sec-edgar', 'cftc']);
   assert.equal(registry.providers.find(item => item.providerId === 'ibkr').selectionStatus, 'not_selected_by_owner');
 });
 
@@ -61,4 +62,24 @@ test('registry rejects duplicate provider ids', () => {
 test('provider selection status is explicit and validated', () => {
   assert.throws(() => validateProvider(provider({ selectionStatus: 'unknown' })), /selectionStatus/);
   assert.equal(validateProvider(provider({ selectionStatus: 'deferred', enabled: false })).selectionStatus, 'deferred');
+});
+
+test('SEC production permission requires explicit opt-in, app name and valid contact email', () => {
+  const names = ['SEC_BULK_UPDATE_ENABLED', 'SEC_USER_AGENT_APP', 'SEC_USER_AGENT_EMAIL'];
+  const previous = Object.fromEntries(names.map(name => [name, process.env[name]]));
+  try {
+    process.env.SEC_BULK_UPDATE_ENABLED = 'true';
+    process.env.SEC_USER_AGENT_APP = 'MarketStrategyQuery';
+    delete process.env.SEC_USER_AGENT_EMAIL;
+    assert.equal(loadMarketDataConfig(path.join(__dirname, '..')).permissions.secEdgar, false);
+    process.env.SEC_USER_AGENT_EMAIL = 'invalid';
+    assert.equal(loadMarketDataConfig(path.join(__dirname, '..')).permissions.secEdgar, false);
+    process.env.SEC_USER_AGENT_EMAIL = 'owner@example.com';
+    assert.equal(loadMarketDataConfig(path.join(__dirname, '..')).permissions.secEdgar, true);
+  } finally {
+    for (const name of names) {
+      if (previous[name] === undefined) delete process.env[name];
+      else process.env[name] = previous[name];
+    }
+  }
 });

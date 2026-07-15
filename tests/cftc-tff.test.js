@@ -62,3 +62,16 @@ test('CFTC source persists official-style rows and does not rewrite an unchanged
   assert.equal(second.unchanged, true);
   assert.equal(secondStat.mtimeMs, firstStat.mtimeMs);
 });
+
+test('CFTC source classifies HTTP, empty, malformed, timeout and oversized failures', async t => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'cftc-failures-'));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const sourceFor = fetchImpl => new CftcTffSource({ runtimeDir: root, fetchImpl, requestTimeoutMs: 10 });
+  await assert.rejects(sourceFor(async () => new Response('', { status: 404 })).fetch(), error => error.marketDataType === 'http-404');
+  await assert.rejects(sourceFor(async () => new Response('', { status: 429 })).fetch(), error => error.marketDataType === 'http-429');
+  await assert.rejects(sourceFor(async () => new Response('[]', { status: 200 })).fetch(), error => error.marketDataType === 'empty-data');
+  await assert.rejects(sourceFor(async () => new Response('{changed', { status: 200 })).fetch(), error => error.marketDataType === 'validation');
+  await assert.rejects(sourceFor(async () => { const error = new DOMException('timed out', 'TimeoutError'); throw error; }).fetch(), error => error.marketDataType === 'timeout');
+  await assert.rejects(sourceFor(async () => { throw new TypeError('fetch failed'); }).fetch(), error => error.marketDataType === 'network');
+  await assert.rejects(sourceFor(async () => new Response('[]', { status: 200, headers: { 'content-length': String(11 * 1024 * 1024) } })).fetch(), error => error.marketDataType === 'response-too-large');
+});
