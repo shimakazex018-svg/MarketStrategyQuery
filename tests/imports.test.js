@@ -5,6 +5,7 @@ const test = require('node:test');
 const { parseCsv } = require('../server/imports/csv-parser');
 const { importHoldingsCsv } = require('../server/imports/holdings-import');
 const { importPricesCsv } = require('../server/imports/prices-import');
+const { RuntimeImportStore } = require('../server/imports/runtime-import-store');
 const {
   importManualForwardPeCsv,
   manualForwardPeState,
@@ -29,11 +30,31 @@ test('holdings import normalizes tickers, checks duplicates and verifies total w
   const result = importHoldingsCsv(csv, { importedAt: '2026-01-03T00:00:00Z' });
   assert.equal(result.records[0].ticker, 'AAA');
   assert.equal(result.totalWeight, 1);
+  assert.equal(result.inputWeightScale, 'decimal_0_to_1');
   assert.equal(result.manifest.sha256.length, 64);
-  assert.throws(() => importHoldingsCsv(csv.replace('0.4', '0.2')), /weights total/);
-  const warning = importHoldingsCsv(csv.replace('0.4', '0.2'), { strictWeightTotal: false });
+  const warning = importHoldingsCsv(csv.replace('0.4', '0.2'));
   assert.deepEqual(warning.warnings, ['weights_do_not_total_one']);
+  assert.throws(() => importHoldingsCsv(csv.replace('0.4', '0.2'), { strictWeightTotal: true }), /weights total/);
   assert.throws(() => importHoldingsCsv(`${csv}\nAAA,0.1,2026-01-02,SYNTHETIC`, { strictWeightTotal: false }), /duplicate holding/);
+});
+
+test('holdings import accepts 0-100 weights, optional provenance fields and provisional missing dates', () => {
+  const percent = [
+    'ticker,weight,asOf,name,cusip,sourceReference',
+    'AAA,60,2026-01-02,Alpha,000000001,local-export-1',
+    'BBB,40,2026-01-02,Beta,000000002,local-export-1'
+  ].join('\n');
+  const normalized = importHoldingsCsv(percent, { sourceName: 'USER_AUTHORIZED_EXPORT' });
+  assert.equal(normalized.inputWeightScale, 'percent_0_to_100');
+  assert.equal(normalized.originalWeightTotal, 100);
+  assert.equal(normalized.records[0].weight, 0.6);
+  assert.equal(normalized.records[0].cusip, '000000001');
+
+  const missingDate = importHoldingsCsv(percent.replaceAll('2026-01-02', ''), {
+    sourceName: 'USER_AUTHORIZED_EXPORT', allowMissingAsOf: true
+  });
+  assert.equal(missingDate.asOf, null);
+  assert.ok(missingDate.warnings.includes('weight_date_missing'));
 });
 
 test('price import rejects duplicates, missing or abnormal prices and per-ticker date disorder', () => {
@@ -67,4 +88,33 @@ test('manual Forward PE validates methodology, provenance, duplicates and stalen
   const header = 'value,asOf,sourceName,sourceReference,methodology,notes,enteredAt';
   const row = '24.5,2026-01-02,USER_SOURCE,ref-1,forward_12_months,Manual,2026-01-03T00:00:00Z';
   assert.throws(() => importManualForwardPeCsv(`${header}\n${row}\n${row}`), /duplicate manual/);
+});
+
+test('runtime import store auto-detects local CSV files and keeps failures isolated', async t => {
+  const fs = require('node:fs/promises');
+  const os = require('node:os');
+  const path = require('node:path');
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'runtime-import-test-'));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const store = new RuntimeImportStore(root);
+  await store.init();
+  await fs.writeFile(path.join(store.directories.holdings, 'qqq.csv'), [
+    'ticker,weight,asOf',
+    'AAA,55,2026-01-02',
+    'BBB,45,2026-01-02'
+  ].join('\n'));
+  await fs.writeFile(path.join(store.directories.prices, 'prices.csv'), [
+    'ticker,date,adjustedClose,sourceName',
+    'AAA,2026-01-02,100,USER_EXPORT',
+    'BBB,2026-01-02,50,USER_EXPORT'
+  ].join('\n'));
+  await fs.writeFile(path.join(store.directories.forwardPe, 'bad.csv'), 'bad,data\n1,2\n');
+  const result = await store.load();
+  assert.equal(result.holdings.status, 'fresh');
+  assert.equal(result.holdings.data.inputWeightScale, 'percent_0_to_100');
+  assert.equal(result.prices.status, 'fresh');
+  assert.equal(result.forwardPe.status, 'error');
+  assert.match(result.forwardPe.error.message, /required header/);
+  const normalized = JSON.parse(await fs.readFile(path.join(root, 'normalized', 'holdings.json'), 'utf8'));
+  assert.equal(normalized.data.manifest.sha256.length, 64);
 });
