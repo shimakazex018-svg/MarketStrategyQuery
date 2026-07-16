@@ -137,6 +137,25 @@ const service = {
   getIndicators: range => models(range),
   getIndicator: (id, range) => models(range).find(model => model.id === id) || null,
   getStatus: () => ({ enabled: false, timezone: 'Asia/Shanghai', reviewFixture: true, indicators: models().map(({ id, status }) => ({ id, status })), servedAt: new Date().toISOString() }),
+  getProviderDiagnosticStatus: id => id === 'worldperatio' ? {
+    providerId: id, enabled: true, status: 'fresh', complianceStatus: 'approved_with_conditions', attemptsToday: 1
+  } : null,
+  getProviderLatest: id => id === 'worldperatio' ? {
+    providerId: id, status: 'fresh', sourceUrl: 'https://worldperatio.com/index/nasdaq-100/', sourceDataDate: '2099-01-15',
+    currentPE: 42.42, valuationLabel: 'Fair', fetchedAt: '2099-01-16T01:00:00.000Z'
+  } : null,
+  getProviderHistory: id => id === 'worldperatio' ? {
+    providerId: id, status: 'fresh', seriesAvailability: 'summary_statistics_only', publishedSeries: [],
+    snapshots: [{ sourceDataDate: '2099-01-15', currentPE: 42.42, fetchedAt: '2099-01-16T01:00:00.000Z', parseVersion: 'WPR-PARSE-v1' }]
+  } : null,
+  getProviderStatistics: id => id === 'worldperatio' ? {
+    providerId: id, status: 'fresh', sourceUrl: 'https://worldperatio.com/index/nasdaq-100/', sourceDataDate: '2099-01-15',
+    currentPE: 42.42, valuationLabel: 'Fair', deviationFromMean: null, seriesAvailability: 'summary_statistics_only',
+    fetchedAt: '2099-01-16T01:00:00.000Z', historicalStats: {
+      '1y': { mean: 40.1, stdDev: 2.2 }, '5y': { mean: 31.11, stdDev: 3.33 },
+      '10y': { mean: 28.22, stdDev: 4.44 }, '20y': { mean: 23.33, stdDev: 5.55 }
+    }
+  } : null,
   refresh: async () => ({ ok: false, statusCode: 409, reason: 'review-fixture-read-only' })
 };
 

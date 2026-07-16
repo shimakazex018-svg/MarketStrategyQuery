@@ -9,6 +9,7 @@ const state = {
   optionCategory: '全部',
   ranges: {},
   marketData: {},
+  externalPE: { loaded: false, loading: false, status: null, latest: null, history: null, statistics: null, error: null },
   route: ''
 };
 
@@ -33,6 +34,7 @@ const menuToggle = document.getElementById('menuToggle');
 const mobileNav = document.getElementById('mobileNav');
 let indicatorDialogTrigger = null;
 const marketDataControllers = new Map();
+let externalPEController = null;
 
 function formatDateTime(value) {
   if (!value) return '—';
@@ -583,6 +585,65 @@ function indicatorsTemplate() {
     </div>`;
 }
 
+function externalPeRangeCard(label, stats, currentPE) {
+  const mean = Number(stats?.mean);
+  const stdDev = Number(stats?.stdDev);
+  if (!Number.isFinite(mean) || !Number.isFinite(stdDev) || stdDev <= 0) {
+    return `<article class="external-pe-range is-unavailable"><h3>${escapeHtml(label)}</h3><p>源站未提供可唯一验证的均值和标准差。</p></article>`;
+  }
+  const low2 = mean - (2 * stdDev);
+  const high2 = mean + (2 * stdDev);
+  const position = hasFiniteValue(currentPE) && high2 > low2
+    ? Math.max(0, Math.min(100, ((Number(currentPE) - low2) / (high2 - low2)) * 100))
+    : null;
+  const fixed = value => value.toFixed(2).replace(/0+$/, '').replace(/\.$/, '');
+  return `<article class="external-pe-range">
+    <div class="external-pe-range-heading"><h3>${escapeHtml(label)}</h3><strong>均值 ${fixed(mean)}x</strong></div>
+    <div class="external-pe-band" aria-label="${escapeHtml(label)}估值统计区间：均值${fixed(mean)}，标准差${fixed(stdDev)}">
+      <span class="external-pe-band-one"></span>
+      <i class="external-pe-mean" aria-hidden="true"></i>
+      ${position === null ? '' : `<b class="external-pe-current" style="left:${position.toFixed(2)}%" aria-hidden="true"></b>`}
+    </div>
+    <dl><div><dt>±1σ</dt><dd>${fixed(mean - stdDev)}–${fixed(mean + stdDev)}x</dd></div><div><dt>±2σ</dt><dd>${fixed(low2)}–${fixed(high2)}x</dd></div></dl>
+  </article>`;
+}
+
+function externalPeSeriesMarkup(external) {
+  const history = external.history || {};
+  const published = Array.isArray(history.publishedSeries) ? history.publishedSeries : [];
+  const snapshots = Array.isArray(history.snapshots) ? history.snapshots : [];
+  const points = published.length > 1 ? published : snapshots.length > 1
+    ? snapshots.map(point => ({ date: point.sourceDataDate, value: point.currentPE }))
+    : [];
+  const label = published.length > 1 ? 'WorldPEratio公开历史PE曲线' : '本站每日快照曲线';
+  if (points.length < 2) {
+    return `<div class="external-pe-series-empty" role="status"><strong>快照历史正在积累</strong><span>当前只有 ${snapshots.length} 个去重快照；不足2点时不绘制折线。</span></div>`;
+  }
+  const chart = seriesToPath(points.map(point => Number(point.value)), 720, 180, 12);
+  return `<figure class="external-pe-series"><figcaption>${escapeHtml(label)}</figcaption><svg viewBox="0 0 720 180" preserveAspectRatio="none" role="img" aria-label="${escapeHtml(label)}，${points.length}个真实数据点"><line class="baseline" x1="0" x2="720" y1="90" y2="90"></line><path class="line" d="${chart.line}"></path></svg><p>${escapeHtml(points[0].date)} 至 ${escapeHtml(points.at(-1).date)} · ${points.length}点</p></figure>`;
+}
+
+function externalPeTemplate() {
+  const external = state.externalPE;
+  if (external.loading && !external.loaded) return '<section class="content-card external-pe-section"><h2>外部参考PE</h2><p>正在读取本地 WorldPEratio 缓存…</p></section>';
+  if (external.error || !external.statistics) return '<section class="content-card external-pe-section"><h2>外部参考PE</h2><p>本地外部参考数据暂不可用；本站自计算PE不受影响。</p></section>';
+  const stats = external.statistics;
+  const latest = external.latest || {};
+  const status = DATA_STATUS[stats.status] || DATA_STATUS.unavailable;
+  const current = hasFiniteValue(stats.currentPE) ? `${Number(stats.currentPE).toFixed(2).replace(/0+$/, '').replace(/\.$/, '')}x` : '—';
+  const ranges = [['1年', '1y'], ['5年', '5y'], ['10年', '10y'], ['20年', '20y']];
+  const seriesNote = stats.seriesAvailability === 'full_series_available'
+    ? '源站响应包含明确日期和值的公开历史序列。'
+    : '源站仅提供汇总统计；本站历史曲线从首次采集日期开始积累。';
+  return `<section class="external-pe-section" aria-labelledby="externalPeTitle">
+    <div class="external-pe-header"><div><p class="eyebrow">External Reference Data</p><h2 id="externalPeTitle">外部参考PE</h2><p>WorldPEratio 的 Nasdaq-100/QQQ 参考值，不是本站算法结果，也不会覆盖本站自计算PE。</p></div><span class="metric-status" data-status="${status.tone}">${status.label}</span></div>
+    <div class="external-pe-summary"><article><span>当前参考PE</span><strong>${escapeHtml(current)}</strong></article><dl><div><dt>数据日期</dt><dd>${escapeHtml(stats.sourceDataDate || '—')}</dd></div><div><dt>抓取时间</dt><dd>${escapeHtml(formatDateTime(stats.fetchedAt))}</dd></div><div><dt>估值标签</dt><dd>${escapeHtml(stats.valuationLabel || '—')}</dd></div><div><dt>数据来源</dt><dd><a href="${escapeHtml(latest.sourceUrl || stats.sourceUrl || '#')}" target="_blank" rel="noreferrer">WorldPEratio · 外部参考数据</a></dd></div></dl></div>
+    <div class="notice"><strong>图表口径</strong><span>${escapeHtml(seriesNote)}</span></div>
+    <div class="external-pe-ranges">${ranges.map(([label, key]) => externalPeRangeCard(label, stats.historicalStats?.[key], stats.currentPE)).join('')}</div>
+    ${externalPeSeriesMarkup(external)}
+  </section>`;
+}
+
 function peDetailTemplate() {
   const indicator = state.indicators.find(item => item.id === 'pe');
   const market = state.marketData.pe || initialMarketModel(indicator || { id: 'pe', name: 'QQQ组合TTM PE' });
@@ -594,7 +655,10 @@ function peDetailTemplate() {
   return `
     <div class="page">
       <div class="breadcrumb"><a href="#/">首页</a><span>/</span><a href="#/indicators">指标说明</a><span>/</span><span>QQQ组合TTM PE</span></div>
-      <header class="page-title pe-detail-title"><div><p class="eyebrow">Valuation Diagnostics</p><h1>QQQ组合TTM PE</h1><p>原始口径保留普通亏损公司；稳健口径在E/P层面缩尾极值并保持原QQQ权重。两者均不是Invesco官方发布的基金估值。</p></div><span class="metric-status" data-status="${status.tone}">${status.label}</span></header>
+      <header class="page-title pe-detail-title"><div><p class="eyebrow">Valuation Diagnostics</p><h1>PE估值详情</h1><p>外部参考与本站自计算结果严格分区。外部值只用于交叉参考，不能替代本站算法输入。</p></div></header>
+      ${externalPeTemplate()}
+      <section class="self-calculated-pe-section" aria-labelledby="selfCalculatedPeTitle">
+      <header class="external-pe-header"><div><p class="eyebrow">Self-calculated Data</p><h2 id="selfCalculatedPeTitle">本站自计算PE</h2><p>原始口径保留普通亏损公司；稳健口径在E/P层面缩尾极值并保持原QQQ权重。两者均不是Invesco官方发布的基金估值。</p></div><span class="metric-status" data-status="${status.tone}">${status.label}</span></header>
       <div class="notice"><strong>当前结论</strong><span>${escapeHtml(market.statusMessage || '尚无可用结果。')}</span></div>
       ${market.qualityStatus === 'quality_warning' ? '<div class="notice warning"><strong>质量提示</strong><span>当前状态允许显示结果，但请先核对下列质量标记和受影响成分。</span></div>' : ''}
       <section class="pe-value-grid">
@@ -623,6 +687,7 @@ function peDetailTemplate() {
       <section class="content-card"><h2>数据质量标记</h2>${flags.length ? renderList(flags) : '<p>当前没有质量标记。</p>'}</section>
       <section class="content-card"><h2>受稳健缩尾影响的成分</h2>${affected.length ? renderList(affected.map(item => typeof item === 'string' ? item : `${item.ticker || '未知'}：${item.reason || 'E/P超出稳健边界'}`)) : '<p>当前没有受影响成分，或尚无可用结果。</p>'}</section>
       <div class="notice"><strong>使用边界</strong><span>本页不展示市值聚合诊断算法或排除亏损诊断值作为正式PE；结果仅用于本人投资研究，不构成自动阶段判断、仓位建议或收益保证。</span></div>
+      </section>
     </div>`;
 }
 
@@ -646,6 +711,28 @@ async function loadMarketData(range = '1Y') {
     state.indicators.forEach(indicator => {
       state.marketData[indicator.id] = failedMarketModel(indicator, state.marketData[indicator.id]);
     });
+  }
+}
+
+async function loadExternalPE() {
+  externalPEController?.abort();
+  const controller = new AbortController();
+  externalPEController = controller;
+  state.externalPE = { ...state.externalPE, loading: true, error: null };
+  try {
+    const base = '/api/market-data/providers/worldperatio';
+    const responses = await Promise.all(['status', 'latest', 'history', 'statistics'].map(endpoint => fetch(`${base}/${endpoint}`, {
+      headers: { Accept: 'application/json' }, signal: controller.signal
+    })));
+    if (responses.some(response => !response.ok)) throw new Error('WorldPEratio local API unavailable');
+    const [status, latest, history, statistics] = await Promise.all(responses.map(response => response.json()));
+    state.externalPE = { loaded: true, loading: false, status, latest, history, statistics, error: null };
+  } catch (error) {
+    if (error.name === 'AbortError') return;
+    console.error('WorldPEratio local API:', error);
+    state.externalPE = { ...state.externalPE, loaded: true, loading: false, error: 'local-api-unavailable' };
+  } finally {
+    if (externalPEController === controller) externalPEController = null;
   }
 }
 
@@ -927,10 +1014,15 @@ document.addEventListener('keydown', event => {
   }
 });
 
-window.addEventListener('hashchange', () => {
+window.addEventListener('hashchange', async () => {
   marketDataControllers.forEach(controller => controller.abort());
   marketDataControllers.clear();
+  externalPEController?.abort();
   render();
+  if (parseRoute() === '/indicators/pe' && !state.externalPE.loaded) {
+    await loadExternalPE();
+    if (parseRoute() === '/indicators/pe') render({ preserveScroll: true });
+  }
 });
 
 async function loadData() {
@@ -957,6 +1049,7 @@ async function loadData() {
     await loadData();
     render();
     await loadMarketData('1Y');
+    if (parseRoute() === '/indicators/pe') await loadExternalPE();
     render({ preserveScroll: true });
   } catch (error) {
     console.error(error);
