@@ -27,8 +27,8 @@ function provider(overrides = {}) {
     historicalStorageAllowed: true,
     attributionRequirement: 'synthetic fixture',
     writtenConfirmationRequired: false,
-    termsCheckedAt: '2026-07-15',
-    technicalCheckedAt: '2026-07-15',
+    termsCheckedAt: '2099-01-15',
+    technicalCheckedAt: '2099-01-15',
     conditionsSatisfied: true,
     enabled: true,
     notes: 'Contains no real market data.',
@@ -38,10 +38,12 @@ function provider(overrides = {}) {
 
 test('production registry enables only approved SEC and CFTC providers', () => {
   const registry = loadProviderRegistry(path.join(__dirname, '..'));
-  assert.deepEqual(registry.providers.map(item => item.providerId), ['sec-edgar', 'cftc', 'cboe', 'ibkr', 'twelve-data', 'alpha-vantage']);
+  assert.deepEqual(registry.providers.map(item => item.providerId), ['sec-edgar', 'cftc', 'cboe', 'ibkr', 'twelve-data', 'alpha-vantage', 'worldperatio']);
   assert.deepEqual(registry.providers.filter(item => item.enabled).map(item => item.providerId), ['sec-edgar', 'cftc']);
   assert.deepEqual(registry.providers.filter(item => isProviderEffectivelyEnabled(item)).map(item => item.providerId), ['sec-edgar', 'cftc']);
   assert.equal(registry.providers.find(item => item.providerId === 'ibkr').selectionStatus, 'not_selected_by_owner');
+  assert.equal(registry.providers.find(item => item.providerId === 'worldperatio').selectionStatus, 'candidate');
+  assert.equal(registry.providers.find(item => item.providerId === 'worldperatio').complianceStatus, 'pending_written_confirmation');
 });
 
 test('pending, rejected, unavailable and not-evaluated providers cannot be enabled', () => {
@@ -62,6 +64,7 @@ test('registry rejects duplicate provider ids', () => {
 test('provider selection status is explicit and validated', () => {
   assert.throws(() => validateProvider(provider({ selectionStatus: 'unknown' })), /selectionStatus/);
   assert.equal(validateProvider(provider({ selectionStatus: 'deferred', enabled: false })).selectionStatus, 'deferred');
+  assert.equal(validateProvider(provider({ selectionStatus: 'candidate', enabled: false })).selectionStatus, 'candidate');
 });
 
 test('SEC production permission requires explicit opt-in, app name and valid contact email', () => {
