@@ -20,7 +20,7 @@ npm.cmd run check
 3. Node 自动测试：缓存、结构校验、来源错误分类、限流、调度、许可边界和故障回退。
 4. Provider登记检查：固定状态枚举、必填字段、重复ID、附加条件和`enabled`硬门禁。
 5. 自计算指标检查：有界CSV、SEC字段/季度TTM、QQQ原始PE与WMAD4稳健PE、实现波动率、历史分位、风险偏好、CFTC候选合约和人工Forward PE边界。
-6. WorldPEratio公开页原型检查：robots、服务器HTML提取、目标/日期/数值歧义、403/429/登录/验证码停止、每日1+1请求、旧缓存回退、HTML不落盘、诊断API和Trim 10%统计。
+6. WorldPEratio检查：风险接受与30天条款复查门禁、采集前robots、服务器HTML提取、完整序列/仅汇总判定、目标/日期/数值歧义、403/429/登录/验证码停止、每日1+1请求、快照去重/损坏恢复、HTML不落盘、四个诊断API和Trim 10%统计。
 
 单独运行测试：
 
@@ -68,15 +68,17 @@ Invoke-RestMethod http://127.0.0.1:48101/api/market-data/providers/worldperatio/
 - 状态接口时区为 Asia/Shanghai，并返回Provider的技术状态、合规状态、登记启用值和实际启用值。
 - SEC与CFTC只有在合规登记和运行配置同时满足时才可实际启用；IBKR、Twelve Data、Alpha Vantage和Cboe保持未选择或禁用，环境变量不能绕过登记门禁。
 - 没有外部网络、没有 `FRED_API_KEY` 时仍能启动。
-- WorldPEratio 两个 GET 诊断接口不得触发第三方请求；当前应返回 `enabled: false`、`complianceStatus: pending_written_confirmation` 和空值。
+- WorldPEratio 四个 GET 诊断接口不得触发第三方请求；登记应返回 `enabled: true`、`complianceStatus: approved_with_conditions` 和风险接受标识。存在本地成功缓存时读取缓存；不存在时返回 unavailable/null。
 
-## WorldPEratio第一检查点
+## WorldPEratio第二检查点
 
-- 自动测试只使用合成 HTML、robots 和错误响应，不访问 WorldPEratio。
+- 自动测试只使用明确标注的合成 HTML、robots、历史结构和错误响应，不访问 WorldPEratio。
+- 验证条款复查日期缺失或超过30天时返回`terms-review-due`，并在robots和目标页请求前停止；status返回上次检查日、下次复查日和到期标记。
 - 验证 robots 允许/禁止/不存在、服务器 HTML 成功、JS-only 页面需浏览器、目标存在/不存在、当前值/日期缺失、多值冲突、异常值、403、429、登录、验证码和 DOM 变化。
-- 验证内容哈希变化、正常一次加失败重试一次的每日总上限、最后成功缓存 stale 回退、完整 HTML 不长期保存、外部参考缓存不覆盖自计算 PE。
+- 验证内容哈希只留在运行缓存、每天一次目标请求且仅超时/5xx重试、最后成功缓存 stale 回退、完整 HTML 不长期保存、外部参考缓存不覆盖自计算 PE。
+- 验证1/5/10/20年汇总统计、完整公开历史序列与`summary_statistics_only`分支、本站快照去重/排序/损坏隔离/last-good恢复，以及latest/history/statistics API不泄露哈希或本地路径。
 - 验证 `PE-HISTORY-TRIM10-v1` Trim 10%、样本不足和输入顺序不变性。
-- 浏览器 fetcher 当前必须保持禁用，因为实测服务器 HTML 已包含目标字段；不得安装 Playwright 或读取用户 Chrome Profile。
+- 浏览器 fetcher 必须保持禁用；不得安装Playwright用于采集或读取用户Chrome Profile。PE详情页视觉验收只使用合成评审夹具。
 
 ## HTTP 与安全检查
 

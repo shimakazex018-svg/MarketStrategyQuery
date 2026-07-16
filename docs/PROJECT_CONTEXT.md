@@ -30,14 +30,14 @@
 ## 当前稳定状态
 
 - 稳定版本：`main` 上的 `v0.4.0`；v0.4功能合并提交为 `a0eb46ea612dbe37254acf886b4d6a56c1cf1c66`。
-- 当前开发分支：`feature/v0.5-public-web-data-providers`；已完成 WorldPEratio 第一检查点的来源审计、默认禁用 Provider 原型和诊断 API，尚未正式采集或展示真实值。
+- 当前开发分支：`feature/v0.5-public-web-data-providers`；已完成 WorldPEratio 第二检查点的有限风险接受、受控真实采集、标准化缓存、快照历史、诊断 API 和 PE 详情页外部参考原型。
 - v0.4检查点B已把自计算数据层接入正式内部API与首页。`PE-Q1-RAW-v1`和`PE-Q1-ROBUST-WMAD4-v1`在同一张卡及PE详情页展示；排除亏损版和旧完整公司总市值/总盈利方法仍仅作内部诊断。
 - IBKR登记为`not_tested`、`pending_written_confirmation`、`not_selected_by_owner`、`enabled=false`；Twelve Data和Alpha Vantage为`deferred`。未安装组件、未登录、未请求数据。
 - 当前没有用户本地持仓、价格、Forward PE或SEC运行输入时，六张新卡均可独立显示`unavailable`并保持离线启动；不会回退到旧VIX/VXN或演示数值。
 - Cboe和IBKR在Provider注册表中均为 `pending_written_confirmation`、`enabled=false`；旧环境变量不能绕过注册表门禁。Twelve Data和Alpha Vantage为`not_evaluated`、`enabled=false`。
 - 正式首页六卡现为原始/稳健QQQ组合TTM PE、Forward PE人工录入、QQQ RV20、RV20历史分位、自建风险偏好和Nasdaq期货机构仓位代理。
 - v0.4的发布边界是自计算市场指标MVP、真实数据输入基础设施、原始和稳健QQQ PE计算、SEC/CFTC接入框架、本地CSV导入及完整数据质量状态；它不是全部真实行情、官方QQQ PE、官方VIX/VXN或实时数据正式版。
-- WorldPEratio 当前为 `pending_written_confirmation`、`candidate`、`enabled=false`。robots 允许且目标为 QQQ/Nasdaq-100，但未发现明确允许自动读取、缓存和本人内部展示的 Terms；不会被调度或进入首页。
+- WorldPEratio 当前为 `approved_with_conditions`、`selected`、`enabled=true`，风险接受标识为 `owner_accepted_limited_internal_use`。该状态是项目所有者的有限剩余风险接受决定，不代表来源方书面授权；Provider 不进入首页或通用调度。
 
 ## 当前数据与生成目录
 
@@ -55,14 +55,14 @@
 | `runtime-data/imports/` | 用户原始导入 | 忽略 | 成分、价格和人工记录；不得提交 |
 | `runtime-data/normalized/` | 标准化运行数据 | 忽略 | 导入manifest和标准化记录 |
 | `runtime-data/derived/` | 派生结果 | 忽略 | 算法结果、版本和覆盖率 |
-| `runtime-data/market-data/web-pages/worldperatio/` | 运行数据 | 忽略 | 未来获批后只保存提取 JSON、请求状态和哈希；当前正式运行不写真实页面内容 |
+| `runtime-data/market-data/web-pages/worldperatio/` | 运行数据 | 忽略 | 保存标准化latest、请求状态、去重快照历史和last-good备份；不保存HTML，内容不得提交 |
 
 当前不存在数据库、缩略图目录、视频缩略图目录、HLS、上传文件或视频切片功能。数据库路径、媒体源路径和可再生成媒体规则：不适用。
 
 ## 当前已知限制
 
 - 真实市场数据受来源定义、机器接口和再展示许可阻塞。
-- WorldPEratio 技术页面可读，但正式自动读取、缓存与内部展示仍待书面确认；完整公式和原始历史序列也未公开。
+- WorldPEratio 当前按项目所有者风险接受边界低频读取；来源方书面授权仍不存在，完整公式和长期历史可用性仍以每次公开响应验证结果为准。
 - 远程仓库当前已由项目所有者设置为 Private；即使在私有仓库中，仍必须排除密钥、会话、私人运行数据和机器标识。
 - IBKR路线已由用户延期；若未来恢复，仍需用户选择并安装官方组件、人工登录和书面许可确认。
 - QQQ PE已确定原始与稳健双口径；至少80个有效成分和不超过10%的极值处理权重已由虚构fixture覆盖，仍需用户真实本地输入验证实际覆盖率。风险偏好最终权重仍待用户审定。

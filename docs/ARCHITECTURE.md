@@ -101,11 +101,15 @@ docs/                           # 长期上下文与专项设计文档
 | `GET /api/market-data/indicators/:id?range=1Y` | 单指标与指定历史范围 |
 | `POST /api/market-data/refresh/:id` | 受可信网络、冷却、锁和预算约束的维护刷新 |
 | `GET /api/market-data/providers/worldperatio/status` | WorldPEratio 合规、技术和请求预算诊断；只读且不触发第三方请求 |
-| `GET /api/market-data/providers/worldperatio/latest` | 获批后读取最后提取结果；当前禁用时返回 unavailable/null |
+| `GET /api/market-data/providers/worldperatio/latest` | 读取最后标准化结果；不返回HTML、内容哈希或本地路径 |
+| `GET /api/market-data/providers/worldperatio/history` | 读取来源公开历史能力结论和本站去重快照序列 |
+| `GET /api/market-data/providers/worldperatio/statistics` | 读取当前参考PE与1/5/10/20年均值、标准差和估值标签 |
 
 页面访问和 GET 指标接口不会触发第三方抓取。外部访问只可能来自获批来源的启动过期检查、调度或受限手动刷新。
 
-WorldPEratio 不加入上述通用启动或定时刷新。第一检查点只提供独立、默认禁用原型；即使未来获批，也固定为每日一次正常请求、仅网络类失败延迟重试一次、每日总计最多两次，并在 403/429、登录、验证码、目标/DOM/日期/数值冲突时停止。
+WorldPEratio 不加入上述通用启动或定时刷新。经项目所有者有限风险接受后，只能通过独立维护入口执行；每次先检查30天条款复查状态和robots，每日一次正常目标请求，只有超时或5xx允许延迟重试一次，并在复查到期、403/429、登录、验证码、Cloudflare、robots禁止、目标/DOM/日期/数值冲突时停止。
+
+公开响应若包含明确、唯一且逐点带日期和值的Nasdaq-100/QQQ历史序列，history API可以返回该标准化序列；否则只返回`summary_statistics_only`并从首次成功采集起积累本站快照。均值和标准差不得反推为历史点。
 
 ## 市场数据流与状态
 

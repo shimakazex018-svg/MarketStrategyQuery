@@ -102,4 +102,11 @@
 - 状态：已接受
 - 日期：2026-07-15
 - 决策：`MD-004` 对未经逐来源授权的普通网页生产采集仍有效；本次用户明确授权对 WorldPEratio 做单来源审计和默认禁用原型。普通 HTTP 已返回公开 Nasdaq-100/QQQ 目标字段，因此不启用浏览器自动化。
-- 结果：Provider 为 `pending_written_confirmation`、`candidate`、`enabled=false`，不调度、不进入正式首页、不写入自计算 PE 缓存。只有书面许可确认后才能重新评审启用。
+- 结果：该第一检查点结论由 MD-016 对 WorldPEratio 单一来源部分取代；默认禁用原则仍适用于其他公开网页来源。
+
+## MD-016：WorldPEratio按项目所有者有限风险接受边界启用
+
+- 决策：登记为`approved_with_conditions`、`selected`、`conditionsSatisfied=true`、`enabled=true`和`owner_accepted_limited_internal_use`。这不是WorldPEratio书面授权。
+- 请求边界：每次采集先检查30天条款复查状态和robots；每天最多一次目标请求，仅超时或5xx延迟重试一次；复查到期、403、429、登录、验证码、Cloudflare、robots禁止或结构冲突立即停止。
+- 存储边界：只保存标准化字段、内部内容哈希、请求状态和去重快照，不保存HTML；运行目录由Git忽略。外部参考不得覆盖本站自计算PE。
+- 展示边界：只进入PE详情页的“外部参考PE”分区，不改变首页六卡布局。没有完整公开历史序列时只显示汇总统计区间和本站逐日快照，不反推历史曲线。
