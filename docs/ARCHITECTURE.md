@@ -36,6 +36,7 @@ config/
   market-data-providers.json    # 非敏感Provider合规登记与启用状态
 server/
   data-sources/                 # 外部来源下载和解析适配器
+    web-pages/                  # 默认禁用的公开网页审计/低频采集边界
   market-data/                  # 市场数据服务模块
   imports/                      # 有界CSV、权重、价格和人工输入校验
   derived-indicators/           # SEC/PE、RV、分位、风险偏好和COT纯计算内核
@@ -70,6 +71,9 @@ docs/                           # 长期上下文与专项设计文档
 
 - `server.js`：创建市场数据服务和调度器；处理健康检查、内部 API 和安全静态文件响应。
 - `server/data-sources/cboe-history.js`：Cboe VIX/VXN CSV 适配器；许可开关未确认时不会启用。
+- `server/data-sources/web-pages/`：WorldPEratio 专用的固定主机 HTTP fetcher、robots 解析、字段提取校验和禁用的浏览器边界；不读取用户 Cookie/Profile，不长期保存 HTML。
+- `worldperatio.js`：独立 Provider 状态与 `runtime-data/market-data/web-pages/worldperatio/` 原子 JSON 缓存；合规登记未通过时不发请求、不调度。
+- `pe-history-statistics.js`：`PE-HISTORY-TRIM10-v1` 纯计算原型，与 QQQ 成分横截面 WMAD4 严格分离。
 - `server/market-data/config.js`：读取环境变量和运行目录；不解析 `.env` 文件。
 - `provider-compliance.js`：验证Provider字段、合规状态和`enabled`不变量；环境变量不能绕过该门禁。
 - `schema.js`：统一模型、日期/数值校验、范围过滤和最多 240 点抽样。
@@ -96,8 +100,12 @@ docs/                           # 长期上下文与专项设计文档
 | `GET /api/market-data/indicators?range=1Y` | 六指标统一响应 |
 | `GET /api/market-data/indicators/:id?range=1Y` | 单指标与指定历史范围 |
 | `POST /api/market-data/refresh/:id` | 受可信网络、冷却、锁和预算约束的维护刷新 |
+| `GET /api/market-data/providers/worldperatio/status` | WorldPEratio 合规、技术和请求预算诊断；只读且不触发第三方请求 |
+| `GET /api/market-data/providers/worldperatio/latest` | 获批后读取最后提取结果；当前禁用时返回 unavailable/null |
 
 页面访问和 GET 指标接口不会触发第三方抓取。外部访问只可能来自获批来源的启动过期检查、调度或受限手动刷新。
+
+WorldPEratio 不加入上述通用启动或定时刷新。第一检查点只提供独立、默认禁用原型；即使未来获批，也固定为每日一次正常请求、仅网络类失败延迟重试一次、每日总计最多两次，并在 403/429、登录、验证码、目标/DOM/日期/数值冲突时停止。
 
 ## 市场数据流与状态
 

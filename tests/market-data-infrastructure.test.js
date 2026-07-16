@@ -95,6 +95,6 @@ test('limiter enforces provider and indicator request budgets', async t => {
 });
 
 test('trusted network check ignores spoofable headers and accepts local address ranges', () => {
-  for (const address of ['127.0.0.1', '::1', '::ffff:192.168.31.153', '10.0.0.2', '172.20.0.1', 'fd00::1', 'fe80::1']) assert.equal(isTrustedAddress(address), true);
-  for (const address of ['8.8.8.8', '172.32.0.1', '2001:4860:4860::8888']) assert.equal(isTrustedAddress(address), false);
+  for (const address of ['127.0.0.1', '::1', '::ffff:192.168.0.10', '10.0.0.2', '172.20.0.1', 'fd00::1', 'fe80::1']) assert.equal(isTrustedAddress(address), true);
+  for (const address of ['192.0.2.10', '172.32.0.1', '2001:db8::10']) assert.equal(isTrustedAddress(address), false);
 });

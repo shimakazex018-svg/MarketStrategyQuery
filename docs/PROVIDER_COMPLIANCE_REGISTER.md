@@ -26,7 +26,7 @@
 | `targetIndicators` | 计划支持的本站指标ID |
 | `technicalStatus` | 当前主机和适配器技术状态 |
 | `complianceStatus` | 上述固定合规状态 |
-| `selectionStatus` | 产品路线选择：`selected`、`deferred`或`not_selected_by_owner` |
+| `selectionStatus` | 产品路线选择：`candidate`、`selected`、`deferred`或`not_selected_by_owner` |
 | `accountRequirement` | 账户条件，不记录账户ID |
 | `subscriptionRequirement` | 订阅或协议要求，不记录账单信息 |
 | `internalDisplayAllowed` | 是否已确认允许本人内部网页展示 |
@@ -51,10 +51,13 @@
 | Interactive Brokers | VIX、VXN | 未测试，用户当前不选择 | `pending_written_confirmation` / `not_selected_by_owner` | 否 |
 | Twelve Data | QQQ价格候选 | 未测试 | `not_evaluated` / `deferred` | 否 |
 | Alpha Vantage | QQQ价格候选 | 未测试 | `not_evaluated` / `deferred` | 否 |
+| WorldPEratio | Nasdaq-100/QQQ外部参考PE | 服务器HTML可解析；无目标CSV/JSON；不需要浏览器 | `pending_written_confirmation` / `candidate` | 否 |
 
 IBKR尚未验证具体账户类型、订阅、VIX/VXN合约搜索、历史日线返回或数据模式。用户因运行复杂度、人工认证、潜在订阅成本和券商账户耦合，决定当前阶段不采用IBKR；这不代表技术或许可失败。当前状态不允许创建正式适配器、不允许保存测试值，也不允许在页面显示IBKR来源数据。
 
 Twelve Data和Alpha Vantage均为`deferred`，本阶段不继续技术或许可评价，也不请求其接口。
+
+WorldPEratio 的 robots 未禁止目标路径，页面无需登录并直接返回目标 HTML；但 sitemap、页脚和定向搜索未发现 Terms 页面，也未发现自动读取、缓存或本人内部展示的明确授权。原型不进入调度，正式运行不会请求或展示该来源。审计证据见 `WORLD_PERATIO_SOURCE_AUDIT.md`。
 
 ## 复核原则
 

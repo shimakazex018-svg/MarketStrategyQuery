@@ -1,5 +1,22 @@
 # 变更日志
 
+## 2026-07-16 - v0.5本地提交隐私清理
+
+- 从稳定基线重新构造6个尚未推送的v0.5提交，保留来源审计、合规门禁、HTML解析、robots、预算/重试、熔断、缓存回退、诊断API和PE历史统计能力。
+- 将测试页面数值、日期和哈希来源全部替换为明确标注的合成fixture；删除本机绝对路径、固定私人网络地址和真实运行细节。
+- 扩充运行数据、环境文件、日志、缓存、浏览器配置、Cookie、会话、凭据和真实导入数据的忽略规则；配置模板不含真实凭据。
+- 本次不访问第三方网页、不生成真实缓存、不修改main或标签、不推送或改写远程历史。
+
+## 2026-07-15 - v0.5第一检查点：WorldPEratio公开页审计与低频原型
+
+- 审计 WorldPEratio 根站、robots、sitemap、Privacy、About、目标 Nasdaq-100 页面、公开 WordPress JSON 和服务器 HTML；确认目标页以 QQQ ETF 作为 Nasdaq-100 参考对象并直接返回当前 PE、日期和历史统计。
+- 未发现 Terms/Terms of Use 或明确自动读取、缓存和本人内部展示授权，Provider 登记为 `pending_written_confirmation`、`candidate`、`enabled=false`；不加入调度、不保存本次真实值、不改正式首页。
+- 新增固定主机/固定 User-Agent 的原生 HTTP fetcher、robots 解析、字段提取/冲突验证、连接/总超时、响应大小限制、每日一次加一次延迟重试、原子提取 JSON 和 stale 回退。
+- 新增 WorldPEratio status/latest 只读诊断 API；GET 不触发第三方请求。浏览器 fetcher 明确保持禁用，因为普通 HTTP 已足够。
+- 新增 `PE-HISTORY-TRIM10-v1` 和 A/B/C 三种极值候选比较；不复刻 WorldPEratio 未公开公式，不改 QQQ 横截面 WMAD4。
+- 新增合成测试覆盖 robots、HTML/JS、目标/值/日期/歧义、403/429/登录/验证码、DOM/哈希、每日预算、重试、缓存隔离、HTML不落盘和Trim 10%。
+- 使用项目认可的 Node.js 运行时完成完整 check：95项测试通过、0失败；独立测试端口确认六指标不变，WorldPEratio为禁用、零请求、无真实值。
+
 ## 2026-07-15 - v0.4.0发布
 
 - 将v0.4自计算市场数据分支以普通`--no-ff`合并进入main，保留完整提交历史。
@@ -58,7 +75,7 @@
 - 新增IBKR非敏感本机预检查、官方资料评估和未发送的英文客服询问模板。
 
 ### Validation
-- GitHub仓库当前为PUBLIC；未修改可见性，建议用户改为private。
+- 仓库可见性由项目所有者在托管端管理；源码、文档和运行数据始终按最小披露原则维护。
 - 本机未发现TWS、IB Gateway、Client Portal Gateway或典型API监听端口；未安装、未登录、未请求行情。
 - `npm.cmd run check`通过22项测试、0失败；固定9阶段、8期权、6指标和7范围不变。
 

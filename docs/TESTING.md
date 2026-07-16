@@ -20,6 +20,7 @@ npm.cmd run check
 3. Node 自动测试：缓存、结构校验、来源错误分类、限流、调度、许可边界和故障回退。
 4. Provider登记检查：固定状态枚举、必填字段、重复ID、附加条件和`enabled`硬门禁。
 5. 自计算指标检查：有界CSV、SEC字段/季度TTM、QQQ原始PE与WMAD4稳健PE、实现波动率、历史分位、风险偏好、CFTC候选合约和人工Forward PE边界。
+6. WorldPEratio公开页原型检查：robots、服务器HTML提取、目标/日期/数值歧义、403/429/登录/验证码停止、每日1+1请求、旧缓存回退、HTML不落盘、诊断API和Trim 10%统计。
 
 单独运行测试：
 
@@ -56,15 +57,26 @@ npm.cmd start
 Invoke-RestMethod http://127.0.0.1:48101/api/health
 Invoke-RestMethod 'http://127.0.0.1:48101/api/market-data/indicators?range=1Y'
 Invoke-RestMethod http://127.0.0.1:48101/api/market-data/status
+Invoke-RestMethod http://127.0.0.1:48101/api/market-data/providers/worldperatio/status
+Invoke-RestMethod http://127.0.0.1:48101/api/market-data/providers/worldperatio/latest
 ```
 
 通过标准：
 
-- `/api/health` 返回 HTTP 200、`ok: true`、`marketData: "ready"`，版本与 `package.json` 一致（当前为 `0.4.0-dev`）。
+- `/api/health` 返回 HTTP 200、`ok: true`、`marketData: "ready"`，版本与 `package.json` 一致（当前为 `0.5.0-dev`）。
 - 指标接口返回 6 个指标；没有本地导入或运行缓存时，QQQ组合TTM PE、Forward PE、QQQ RV20、QQQ波动率分位、自建风险偏好和纳指期货机构仓位均独立显示 `unavailable`。
 - 状态接口时区为 Asia/Shanghai，并返回Provider的技术状态、合规状态、登记启用值和实际启用值。
 - SEC与CFTC只有在合规登记和运行配置同时满足时才可实际启用；IBKR、Twelve Data、Alpha Vantage和Cboe保持未选择或禁用，环境变量不能绕过登记门禁。
 - 没有外部网络、没有 `FRED_API_KEY` 时仍能启动。
+- WorldPEratio 两个 GET 诊断接口不得触发第三方请求；当前应返回 `enabled: false`、`complianceStatus: pending_written_confirmation` 和空值。
+
+## WorldPEratio第一检查点
+
+- 自动测试只使用合成 HTML、robots 和错误响应，不访问 WorldPEratio。
+- 验证 robots 允许/禁止/不存在、服务器 HTML 成功、JS-only 页面需浏览器、目标存在/不存在、当前值/日期缺失、多值冲突、异常值、403、429、登录、验证码和 DOM 变化。
+- 验证内容哈希变化、正常一次加失败重试一次的每日总上限、最后成功缓存 stale 回退、完整 HTML 不长期保存、外部参考缓存不覆盖自计算 PE。
+- 验证 `PE-HISTORY-TRIM10-v1` Trim 10%、样本不足和输入顺序不变性。
+- 浏览器 fetcher 当前必须保持禁用，因为实测服务器 HTML 已包含目标字段；不得安装 Playwright 或读取用户 Chrome Profile。
 
 ## HTTP 与安全检查
 
@@ -167,3 +179,5 @@ Invoke-RestMethod http://127.0.0.1:48101/api/market-data/status
 2026-07-15，`feature/v0.4-compliant-market-data-waterfall` 检查点A.1执行`npm.cmd run check`：53项测试通过、0失败；QQQ PE专项18项通过。专项测试包括30成分无极值、正/负/普通亏损、大权重/多个极值、MAD为0、样本不足、原始/稳健近零分母、极值权重超过10%、顺序和权重尺度不变性、非有限输入及显式日期校验。固定9阶段、8期权、6个现有首页指标、7范围和Provider合规门禁仍有效。没有UI变化、真实数据读取或全量计算，不重新生成截图。真实设备和ZeroTier跨设备验收仍待确认。
 
 2026-07-15，检查点B按`package.json`中的完整check命令逐项执行：69项测试通过、0失败；固定9阶段、8期权、6项新指标和7范围不变。独立端口48218正式进程返回`/api/health` HTTP 200，无本地输入时六卡均为`unavailable`且可离线启动。应用内浏览器已验证首页、两类阶段详情、期权工具、阶段对比、指标说明和PE详情；375×812、768×1024、1024×1366、1440×900无页面级横向溢出，深浅主题、指标弹窗Escape关闭及焦点返回正常，控制台0错误。真实设备、局域网与ZeroTier仍待用户环境验收。
+
+v0.5 WorldPEratio 第一检查点使用项目认可的 Node.js 运行时按 `package.json` 的完整 check 步骤执行：95项测试通过、0失败。独立测试端口返回`/api/health` HTTP 200、版本`0.5.0-dev`、六指标；WorldPEratio status/latest 分别确认`enabled=false`、`pending_written_confirmation`、`attemptsToday=0`、`unavailable`和`currentPE=null`，GET诊断未触发第三方请求。

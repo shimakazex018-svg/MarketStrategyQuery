@@ -25,7 +25,7 @@
 - 测试 fixture 只能使用人工构造的最小数据，不得包含从真实账户或受限来源复制的响应。
 - 若未来加入IBKR探测脚本，探测输出只能写入 `runtime-data/data-source-probes/ibkr/` 或操作系统临时目录。
 
-当前 `.gitignore` 已覆盖 `runtime-data/`、`.env`、`.env.*`、`*.log`、`*.pid`、`*.tmp` 和常见临时目录；`.env.example` 仅保留空值配置说明。
+当前 `.gitignore` 已覆盖 `runtime-data/`、`.env`、`.env.*`、日志、PID、临时目录、缓存、浏览器配置、Cookie、会话、凭据和真实市场数据目录；无密钥配置说明位于 `config/environment.example`。
 
 ## 访问与安全边界
 
@@ -49,5 +49,5 @@ Provider只有在以下条件全部成立时才能启用：
 
 ## GitHub仓库状态
 
-2026-07-15只读检查确认仓库 `shimakazex018-svg/MarketStrategyQuery` 当前为公开仓库。建议用户在方便时改为private，但本任务不擅自修改仓库可见性。公开状态下必须继续确保源代码和文档不包含真实缓存、账户数据、密钥、会话或受限市场数据。
+仓库可见性已由项目所有者在托管端设置为 Private。私有状态不降低敏感信息门槛：源代码和文档仍不得包含真实缓存、账户数据、密钥、会话或受限市场数据。
 
