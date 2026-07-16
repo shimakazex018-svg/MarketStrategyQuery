@@ -35,6 +35,7 @@
 | `historicalStorageAllowed` | 是否已确认允许保存历史序列 |
 | `attributionRequirement` | 来源标注要求 |
 | `writtenConfirmationRequired` | 是否仍需书面确认 |
+| `riskAcceptance` | 项目所有者对有限剩余风险的非敏感决定标识；不等同于来源方授权 |
 | `termsCheckedAt` | 最近条款检查日期 |
 | `technicalCheckedAt` | 最近技术检查日期 |
 | `conditionsSatisfied` | `approved_with_conditions`的附加条件是否全部满足 |
@@ -51,13 +52,13 @@
 | Interactive Brokers | VIX、VXN | 未测试，用户当前不选择 | `pending_written_confirmation` / `not_selected_by_owner` | 否 |
 | Twelve Data | QQQ价格候选 | 未测试 | `not_evaluated` / `deferred` | 否 |
 | Alpha Vantage | QQQ价格候选 | 未测试 | `not_evaluated` / `deferred` | 否 |
-| WorldPEratio | Nasdaq-100/QQQ外部参考PE | 服务器HTML可解析；无目标CSV/JSON；不需要浏览器 | `pending_written_confirmation` / `candidate` | 否 |
+| WorldPEratio | Nasdaq-100/QQQ外部参考PE | 服务器HTML可解析；无目标CSV/JSON；不需要浏览器 | `approved_with_conditions` / `selected` | 是，受严格低频和内部使用条件限制 |
 
 IBKR尚未验证具体账户类型、订阅、VIX/VXN合约搜索、历史日线返回或数据模式。用户因运行复杂度、人工认证、潜在订阅成本和券商账户耦合，决定当前阶段不采用IBKR；这不代表技术或许可失败。当前状态不允许创建正式适配器、不允许保存测试值，也不允许在页面显示IBKR来源数据。
 
 Twelve Data和Alpha Vantage均为`deferred`，本阶段不继续技术或许可评价，也不请求其接口。
 
-WorldPEratio 的 robots 未禁止目标路径，页面无需登录并直接返回目标 HTML；但 sitemap、页脚和定向搜索未发现 Terms 页面，也未发现自动读取、缓存或本人内部展示的明确授权。原型不进入调度，正式运行不会请求或展示该来源。审计证据见 `WORLD_PERATIO_SOURCE_AUDIT.md`。
+WorldPEratio 的 robots 未禁止目标路径，页面无需登录并直接返回目标 HTML；但 sitemap、页脚和定向搜索未发现 Terms 页面，也未发现自动读取、缓存或本人内部展示的明确授权。项目所有者在仅本人、非商业、每天最多一次正常请求、失败仅超时或5xx重试一次、不保存HTML、不公开API/下载/转发且遇到访问限制立即停止的边界内接受有限剩余风险。`approved_with_conditions` 表示项目风险接受决定，不代表 WorldPEratio 提供了书面授权。审计证据见 `WORLD_PERATIO_SOURCE_AUDIT.md`。
 
 ## 复核原则
 

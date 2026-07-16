@@ -68,6 +68,10 @@ function validateProvider(provider) {
   for (const field of REQUIRED_BOOLEAN_FIELDS) {
     if (typeof provider[field] !== 'boolean') throw new TypeError(`provider.${field} must be boolean`);
   }
+  if (provider.riskAcceptance !== undefined
+      && (typeof provider.riskAcceptance !== 'string' || !provider.riskAcceptance.trim())) {
+    throw new TypeError('provider.riskAcceptance must be non-empty text when present');
+  }
   if (provider.enabled && !isComplianceApproved(provider)) {
     throw new TypeError(`provider ${provider.providerId} cannot be enabled with complianceStatus ${provider.complianceStatus}`);
   }

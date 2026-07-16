@@ -133,21 +133,22 @@
       "providerName": "WorldPEratio public Nasdaq-100 page",
       "targetIndicators": ["pe"],
       "technicalStatus": "server_rendered_html_candidate_available",
-      "complianceStatus": "pending_written_confirmation",
-      "selectionStatus": "candidate",
+      "complianceStatus": "approved_with_conditions",
+      "selectionStatus": "selected",
       "accountRequirement": "No account or login was required for the audited public page.",
       "subscriptionRequirement": "No subscription prompt was observed, but automated retrieval, local caching and internal display rights are not stated.",
-      "internalDisplayAllowed": false,
-      "localCacheAllowed": false,
-      "cacheRetention": "none in production until permission is confirmed; synthetic tests only",
-      "historicalStorageAllowed": false,
-      "attributionRequirement": "If later approved, identify WorldPEratio as an external reference, preserve the source URL and data date, and do not label it as a self-calculated result.",
+      "internalDisplayAllowed": true,
+      "localCacheAllowed": true,
+      "cacheRetention": "latest normalized fields plus one deduplicated daily snapshot per source data date; no HTML or full-page archive",
+      "historicalStorageAllowed": true,
+      "attributionRequirement": "Identify WorldPEratio as an external reference, preserve the source URL and data date, and never label it as a self-calculated result.",
       "writtenConfirmationRequired": true,
       "termsCheckedAt": "2026-07-15",
       "technicalCheckedAt": "2026-07-15",
-      "conditionsSatisfied": false,
-      "enabled": false,
-      "notes": "robots.txt allows the target path and server-rendered HTML exposes a QQQ/Nasdaq-100 reference. No Terms page or explicit automation/cache/display grant was found. The provider remains disabled and is not scheduled."
+      "conditionsSatisfied": true,
+      "riskAcceptance": "owner_accepted_limited_internal_use",
+      "enabled": true,
+      "notes": "The project owner accepts limited residual risk for at most one normal public-page request per day, with one timeout-or-5xx retry, personal non-commercial internal display, normalized-field caching only, and immediate stop on robots prohibition, access controls or source changes. This is not written authorization from WorldPEratio."
     }
   ]
 }

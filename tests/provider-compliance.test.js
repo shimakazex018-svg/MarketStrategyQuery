@@ -36,14 +36,17 @@ function provider(overrides = {}) {
   };
 }
 
-test('production registry enables only approved SEC and CFTC providers', () => {
+test('production registry enables approved providers and records WorldPEratio owner risk acceptance', () => {
   const registry = loadProviderRegistry(path.join(__dirname, '..'));
   assert.deepEqual(registry.providers.map(item => item.providerId), ['sec-edgar', 'cftc', 'cboe', 'ibkr', 'twelve-data', 'alpha-vantage', 'worldperatio']);
-  assert.deepEqual(registry.providers.filter(item => item.enabled).map(item => item.providerId), ['sec-edgar', 'cftc']);
-  assert.deepEqual(registry.providers.filter(item => isProviderEffectivelyEnabled(item)).map(item => item.providerId), ['sec-edgar', 'cftc']);
+  assert.deepEqual(registry.providers.filter(item => item.enabled).map(item => item.providerId), ['sec-edgar', 'cftc', 'worldperatio']);
+  assert.deepEqual(registry.providers.filter(item => isProviderEffectivelyEnabled(item)).map(item => item.providerId), ['sec-edgar', 'cftc', 'worldperatio']);
   assert.equal(registry.providers.find(item => item.providerId === 'ibkr').selectionStatus, 'not_selected_by_owner');
-  assert.equal(registry.providers.find(item => item.providerId === 'worldperatio').selectionStatus, 'candidate');
-  assert.equal(registry.providers.find(item => item.providerId === 'worldperatio').complianceStatus, 'pending_written_confirmation');
+  const worldPERatio = registry.providers.find(item => item.providerId === 'worldperatio');
+  assert.equal(worldPERatio.selectionStatus, 'selected');
+  assert.equal(worldPERatio.complianceStatus, 'approved_with_conditions');
+  assert.equal(worldPERatio.conditionsSatisfied, true);
+  assert.equal(worldPERatio.riskAcceptance, 'owner_accepted_limited_internal_use');
 });
 
 test('pending, rejected, unavailable and not-evaluated providers cannot be enabled', () => {
@@ -55,6 +58,11 @@ test('pending, rejected, unavailable and not-evaluated providers cannot be enabl
 test('approved-with-conditions requires all conditions to be satisfied', () => {
   assert.throws(() => validateProvider(provider({ complianceStatus: 'approved_with_conditions', conditionsSatisfied: false })), /cannot be enabled/);
   assert.equal(isProviderEffectivelyEnabled(provider({ complianceStatus: 'approved_with_conditions', conditionsSatisfied: true })), true);
+});
+
+test('risk acceptance must be non-empty text when present', () => {
+  assert.equal(validateProvider(provider({ riskAcceptance: 'synthetic_owner_acceptance' })).riskAcceptance, 'synthetic_owner_acceptance');
+  assert.throws(() => validateProvider(provider({ riskAcceptance: '' })), /riskAcceptance/);
 });
 
 test('registry rejects duplicate provider ids', () => {
@@ -77,7 +85,7 @@ test('SEC production permission requires explicit opt-in, app name and valid con
     assert.equal(loadMarketDataConfig(path.join(__dirname, '..')).permissions.secEdgar, false);
     process.env.SEC_USER_AGENT_EMAIL = 'invalid';
     assert.equal(loadMarketDataConfig(path.join(__dirname, '..')).permissions.secEdgar, false);
-    process.env.SEC_USER_AGENT_EMAIL = 'owner@example.com';
+    process.env.SEC_USER_AGENT_EMAIL = 'fixture@example.invalid';
     assert.equal(loadMarketDataConfig(path.join(__dirname, '..')).permissions.secEdgar, true);
   } finally {
     for (const name of names) {

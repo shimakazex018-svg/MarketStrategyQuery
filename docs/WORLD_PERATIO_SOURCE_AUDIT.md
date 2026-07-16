@@ -4,7 +4,7 @@
 
 用途边界：仅用户本人、非商业研究、本机/家庭 LAN/私人 ZeroTier；不公开注册、不提供第三方 API 或原始数据下载、不镜像网站。
 
-结论：`pending_written_confirmation`；技术原型可以保留，但正式自动请求、缓存和内部展示均保持禁用。
+结论：`approved_with_conditions`；项目所有者接受严格边界内的有限剩余风险。该状态不代表 WorldPEratio 提供了书面授权。
 
 本文件是工程与使用边界审计，不是法律意见。页面公开和 robots 允许索引不等于网站正式授权自动采集、缓存或再展示。
 
@@ -61,14 +61,14 @@
 
 ## 合规与接入决定
 
-状态为 `pending_written_confirmation`，理由如下：
+状态为 `approved_with_conditions`，理由如下：
 
 1. robots 允许且页面无需登录，是技术与风险降低因素；
 2. 用户限定为每天至多一次、个人非商业内部使用，不公开、不转发、不保存整页；
-3. 但网站没有可识别的使用条款，也没有明确授予自动读取、缓存最终数据或内部网页展示的权利；
-4. 现有项目决策要求许可门槛优先于 HTTP 可访问性。
+3. 网站没有可识别的使用条款，也没有明确授予自动读取、缓存最终数据或内部网页展示的权利；
+4. 项目所有者明确接受上述不确定性产生的有限剩余风险，且该决定只适用于本文件规定的个人内部低频边界。
 
-在 WorldPEratio 书面确认以下用途前，`config/market-data-providers.json` 必须保持 `enabled=false`、`conditionsSatisfied=false`：每天一次自动读取公开 Nasdaq-100 页面、失败最多延迟重试一次、只保存最终提取字段/日期/URL/页面哈希、仅本人内部网页展示。
+登记设置为 `riskAcceptance: owner_accepted_limited_internal_use`、`conditionsSatisfied=true`、`enabled=true`。它允许每天最多一次正常读取公开 Nasdaq-100 页面，仅在超时或5xx时延迟重试一次，只保存最终提取字段、日期、URL、内容哈希和解析版本，仅供本人内部展示；不允许保存完整HTML、公开API、原始数据下载、出售、转发或镜像。出现403、429、验证码、登录页、Cloudflare挑战、robots禁止或结构冲突时立即停止。
 
 ## 原型边界
 

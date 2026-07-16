@@ -120,7 +120,7 @@ rangeLabels.forEach(label => assert(appSource.includes(`'${label}'`), `前端时
 rangeKeys.forEach(key => assert(appSource.includes(`'${key}'`), `前端时间范围键缺少：${key}`));
 assertExactList(providerRegistry.providers.map(provider => provider.providerId), ['sec-edgar', 'cftc', 'cboe', 'ibkr', 'twelve-data', 'alpha-vantage', 'worldperatio'], 'Provider登记');
 providerRegistry.providers.forEach(provider => {
-  const selected = ['sec-edgar', 'cftc'].includes(provider.providerId);
+  const selected = ['sec-edgar', 'cftc', 'worldperatio'].includes(provider.providerId);
   assert(provider.enabled === selected, `${provider.providerId}启用状态与合规选择不一致`);
 });
 

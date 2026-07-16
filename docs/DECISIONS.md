@@ -266,4 +266,18 @@ MAD为0、有效样本少于20、边界不可计算或非有限输入时必须�
 WorldPEratio 登记为 `pending_written_confirmation`、`candidate`、`enabled=false`。只有取得覆盖每天一次读取、最终字段缓存和本人内部展示的明确许可并更新登记后，才可独立评审启用；环境变量和 HTTP 200 不能绕过。
 
 ### Status
+部分被 DEC-020 取代；默认禁用原型规则仍适用于其他来源，WorldPEratio 改按项目所有者风险接受边界执行。
+
+## DEC-020：WorldPEratio有限剩余风险由项目所有者接受
+
+### Decision
+WorldPEratio 登记为 `approved_with_conditions`、`selected`、`conditionsSatisfied=true`、`enabled=true`，并记录 `riskAcceptance: owner_accepted_limited_internal_use`。该状态表示项目所有者接受有限剩余风险，不表示 WorldPEratio 提供了书面授权。
+
+### Reason
+目标页面公开且无需登录，robots 未禁止目标路径，当前未发现 Terms 或明确自动访问禁令；使用被限定为本人、非商业、每天最多一次正常请求、仅超时或5xx有限重试、不保存HTML、不公开API/下载/转发，并在访问控制或来源结构变化时立即停止。
+
+### Impact
+每次正常采集前必须检查 robots；真实结果只写入被 Git 忽略的标准化运行缓存。外部参考PE必须与 `PE-Q1-RAW-v1`、`PE-Q1-ROBUST-WMAD4-v1` 严格分离，不得覆盖本站自计算结果。条款或robots出现禁止性变化时必须自动停止并保留最后成功结果为 stale。
+
+### Status
 有效
