@@ -127,6 +127,27 @@
       "conditionsSatisfied": false,
       "enabled": false,
       "notes": "Deferred by owner decision. No audit, API-key use or request is authorized in this phase."
+    },
+    {
+      "providerId": "worldperatio",
+      "providerName": "WorldPEratio public Nasdaq-100 page",
+      "targetIndicators": ["pe"],
+      "technicalStatus": "server_rendered_html_candidate_available",
+      "complianceStatus": "pending_written_confirmation",
+      "selectionStatus": "candidate",
+      "accountRequirement": "No account or login was required for the audited public page.",
+      "subscriptionRequirement": "No subscription prompt was observed, but automated retrieval, local caching and internal display rights are not stated.",
+      "internalDisplayAllowed": false,
+      "localCacheAllowed": false,
+      "cacheRetention": "none in production until permission is confirmed; synthetic tests only",
+      "historicalStorageAllowed": false,
+      "attributionRequirement": "If later approved, identify WorldPEratio as an external reference, preserve the source URL and data date, and do not label it as a self-calculated result.",
+      "writtenConfirmationRequired": true,
+      "termsCheckedAt": "2026-07-15",
+      "technicalCheckedAt": "2026-07-15",
+      "conditionsSatisfied": false,
+      "enabled": false,
+      "notes": "robots.txt allows the target path and server-rendered HTML exposes a QQQ/Nasdaq-100 reference. No Terms page or explicit automation/cache/display grant was found. The provider remains disabled and is not scheduled."
     }
   ]
 }

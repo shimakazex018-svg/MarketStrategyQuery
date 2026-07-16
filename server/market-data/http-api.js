@@ -35,6 +35,17 @@ async function handleMarketDataApi(req, res, requestUrl, service) {
     return true;
   }
 
+  const providerMatch = new RegExp(`^${prefix}/providers/([a-z0-9-]+)/(status|latest)$`).exec(requestUrl.pathname);
+  if (req.method === 'GET' && providerMatch) {
+    const providerId = providerMatch[1];
+    const result = providerMatch[2] === 'status'
+      ? service.getProviderDiagnosticStatus?.(providerId)
+      : service.getProviderLatest?.(providerId);
+    if (!result) sendJson(res, 404, { error: 'provider-not-found' });
+    else sendJson(res, 200, result);
+    return true;
+  }
+
   if (req.method === 'GET' && requestUrl.pathname === `${prefix}/indicators`) {
     const range = normalizedRange(requestUrl);
     if (!range) sendJson(res, 400, { error: 'invalid-range', allowed: RANGE_KEYS });

@@ -12,6 +12,7 @@ const { BoundedLogger } = require('./server/market-data/logger');
 const { RequestLimiter } = require('./server/market-data/request-limiter');
 const { MarketDataScheduler } = require('./server/market-data/scheduler');
 const { MarketDataService } = require('./server/market-data/service');
+const { WorldPERatioProvider } = require('./server/data-sources/web-pages/worldperatio');
 
 const HOST = process.env.HOST || '0.0.0.0';
 const PORT = Number(process.env.PORT || 48101);
@@ -108,6 +109,15 @@ async function createMarketDataService(rootDir = __dirname, options = {}) {
     now: options.now
   });
   await marketDataService.init({ startupRefresh: options.startupRefresh !== false });
+  const worldPERatioProvider = options.worldPERatioProvider || new WorldPERatioProvider({
+    rootDir,
+    providerRegistry: config.providerRegistry,
+    fetchImpl: options.webPageFetchImpl || null,
+    now: options.now,
+    timezone: config.timezone
+  });
+  await worldPERatioProvider.init();
+  marketDataService.registerWebPageProvider('worldperatio', worldPERatioProvider);
   return marketDataService;
 }
 
@@ -120,7 +130,7 @@ async function start() {
   server.on('close', () => scheduler.stop());
   server.listen(PORT, HOST, () => {
     console.log(`Market Cycle Strategy v${packageJson.version} running on http://${HOST}:${PORT}`);
-    console.log(`LAN example: http://192.168.31.153:${PORT}`);
+    console.log(`LAN: http://<lan-ip>:${PORT}`);
     console.log(`ZeroTier: http://<zerotier-ip>:${PORT}`);
   });
   return { server, marketDataService, scheduler };

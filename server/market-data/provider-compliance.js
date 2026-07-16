@@ -14,6 +14,7 @@ const VALID_COMPLIANCE_STATUSES = new Set([
 
 const VALID_SELECTION_STATUSES = new Set([
   'selected',
+  'candidate',
   'deferred',
   'not_selected_by_owner'
 ]);

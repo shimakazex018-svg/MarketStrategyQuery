@@ -107,12 +107,25 @@ class MarketDataService {
     this.logger = logger;
     this.fetchImpl = fetchImpl;
     this.now = now;
+    this.webPageProviders = new Map();
     this.indicators = [];
     this.models = new Map();
     this.sources = new Map();
     this.cacheErrors = new Map();
     this.coordinator = null;
     this.definitionOverride = definitions;
+  }
+
+  registerWebPageProvider(providerId, provider) {
+    this.webPageProviders.set(providerId, provider);
+  }
+
+  getProviderDiagnosticStatus(providerId) {
+    return this.webPageProviders.get(providerId)?.getStatus() || null;
+  }
+
+  getProviderLatest(providerId) {
+    return this.webPageProviders.get(providerId)?.getLatest() || null;
   }
 
   async init({ startupRefresh = true } = {}) {
