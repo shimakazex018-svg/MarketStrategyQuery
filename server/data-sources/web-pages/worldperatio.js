@@ -16,9 +16,25 @@ const {
 const PROVIDER_ID = 'worldperatio';
 const SOURCE_URL = 'https://worldperatio.com/index/nasdaq-100/';
 const ROBOTS_URL = 'https://worldperatio.com/robots.txt';
+const TERMS_REVIEW_INTERVAL_DAYS = 30;
 
 function dayKey(date, timezone = 'Asia/Shanghai') {
   return new Intl.DateTimeFormat('en-CA', { timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(date);
+}
+
+function termsReviewStatus(termsCheckedAt, now = new Date()) {
+  const checkedAt = typeof termsCheckedAt === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(termsCheckedAt)
+    ? new Date(`${termsCheckedAt}T00:00:00.000Z`)
+    : null;
+  if (!checkedAt || Number.isNaN(checkedAt.getTime())) {
+    return { termsCheckedAt: termsCheckedAt || null, nextTermsReviewAt: null, termsReviewDue: true };
+  }
+  const nextReview = new Date(checkedAt.getTime() + TERMS_REVIEW_INTERVAL_DAYS * 24 * 60 * 60 * 1000);
+  return {
+    termsCheckedAt,
+    nextTermsReviewAt: nextReview.toISOString().slice(0, 10),
+    termsReviewDue: now.getTime() >= nextReview.getTime()
+  };
 }
 
 async function readJson(filePath) {
@@ -42,7 +58,7 @@ function publicLastError(error) {
 
 function publicModel(model) {
   if (!model) return model;
-  const { contentHash, pageContentHash, fieldMetadata, ...safe } = model;
+  const { contentHash, pageContentHash, fieldMetadata, publishedHistory, ...safe } = model;
   return safe;
 }
 
@@ -122,6 +138,7 @@ class WorldPERatioProvider {
   getStatus() {
     const base = emptyProviderModel(this.provider);
     const hasUsableLatest = this.isEnabled() && this.latest;
+    const review = termsReviewStatus(this.provider.termsCheckedAt, this.now());
     return {
       ...base,
       status: hasUsableLatest ? (this.state.lastError ? 'stale' : 'fresh') : 'unavailable',
@@ -136,6 +153,7 @@ class WorldPERatioProvider {
       robotsHttpStatus: this.state.robotsHttpStatus,
       robotsStatus: this.state.robotsStatus,
       riskAcceptance: this.provider.riskAcceptance || null,
+      ...review,
       snapshotCount: this.history.length,
       historyRecovered: Boolean(this.historyRecovery?.recovered),
       dailyRequestLimit: 2,
@@ -236,6 +254,9 @@ class WorldPERatioProvider {
 
   async refresh() {
     if (!this.isEnabled()) return { ok: false, statusCode: 409, reason: 'source-not-approved', provider: this.getStatus() };
+    if (termsReviewStatus(this.provider.termsCheckedAt, this.now()).termsReviewDue) {
+      return { ok: false, statusCode: 409, reason: 'terms-review-due', provider: this.getStatus() };
+    }
 
     const currentDay = dayKey(this.now(), this.timezone);
     const sameDay = this.state.date === currentDay;
@@ -327,4 +348,15 @@ class WorldPERatioProvider {
   }
 }
 
-module.exports = { PROVIDER_ID, ROBOTS_URL, SOURCE_URL, WorldPERatioProvider, dayKey, emptyProviderModel, isRetryableTargetError, publicModel };
+module.exports = {
+  PROVIDER_ID,
+  ROBOTS_URL,
+  SOURCE_URL,
+  TERMS_REVIEW_INTERVAL_DAYS,
+  WorldPERatioProvider,
+  dayKey,
+  emptyProviderModel,
+  isRetryableTargetError,
+  publicModel,
+  termsReviewStatus
+};
