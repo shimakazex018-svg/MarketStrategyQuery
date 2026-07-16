@@ -5,10 +5,17 @@ const path = require('path');
 const { isProviderEffectivelyEnabled, providerById } = require('../../market-data/provider-compliance');
 const { fetchPublicPage } = require('./public-page-fetcher');
 const { extractWorldPERatio, sha256 } = require('./extraction-validator');
+const { evaluateRobotsResponse } = require('./robots-check');
+const {
+  loadSnapshotHistory,
+  mergeSnapshot,
+  persistSnapshotHistory,
+  writeAtomicJson
+} = require('./snapshot-history');
 
 const PROVIDER_ID = 'worldperatio';
 const SOURCE_URL = 'https://worldperatio.com/index/nasdaq-100/';
-const RETRYABLE_TYPES = new Set(['network', 'connect-timeout', 'total-timeout', 'http-error']);
+const ROBOTS_URL = 'https://worldperatio.com/robots.txt';
 
 function dayKey(date, timezone = 'Asia/Shanghai') {
   return new Intl.DateTimeFormat('en-CA', { timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(date);
@@ -23,22 +30,20 @@ async function readJson(filePath) {
   }
 }
 
-async function writeAtomic(filePath, value) {
-  await fs.mkdir(path.dirname(filePath), { recursive: true });
-  const tempPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
-  const handle = await fs.open(tempPath, 'wx');
-  try {
-    await handle.writeFile(`${JSON.stringify(value, null, 2)}\n`, 'utf8');
-    await handle.sync();
-  } finally {
-    await handle.close();
-  }
-  try {
-    await fs.rename(tempPath, filePath);
-  } catch (error) {
-    await fs.rm(tempPath, { force: true });
-    throw error;
-  }
+function isRetryableTargetError(error) {
+  return ['connect-timeout', 'total-timeout'].includes(error?.webPageType)
+    || (error?.webPageType === 'http-error' && Number(error.status) >= 500 && Number(error.status) <= 599);
+}
+
+function publicLastError(error) {
+  if (!error) return null;
+  return { type: error.type || 'fetch-failed', at: error.at || null, status: error.status || null, validationWarnings: error.validationWarnings || [] };
+}
+
+function publicModel(model) {
+  if (!model) return model;
+  const { contentHash, pageContentHash, fieldMetadata, ...safe } = model;
+  return safe;
 }
 
 function emptyProviderModel(provider = {}) {
@@ -60,7 +65,11 @@ function emptyProviderModel(provider = {}) {
     historicalMean: null,
     historicalMedian: null,
     historicalStdDev: null,
+    historicalStats: { '1y': null, '5y': null, '10y': null, '20y': null },
     valuationLabel: null,
+    deviationFromMean: null,
+    seriesAvailability: 'unavailable',
+    publishedHistory: [],
     status: 'unavailable',
     validationWarnings: []
   };
@@ -74,8 +83,7 @@ class WorldPERatioProvider {
     now = () => new Date(),
     sleep = delay => new Promise(resolve => setTimeout(resolve, delay)),
     retryDelayMs = 60_000,
-    timezone = 'Asia/Shanghai',
-    robotsStatus = 'allowed'
+    timezone = 'Asia/Shanghai'
   }) {
     this.rootDir = rootDir;
     this.provider = providerById(providerRegistry, PROVIDER_ID) || {};
@@ -84,17 +92,26 @@ class WorldPERatioProvider {
     this.sleep = sleep;
     this.retryDelayMs = retryDelayMs;
     this.timezone = timezone;
-    this.robotsStatus = robotsStatus;
     this.runtimeDir = path.join(rootDir, 'runtime-data', 'market-data', 'web-pages', PROVIDER_ID);
     this.latestPath = path.join(this.runtimeDir, 'latest.json');
     this.statePath = path.join(this.runtimeDir, 'request-state.json');
+    this.historyPath = path.join(this.runtimeDir, 'history.json');
+    this.historyBackupPath = path.join(this.runtimeDir, 'history.last-good.json');
     this.latest = null;
-    this.state = { date: null, attempts: 0, lastAttemptAt: null, lastSuccessAt: null, lastError: null };
+    this.history = [];
+    this.historyRecovery = null;
+    this.state = {
+      date: null, attempts: 0, lastAttemptAt: null, lastSuccessAt: null, lastError: null,
+      robotsCheckDate: null, robotsChecks: 0, robotsCheckedAt: null, robotsHttpStatus: null, robotsStatus: 'not-checked'
+    };
   }
 
   async init() {
     this.latest = await readJson(this.latestPath);
     this.state = { ...this.state, ...(await readJson(this.statePath) || {}) };
+    const loadedHistory = await loadSnapshotHistory({ historyPath: this.historyPath, backupPath: this.historyBackupPath, now: this.now });
+    this.history = loadedHistory.points;
+    this.historyRecovery = loadedHistory;
     return this;
   }
 
@@ -112,8 +129,15 @@ class WorldPERatioProvider {
       sourceDataDate: hasUsableLatest ? this.latest.sourceDataDate : null,
       lastAttemptAt: this.state.lastAttemptAt,
       lastSuccessAt: this.state.lastSuccessAt,
-      lastError: this.state.lastError,
+      lastError: publicLastError(this.state.lastError),
       attemptsToday: this.state.date === dayKey(this.now(), this.timezone) ? this.state.attempts : 0,
+      robotsChecksToday: this.state.robotsCheckDate === dayKey(this.now(), this.timezone) ? this.state.robotsChecks : 0,
+      robotsCheckedAt: this.state.robotsCheckedAt,
+      robotsHttpStatus: this.state.robotsHttpStatus,
+      robotsStatus: this.state.robotsStatus,
+      riskAcceptance: this.provider.riskAcceptance || null,
+      snapshotCount: this.history.length,
+      historyRecovered: Boolean(this.historyRecovery?.recovered),
       dailyRequestLimit: 2,
       normalRequestsPerDay: 1,
       delayedRetriesPerDay: 1
@@ -122,7 +146,34 @@ class WorldPERatioProvider {
 
   getLatest() {
     if (!this.isEnabled() || !this.latest) return emptyProviderModel(this.provider);
-    return { ...this.latest, status: this.state.lastError ? 'stale' : this.latest.status };
+    return publicModel({ ...this.latest, status: this.state.lastError ? 'stale' : this.latest.status });
+  }
+
+  getHistory() {
+    const latest = this.isEnabled() ? this.latest : null;
+    return {
+      providerId: PROVIDER_ID,
+      status: latest ? (this.state.lastError ? 'stale' : 'fresh') : 'unavailable',
+      seriesAvailability: latest?.seriesAvailability || 'unavailable',
+      publishedSeries: Array.isArray(latest?.publishedHistory) ? latest.publishedHistory : [],
+      snapshots: this.history.map(point => ({ ...point }))
+    };
+  }
+
+  getStatistics() {
+    const latest = this.isEnabled() ? this.latest : null;
+    return {
+      providerId: PROVIDER_ID,
+      status: latest ? (this.state.lastError ? 'stale' : 'fresh') : 'unavailable',
+      sourceUrl: SOURCE_URL,
+      sourceDataDate: latest?.sourceDataDate || null,
+      currentPE: latest?.currentPE ?? null,
+      historicalStats: latest?.historicalStats || { '1y': null, '5y': null, '10y': null, '20y': null },
+      valuationLabel: latest?.valuationLabel || null,
+      deviationFromMean: latest?.deviationFromMean ?? null,
+      seriesAvailability: latest?.seriesAvailability || 'unavailable',
+      fetchedAt: latest?.fetchedAt || null
+    };
   }
 
   async recordAttempt(date, error = null) {
@@ -131,7 +182,7 @@ class WorldPERatioProvider {
     this.state.attempts += 1;
     this.state.lastAttemptAt = date.toISOString();
     this.state.lastError = error;
-    await writeAtomic(this.statePath, this.state);
+    await writeAtomicJson(this.statePath, this.state);
   }
 
   async recordFailure(error) {
@@ -142,12 +193,49 @@ class WorldPERatioProvider {
       status: error.status || null,
       validationWarnings: error.validationWarnings || []
     };
-    await writeAtomic(this.statePath, this.state);
+    await writeAtomicJson(this.statePath, this.state);
+  }
+
+  async checkRobots() {
+    const checkedAt = this.now();
+    const currentDay = dayKey(checkedAt, this.timezone);
+    if (this.state.robotsCheckDate !== currentDay) this.state.robotsChecks = 0;
+    this.state.robotsCheckDate = currentDay;
+    this.state.robotsChecks += 1;
+    this.state.robotsCheckedAt = checkedAt.toISOString();
+    try {
+      const response = await fetchPublicPage({
+        url: ROBOTS_URL,
+        fetchImpl: this.fetchImpl,
+        allowedHosts: ['worldperatio.com', 'www.worldperatio.com'],
+        accept: 'text/plain,*/*;q=0.5',
+        connectTimeoutMs: 10_000,
+        totalTimeoutMs: 20_000,
+        maxBytes: 100_000,
+        allowedStatusCodes: [404, 410]
+      });
+      const result = evaluateRobotsResponse({ status: response.status, text: response.text, targetUrl: SOURCE_URL });
+      this.state.robotsHttpStatus = response.status;
+      this.state.robotsStatus = result.status;
+      await writeAtomicJson(this.statePath, this.state);
+      if (!result.allowed) {
+        const error = new Error(result.status === 'blocked' ? 'robots.txt blocks the target path' : 'robots.txt could not authorize the target path');
+        error.webPageType = result.status === 'blocked' ? 'robots-blocked' : 'robots-unavailable';
+        error.status = response.status;
+        throw error;
+      }
+      return result;
+    } catch (error) {
+      if (!error.webPageType) error.webPageType = 'robots-unavailable';
+      this.state.robotsStatus = error.webPageType === 'robots-blocked' ? 'blocked' : 'unavailable';
+      this.state.robotsHttpStatus = error.status || this.state.robotsHttpStatus;
+      await this.recordFailure(error);
+      throw error;
+    }
   }
 
   async refresh() {
     if (!this.isEnabled()) return { ok: false, statusCode: 409, reason: 'source-not-approved', provider: this.getStatus() };
-    if (this.robotsStatus !== 'allowed') return { ok: false, statusCode: 409, reason: 'robots-not-allowed', provider: this.getStatus() };
 
     const currentDay = dayKey(this.now(), this.timezone);
     const sameDay = this.state.date === currentDay;
@@ -156,9 +244,20 @@ class WorldPERatioProvider {
     const canResumeDelayedRetry = sameDay
       && this.state.attempts === 1
       && !successToday
-      && RETRYABLE_TYPES.has(this.state.lastError?.type);
+      && isRetryableTargetError({ webPageType: this.state.lastError?.type, status: this.state.lastError?.status });
     if (sameDay && this.state.attempts > 0 && !canResumeDelayedRetry) {
       return { ok: false, statusCode: 429, reason: 'source-daily-limit', provider: this.getStatus() };
+    }
+
+    try {
+      await this.checkRobots();
+    } catch (error) {
+      return {
+        ok: false,
+        statusCode: error.webPageType === 'rate-limited' ? 429 : (['forbidden', 'login-required', 'access-challenge'].includes(error.webPageType) ? 403 : 409),
+        reason: error.webPageType,
+        provider: this.getLatest()
+      };
     }
 
     let lastError;
@@ -176,26 +275,45 @@ class WorldPERatioProvider {
           maxBytes: 750_000
         });
         const extracted = extractWorldPERatio(response.text, { sourceUrl: response.finalUrl || SOURCE_URL, extractedAt: attemptAt.toISOString() });
+        const successAt = this.now().toISOString();
         const model = {
-          ...emptyProviderModel(this.provider),
-          ...extracted,
-          enabled: true,
-          fetchedAt: attemptAt.toISOString(),
+          providerId: PROVIDER_ID,
           sourceUrl: response.finalUrl || SOURCE_URL,
+          fetchedAt: attemptAt.toISOString(),
+          sourceDataDate: extracted.sourceDataDate,
+          currentPE: extracted.currentPE,
+          historicalStats: extracted.historicalStats,
+          valuationLabel: extracted.valuationLabel,
+          deviationFromMean: extracted.deviationFromMean,
+          parseVersion: 'WPR-PARSE-v1',
+          contentHash: sha256(response.text),
           httpStatus: response.status,
-          pageContentHash: sha256(response.text),
+          lastSuccessAt: successAt,
+          validationWarnings: extracted.validationWarnings,
+          target: extracted.target,
+          seriesAvailability: extracted.seriesAvailability,
+          publishedHistory: extracted.publishedHistory,
           status: 'fresh'
         };
-        await writeAtomic(this.latestPath, model);
+        const merged = mergeSnapshot(this.history, {
+          sourceDataDate: model.sourceDataDate,
+          currentPE: model.currentPE,
+          fetchedAt: model.fetchedAt,
+          parseVersion: model.parseVersion
+        });
+        if (merged.changed) {
+          this.history = await persistSnapshotHistory({ historyPath: this.historyPath, backupPath: this.historyBackupPath, points: merged.points });
+        }
+        await writeAtomicJson(this.latestPath, model);
         this.latest = model;
-        this.state.lastSuccessAt = attemptAt.toISOString();
+        this.state.lastSuccessAt = successAt;
         this.state.lastError = null;
-        await writeAtomic(this.statePath, this.state);
+        await writeAtomicJson(this.statePath, this.state);
         return { ok: true, provider: this.getLatest() };
       } catch (error) {
         lastError = error;
         await this.recordFailure(error);
-        if (!RETRYABLE_TYPES.has(error.webPageType) || index + 1 >= remaining) break;
+        if (!isRetryableTargetError(error) || index + 1 >= remaining) break;
         await this.sleep(this.retryDelayMs);
       }
     }
@@ -209,4 +327,4 @@ class WorldPERatioProvider {
   }
 }
 
-module.exports = { PROVIDER_ID, SOURCE_URL, WorldPERatioProvider, dayKey, emptyProviderModel };
+module.exports = { PROVIDER_ID, ROBOTS_URL, SOURCE_URL, WorldPERatioProvider, dayKey, emptyProviderModel, isRetryableTargetError, publicModel };

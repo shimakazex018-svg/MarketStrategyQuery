@@ -128,6 +128,14 @@ class MarketDataService {
     return this.webPageProviders.get(providerId)?.getLatest() || null;
   }
 
+  getProviderHistory(providerId) {
+    return this.webPageProviders.get(providerId)?.getHistory() || null;
+  }
+
+  getProviderStatistics(providerId) {
+    return this.webPageProviders.get(providerId)?.getStatistics() || null;
+  }
+
   async init({ startupRefresh = true } = {}) {
     await this.cacheStore.init();
     const limiterError = await this.limiter.init();

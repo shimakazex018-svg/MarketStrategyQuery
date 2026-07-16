@@ -119,7 +119,8 @@ async function fetchPublicPage({
   connectTimeoutMs = 10_000,
   totalTimeoutMs = 20_000,
   maxBytes = 1_000_000,
-  maxRedirects = 3
+  maxRedirects = 3,
+  allowedStatusCodes = []
 }) {
   validateTarget(url, allowedHosts.map(host => host.toLowerCase()));
   const options = { fetchImpl, allowedHosts: allowedHosts.map(host => host.toLowerCase()), userAgent, accept, connectTimeoutMs, totalTimeoutMs, maxBytes, maxRedirects };
@@ -127,7 +128,9 @@ async function fetchPublicPage({
   const lower = result.text.toLowerCase();
   if (result.status === 403) throw fetchError('forbidden', 'source returned HTTP 403', { status: 403 });
   if (result.status === 429) throw fetchError('rate-limited', 'source returned HTTP 429', { status: 429 });
-  if (result.status < 200 || result.status >= 300) throw fetchError('http-error', `source returned HTTP ${result.status}`, { status: result.status });
+  if ((result.status < 200 || result.status >= 300) && !allowedStatusCodes.includes(result.status)) {
+    throw fetchError('http-error', `source returned HTTP ${result.status}`, { status: result.status });
+  }
   if (/(?:<title>[^<]*(?:log\s*in|sign\s*in)|<form[^>]+(?:login|signin))/i.test(result.text)) {
     throw fetchError('login-required', 'source returned a login page');
   }

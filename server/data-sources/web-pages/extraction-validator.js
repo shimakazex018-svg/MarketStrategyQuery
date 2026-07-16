@@ -39,6 +39,78 @@ function parseDate(value) {
   return date.toISOString().slice(0, 10);
 }
 
+function parseSeriesDate(value) {
+  const text = String(value).trim();
+  if (/^\d{10,13}$/.test(text)) {
+    const raw = Number(text);
+    const date = new Date(text.length === 10 ? raw * 1000 : raw);
+    return Number.isFinite(date.valueOf()) ? date.toISOString().slice(0, 10) : null;
+  }
+  if (/^\d{4}-\d{2}-\d{2}(?:T[^\s]+)?$/.test(text)) {
+    const date = new Date(text);
+    return Number.isFinite(date.valueOf()) ? date.toISOString().slice(0, 10) : null;
+  }
+  return parseDate(text);
+}
+
+function normalizePublishedSeries(points) {
+  if (!Array.isArray(points) || points.length < 3 || points.length > 5000) return null;
+  const byDate = new Map();
+  for (const point of points) {
+    const date = parseSeriesDate(point.date);
+    const value = Number(point.value);
+    if (!date || !Number.isFinite(value) || value <= 0 || value >= 500) return null;
+    if (byDate.has(date) && byDate.get(date) !== value) return null;
+    byDate.set(date, value);
+  }
+  const normalized = [...byDate].map(([date, value]) => ({ date, value })).sort((left, right) => left.date.localeCompare(right.date));
+  return normalized.length >= 3 ? normalized : null;
+}
+
+function parseQuotedList(value) {
+  return [...String(value).matchAll(/["']([^"']+)["']/g)].map(match => match[1]);
+}
+
+function parseNumberList(value) {
+  const tokens = String(value).split(',').map(token => token.trim());
+  if (!tokens.length || tokens.some(token => !/^-?\d+(?:\.\d+)?$/.test(token))) return [];
+  return tokens.map(Number);
+}
+
+function extractPublishedHistorySeries(html) {
+  const candidates = [];
+  const scripts = [...String(html || '').matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi)].map(match => match[1]);
+  for (const script of scripts) {
+    if (!/(?:nasdaq|qqq|p\s*\/?\s*e|price[-\s]?to[-\s]?earnings)/i.test(script)) continue;
+
+    const pairs = [];
+    const pairPattern = /\[\s*["']([^"']+)["']\s*,\s*(-?\d+(?:\.\d+)?)\s*\]/g;
+    for (const match of script.matchAll(pairPattern)) pairs.push({ date: match[1], value: match[2] });
+    const normalizedPairs = normalizePublishedSeries(pairs);
+    if (normalizedPairs) candidates.push(normalizedPairs);
+
+    const objects = [];
+    const objectPattern = /(?:date|time|x)\s*:\s*["']([^"']+)["'][^{}]{0,120}?(?:pe|value|y)\s*:\s*(-?\d+(?:\.\d+)?)/gi;
+    for (const match of script.matchAll(objectPattern)) objects.push({ date: match[1], value: match[2] });
+    const normalizedObjects = normalizePublishedSeries(objects);
+    if (normalizedObjects) candidates.push(normalizedObjects);
+
+    const labelsPattern = /labels\s*:\s*\[([^\]]+)\][\s\S]{0,2500}?data\s*:\s*\[([^\]]+)\]/gi;
+    for (const match of script.matchAll(labelsPattern)) {
+      const labels = parseQuotedList(match[1]);
+      const values = parseNumberList(match[2]);
+      if (labels.length !== values.length) continue;
+      const normalized = normalizePublishedSeries(labels.map((date, index) => ({ date, value: values[index] })));
+      if (normalized) candidates.push(normalized);
+    }
+  }
+
+  const unique = new Map(candidates.map(points => [JSON.stringify(points), points]));
+  if (unique.size > 1) return { status: 'ambiguous', points: [] };
+  if (unique.size === 1) return { status: 'full_series_available', points: [...unique.values()][0] };
+  return { status: 'unavailable', points: [] };
+}
+
 function uniqueCandidates(matches) {
   const seen = new Map();
   for (const match of matches) seen.set(`${match.value}|${match.date}`, match);
@@ -101,11 +173,14 @@ function extractWorldPERatio(html, { sourceUrl, extractedAt = new Date().toISOSt
   }
 
   const historical = {};
-  for (const period of [5, 10, 20]) {
+  for (const period of [1, 5, 10, 20]) {
     const match = new RegExp(`Last ${period}Y\\s+([0-9]+(?:\\.[0-9]+)?)\\s+([0-9]+(?:\\.[0-9]+)?)`, 'i').exec(text);
     historical[`${period}Y`] = match ? { mean: Number(match[1]), stdDev: Number(match[2]), fragment: match[0] } : null;
   }
   const valuationMatch = /current P\/E can be considered\s+(Fair|Overvalued|Expensive|Undervalued|Cheap)/i.exec(text);
+  const deviationMatch = /deviation from (?:the )?mean(?: P\/E)?\s*[:=]?\s*([+-]?\d+(?:\.\d+)?)%/i.exec(text);
+  const publishedHistory = extractPublishedHistorySeries(html);
+  if (publishedHistory.status === 'ambiguous') throw extractionError('ambiguous', ['multiple_published_history_series']);
   const fields = {
     currentPE: fieldMetadata({ value: current.value, label: 'Current P/E Ratio', sourceDataDate: current.date, extractedAt, sourceUrl, extractionMethod: 'server-rendered-html', fragment: current.fragment })
   };
@@ -122,10 +197,16 @@ function extractWorldPERatio(html, { sourceUrl, extractedAt = new Date().toISOSt
     historicalMedian: null,
     historicalStdDev: historical['5Y']?.stdDev ?? null,
     historicalRanges: Object.fromEntries(Object.entries(historical).map(([key, value]) => [key, value ? { mean: value.mean, stdDev: value.stdDev } : null])),
+    historicalStats: Object.fromEntries(Object.entries(historical).map(([key, value]) => [key.toLowerCase(), value ? { mean: value.mean, stdDev: value.stdDev } : null])),
     valuationLabel: valuationMatch?.[1] || null,
+    deviationFromMean: deviationMatch ? Number(deviationMatch[1]) : null,
+    publishedHistory: publishedHistory.points,
+    seriesAvailability: publishedHistory.status === 'full_series_available'
+      ? 'full_series_available'
+      : Object.values(historical).some(Boolean) ? 'summary_statistics_only' : 'unavailable',
     fieldMetadata: fields,
     validationWarnings: warnings
   };
 }
 
-module.exports = { extractWorldPERatio, parseDate, sha256, visibleText };
+module.exports = { extractPublishedHistorySeries, extractWorldPERatio, parseDate, parseSeriesDate, sha256, visibleText };
