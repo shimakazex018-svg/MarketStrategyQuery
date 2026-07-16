@@ -1,6 +1,7 @@
 'use strict';
 
 const assert = require('node:assert/strict');
+const { execFileSync } = require('node:child_process');
 const fs = require('fs/promises');
 const os = require('os');
 const path = require('path');
@@ -11,7 +12,7 @@ const { evaluateRobotsResponse, isPathAllowed } = require('../server/data-source
 const { fetchPublicPage } = require('../server/data-sources/web-pages/public-page-fetcher');
 const { extractWorldPERatio, sha256 } = require('../server/data-sources/web-pages/extraction-validator');
 const { loadSnapshotHistory, mergeSnapshot, persistSnapshotHistory } = require('../server/data-sources/web-pages/snapshot-history');
-const { WorldPERatioProvider } = require('../server/data-sources/web-pages/worldperatio');
+const { WorldPERatioProvider, termsReviewStatus } = require('../server/data-sources/web-pages/worldperatio');
 
 // Synthetic fixture only: values and dates are intentionally unrelated to any live response.
 function validHtml({ pe = 42.42, date = '15 January 2099', extra = '', target = true } = {}) {
@@ -28,12 +29,12 @@ function validHtml({ pe = 42.42, date = '15 January 2099', extra = '', target = 
     ${extra}</body></html>`;
 }
 
-function registry({ complianceStatus = 'approved', enabled = true, conditionsSatisfied = null } = {}) {
+function registry({ complianceStatus = 'approved', enabled = true, conditionsSatisfied = null, termsCheckedAt = '2098-12-31' } = {}) {
   return {
     providers: [{
       providerId: 'worldperatio', providerName: 'WorldPEratio', complianceStatus,
       conditionsSatisfied: conditionsSatisfied ?? (complianceStatus === 'approved' || complianceStatus === 'approved_with_conditions'),
-      selectionStatus: 'selected', enabled, riskAcceptance: 'synthetic_owner_acceptance'
+      selectionStatus: 'selected', enabled, riskAcceptance: 'synthetic_owner_acceptance', termsCheckedAt
     }]
   };
 }
@@ -54,6 +55,7 @@ function typedError(type, status = null) {
 async function makeProvider(t, {
   responses = [], complianceStatus = 'approved', enabled = true,
   conditionsSatisfied = null,
+  termsCheckedAt = '2098-12-31',
   robotsText = 'User-agent: *\nDisallow:\n', robotsStatus = 200,
   nowRef = { value: new Date('2099-01-16T01:00:00Z') }
 } = {}) {
@@ -72,7 +74,7 @@ async function makeProvider(t, {
   };
   const provider = new WorldPERatioProvider({
     rootDir,
-    providerRegistry: registry({ complianceStatus, enabled, conditionsSatisfied }),
+    providerRegistry: registry({ complianceStatus, enabled, conditionsSatisfied, termsCheckedAt }),
     fetchImpl,
     now: () => nowRef.value,
     sleep: async () => {},
@@ -196,6 +198,7 @@ test('successful refresh stores extracted JSON and never stores complete HTML', 
   assert.equal(JSON.parse(saved).contentHash, sha256(validHtml()));
   assert.equal(result.provider.contentHash, undefined);
   assert.equal(result.provider.fieldMetadata, undefined);
+  assert.equal(result.provider.publishedHistory, undefined);
   assert.equal(setup.robotsCalls(), 1);
 });
 
@@ -215,6 +218,21 @@ test('approved-with-conditions requires satisfied conditions before any request'
   assert.equal(allowed.calls(), 1);
 });
 
+test('30-day terms review status blocks collection before network access when due', async t => {
+  assert.deepEqual(termsReviewStatus('2098-12-31', new Date('2099-01-16T00:00:00Z')), {
+    termsCheckedAt: '2098-12-31', nextTermsReviewAt: '2099-01-30', termsReviewDue: false
+  });
+  const setup = await makeProvider(t, {
+    responses: [new Response(validHtml())],
+    termsCheckedAt: '2098-01-01'
+  });
+  const result = await setup.provider.refresh();
+  assert.equal(result.reason, 'terms-review-due');
+  assert.equal(result.provider.termsReviewDue, true);
+  assert.equal(setup.robotsCalls(), 0);
+  assert.equal(setup.calls(), 0);
+});
+
 test('timeout is retried once and then succeeds', async t => {
   const setup = await makeProvider(t, { responses: [typedError('total-timeout'), new Response(validHtml(), { status: 200 })] });
   const result = await setup.provider.refresh();
@@ -228,6 +246,16 @@ test('403 is not retried', async t => {
   const result = await setup.provider.refresh();
   assert.equal(result.reason, 'forbidden');
   assert.equal(setup.calls(), 1);
+});
+
+test('HTTP 5xx is retried once but ordinary 4xx is not', async t => {
+  const serverFailure = await makeProvider(t, { responses: [new Response('temporary', { status: 503 }), new Response(validHtml())] });
+  assert.equal((await serverFailure.provider.refresh()).ok, true);
+  assert.equal(serverFailure.calls(), 2);
+
+  const notFound = await makeProvider(t, { responses: [new Response('missing', { status: 404 }), new Response(validHtml())] });
+  assert.equal((await notFound.provider.refresh()).reason, 'http-error');
+  assert.equal(notFound.calls(), 1);
 });
 
 test('robots prohibition stops before the target request', async t => {
@@ -360,4 +388,12 @@ test('provider diagnostic API exposes status and latest without touching indicat
   assert.deepEqual(history.snapshots, []);
   assert.deepEqual(statistics.historicalStats, {});
   assert.doesNotMatch(JSON.stringify({ status, latest, history, statistics }), /contentHash|pageContentHash|runtime-data|rawTextFragmentHash/);
+});
+
+test('runtime market data is ignored and not tracked by Git', () => {
+  const rootDir = path.join(__dirname, '..');
+  const tracked = execFileSync('git', ['ls-files', 'runtime-data'], { cwd: rootDir, encoding: 'utf8' }).trim();
+  const ignored = execFileSync('git', ['check-ignore', 'runtime-data/market-data/web-pages/worldperatio/latest.json'], { cwd: rootDir, encoding: 'utf8' }).trim();
+  assert.equal(tracked, '');
+  assert.equal(ignored, 'runtime-data/market-data/web-pages/worldperatio/latest.json');
 });
