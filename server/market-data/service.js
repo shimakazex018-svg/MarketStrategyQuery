@@ -4,6 +4,7 @@ const fs = require('fs/promises');
 const path = require('path');
 const { createCboeHistorySource } = require('../data-sources/cboe-history');
 const { SelfCalculatedCoordinator } = require('../self-calculated/coordinator');
+const { PRODUCTION_METRIC_IDS, ProductionDataCoordinator } = require('../production-data/coordinator');
 const { isProviderEffectivelyEnabled, providerById } = require('./provider-compliance');
 const { availableRanges, filterHistory, validateModel } = require('./schema');
 const { isWeekend } = require('./scheduler');
@@ -114,6 +115,8 @@ class MarketDataService {
     this.cacheErrors = new Map();
     this.coordinator = null;
     this.definitionOverride = definitions;
+    this.productionMode = false;
+    this.productionCoordinator = null;
   }
 
   registerWebPageProvider(providerId, provider) {
@@ -121,18 +124,22 @@ class MarketDataService {
   }
 
   getProviderDiagnosticStatus(providerId) {
+    if (this.productionMode) return this.productionCoordinator.providerStatus(providerId);
     return this.webPageProviders.get(providerId)?.getStatus() || null;
   }
 
   getProviderLatest(providerId) {
+    if (this.productionMode && ['fred', 'worldperatio'].includes(providerId)) return { providerId, metrics: this.indicators.filter(item => providerId === 'fred' ? !item.id.endsWith('_pe') : item.id.endsWith('_pe')).map(item => this.getIndicator(item.id)) };
     return this.webPageProviders.get(providerId)?.getLatest() || null;
   }
 
   getProviderHistory(providerId) {
+    if (this.productionMode && ['fred', 'worldperatio'].includes(providerId)) return { providerId, metrics: this.indicators.filter(item => providerId === 'fred' ? !item.id.endsWith('_pe') : item.id.endsWith('_pe')).map(item => ({ metricId: item.id, history: this.getIndicator(item.id)?.history || [] })) };
     return this.webPageProviders.get(providerId)?.getHistory() || null;
   }
 
   getProviderStatistics(providerId) {
+    if (this.productionMode && providerId === 'worldperatio') return { providerId, metrics: this.indicators.filter(item => item.id.endsWith('_pe')).map(item => { const model = this.models.get(item.id); return { metricId: item.id, sourceDataDate: model?.sourceDataDate || null, valuationLabel: model?.valuationLabel || null, historicalStatistics: model?.historicalStatistics || {} }; }) };
     return this.webPageProviders.get(providerId)?.getStatistics() || null;
   }
 
@@ -141,6 +148,15 @@ class MarketDataService {
     const limiterError = await this.limiter.init();
     if (limiterError) await this.logger.log({ at: isoNow(this.now()), event: 'request-state-error', errorType: limiterError.type });
     this.indicators = this.definitionOverride || JSON.parse(await fs.readFile(path.join(this.rootDir, 'public', 'data', 'indicators.json'), 'utf8'));
+
+    if (this.indicators.length === PRODUCTION_METRIC_IDS.length && PRODUCTION_METRIC_IDS.every(id => this.indicators.some(item => item.id === id))) {
+      this.productionMode = true;
+      this.productionCoordinator = new ProductionDataCoordinator({ rootDir: this.rootDir, definitions: this.indicators, fetchImpl: this.fetchImpl, now: this.now, timezone: this.config.timezone });
+      await this.productionCoordinator.init();
+      this.models = this.productionCoordinator.models;
+      if (startupRefresh) await this.refreshExpiredOnStartup();
+      return this;
+    }
 
     if (this.config.selfCalculatedMvp) {
       this.coordinator = new SelfCalculatedCoordinator({
@@ -209,6 +225,7 @@ class MarketDataService {
   }
 
   isApproved(id) {
+    if (this.productionMode) return PRODUCTION_METRIC_IDS.includes(id);
     const decision = ONLINE_DECISIONS[id];
     const provider = decision ? providerById(this.config.providerRegistry, decision.provider) : null;
     return Boolean(decision
@@ -228,6 +245,11 @@ class MarketDataService {
   }
 
   async refreshExpiredOnStartup() {
+    if (this.productionMode) {
+      const parts = new Intl.DateTimeFormat('en-GB', { timeZone: this.config.timezone, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(this.now()).reduce((acc, part) => ({ ...acc, [part.type]: part.value }), {});
+      if (Number(parts.hour) > 7 || (Number(parts.hour) === 7 && Number(parts.minute) >= 30)) for (const id of PRODUCTION_METRIC_IDS) await this.refresh(id, { kind: 'startup', requestSource: 'server-start' });
+      return;
+    }
     if (isWeekend(this.now(), this.config.timezone)) return;
     const tasks = [];
     for (const [id] of this.sources) {
@@ -239,6 +261,7 @@ class MarketDataService {
   }
 
   async refresh(id, { kind = 'scheduled', requestSource = 'scheduler' } = {}) {
+    if (this.productionMode) return this.productionCoordinator.refresh(id);
     if (this.config.selfCalculatedMvp) return this.refreshSelfCalculated(id, { kind, requestSource });
     const indicator = this.indicatorDefinition(id);
     const source = this.sources.get(id);
@@ -387,7 +410,7 @@ class MarketDataService {
   getStatus() {
     return {
       enabled: this.config.enabled,
-      mode: this.config.selfCalculatedMvp ? 'self-calculated-mvp' : 'legacy-online',
+      mode: this.productionMode ? 'production-six-metrics' : this.config.selfCalculatedMvp ? 'self-calculated-mvp' : 'legacy-online',
       timezone: this.config.timezone,
       permissions: {
         cboe: this.config.permissions.cboe ? 'confirmed' : 'not-confirmed',

@@ -35,7 +35,7 @@ async function handleMarketDataApi(req, res, requestUrl, service) {
     return true;
   }
 
-  const providerMatch = new RegExp(`^${prefix}/providers/([a-z0-9-]+)/(status|latest|history|statistics)$`).exec(requestUrl.pathname);
+  const providerMatch = new RegExp(`^${prefix}/providers/([a-z0-9_-]+)/(status|latest|history|statistics)$`).exec(requestUrl.pathname);
   if (req.method === 'GET' && providerMatch) {
     const providerId = providerMatch[1];
     const getters = {
@@ -50,14 +50,14 @@ async function handleMarketDataApi(req, res, requestUrl, service) {
     return true;
   }
 
-  if (req.method === 'GET' && requestUrl.pathname === `${prefix}/indicators`) {
+  if (req.method === 'GET' && (requestUrl.pathname === `${prefix}/indicators` || requestUrl.pathname === `${prefix}/summary`)) {
     const range = normalizedRange(requestUrl);
     if (!range) sendJson(res, 400, { error: 'invalid-range', allowed: RANGE_KEYS });
     else sendJson(res, 200, { range, indicators: service.getIndicators(range) });
     return true;
   }
 
-  const indicatorMatch = new RegExp(`^${prefix}/indicators/([a-z0-9-]+)$`).exec(requestUrl.pathname);
+  const indicatorMatch = new RegExp(`^${prefix}/(?:indicators|metrics)/([a-z0-9_-]+)$`).exec(requestUrl.pathname);
   if (req.method === 'GET' && indicatorMatch) {
     const range = normalizedRange(requestUrl);
     if (!range) sendJson(res, 400, { error: 'invalid-range', allowed: RANGE_KEYS });
@@ -69,7 +69,15 @@ async function handleMarketDataApi(req, res, requestUrl, service) {
     return true;
   }
 
-  const refreshMatch = new RegExp(`^${prefix}/refresh/([a-z0-9-]+)$`).exec(requestUrl.pathname);
+  const historyMatch = new RegExp(`^${prefix}/metrics/([a-z0-9_-]+)/history$`).exec(requestUrl.pathname);
+  if (req.method === 'GET' && historyMatch) {
+    const range = normalizedRange(requestUrl);
+    if (!range) sendJson(res, 400, { error: 'invalid-range', allowed: RANGE_KEYS });
+    else { const metric = service.getIndicator(historyMatch[1], range); if (!metric) sendJson(res, 404, { error: 'metric-not-found' }); else sendJson(res, 200, { metricId: metric.id, range, history: metric.history, historyStart: metric.historyStart, historyEnd: metric.historyEnd }); }
+    return true;
+  }
+
+  const refreshMatch = new RegExp(`^${prefix}/refresh/([a-z0-9_-]+)$`).exec(requestUrl.pathname);
   if (req.method === 'POST' && refreshMatch) {
     if (!isTrustedAddress(req.socket.remoteAddress)) {
       sendJson(res, 403, { error: 'trusted-network-required' });

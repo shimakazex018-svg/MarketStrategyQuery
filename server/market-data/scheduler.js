@@ -10,6 +10,7 @@ const MVP_SCHEDULES = Object.freeze({
   pe: { hour: 7, minute: 30, weekdays: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'] },
   'nasdaq-cot-positioning': { hour: 7, minute: 30, weekdays: ['Sat'] }
 });
+const PRODUCTION_SCHEDULE = Object.freeze({ hour: 7, minute: 30 });
 
 function zonedParts(date, timezone) {
   return new Intl.DateTimeFormat('en-GB', {
@@ -35,6 +36,7 @@ class MarketDataScheduler {
   async tick() {
     const now = this.now();
     const parts = zonedParts(now, this.timezone);
+    if (this.service.productionMode) return this.tickProduction(now, parts);
     if (this.service.config.selfCalculatedMvp) return this.tickSelfCalculated(now, parts);
     if (isWeekend(now, this.timezone)) return;
     const day = dateParts(now, this.timezone);
@@ -52,6 +54,14 @@ class MarketDataScheduler {
         await this.service.refresh(id, { kind: 'scheduled', requestSource: 'daily-schedule' });
       }
     }
+  }
+
+  async tickProduction(now, parts) {
+    const day = dateParts(now, this.timezone);
+    const due = Number(parts.hour) > PRODUCTION_SCHEDULE.hour || (Number(parts.hour) === PRODUCTION_SCHEDULE.hour && Number(parts.minute) >= PRODUCTION_SCHEDULE.minute);
+    if (!due || this.lastNormalRuns.get('production-six-metrics') === day) return;
+    this.lastNormalRuns.set('production-six-metrics', day);
+    for (const indicator of this.service.indicators) await this.service.refresh(indicator.id, { kind: 'scheduled', requestSource: 'daily-07:30' });
   }
 
   async tickSelfCalculated(now, parts) {
@@ -82,4 +92,4 @@ class MarketDataScheduler {
   }
 }
 
-module.exports = { isWeekend, MarketDataScheduler, MVP_SCHEDULES, SCHEDULES, zonedParts };
+module.exports = { isWeekend, MarketDataScheduler, MVP_SCHEDULES, PRODUCTION_SCHEDULE, SCHEDULES, zonedParts };

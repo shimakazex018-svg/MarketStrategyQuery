@@ -52,7 +52,7 @@ function availableRanges(history) {
 
 function validateModel(model) {
   if (!model || typeof model !== 'object') throw new TypeError('model must be an object');
-  if (!/^[a-z0-9-]+$/.test(model.id || '')) throw new TypeError('model.id is invalid');
+  if (!/^[a-z0-9_-]+$/.test(model.id || '')) throw new TypeError('model.id is invalid');
   if (!VALID_STATUSES.has(model.status)) throw new TypeError('model.status is invalid');
   if (model.value !== null && !Number.isFinite(Number(model.value))) throw new TypeError('model.value is invalid');
   if (model.asOf !== null && !isIsoDate(model.asOf)) throw new TypeError('model.asOf is invalid');

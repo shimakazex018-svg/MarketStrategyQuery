@@ -109,15 +109,11 @@ async function createMarketDataService(rootDir = __dirname, options = {}) {
     now: options.now
   });
   await marketDataService.init({ startupRefresh: options.startupRefresh !== false });
-  const worldPERatioProvider = options.worldPERatioProvider || new WorldPERatioProvider({
-    rootDir,
-    providerRegistry: config.providerRegistry,
-    fetchImpl: options.webPageFetchImpl || null,
-    now: options.now,
-    timezone: config.timezone
-  });
-  await worldPERatioProvider.init();
-  marketDataService.registerWebPageProvider('worldperatio', worldPERatioProvider);
+  if (!marketDataService.productionMode) {
+    const worldPERatioProvider = options.worldPERatioProvider || new WorldPERatioProvider({ rootDir, providerRegistry: config.providerRegistry, fetchImpl: options.webPageFetchImpl || null, now: options.now, timezone: config.timezone });
+    await worldPERatioProvider.init();
+    marketDataService.registerWebPageProvider('worldperatio', worldPERatioProvider);
+  }
   return marketDataService;
 }
 
