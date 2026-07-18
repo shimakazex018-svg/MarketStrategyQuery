@@ -234,7 +234,7 @@ function seriesToPath(values, width = 360, height = 126, pad = 6, scale = null) 
   });
   const line = points.map(([x, y], i) => `${i === 0 ? 'M' : 'L'}${x.toFixed(2)},${y.toFixed(2)}`).join(' ');
   const area = `${line} L${points.at(-1)[0].toFixed(2)},${height} L${points[0][0].toFixed(2)},${height} Z`;
-  return { line, area, min, max };
+  return { line, area, min, max, points };
 }
 
 function smoothSvgPath(points) {
@@ -297,17 +297,11 @@ function metricCard(indicator, index) {
   const rangeKey = state.ranges[indicator.id] || '1Y';
   const market = state.marketData[indicator.id] || initialMarketModel(indicator);
   const statusMeta = DATA_STATUS[market.status] || DATA_STATUS.error;
-  const isDemo = market.status === 'demo';
+  const isDemo = false;
+  const isPe = indicator.id.endsWith('_pe');
   const historyValues = Array.isArray(market.history) ? market.history.map(point => Number(point.value)).filter(Number.isFinite) : [];
-  const values = historyValues.length > 1 ? historyValues : isDemo ? generateSeries(indicator, rangeKey) : [];
-  const robustValues = indicator.id === 'pe' && Array.isArray(market.robustHistory)
-    ? market.robustHistory.map(point => Number(point.value)).filter(Number.isFinite)
-    : [];
-  const combinedScale = robustValues.length > 1 && values.length > 1
-    ? { min: Math.min(...values, ...robustValues), max: Math.max(...values, ...robustValues) }
-    : null;
-  const chart = values.length > 1 ? seriesToPath(values, 360, 126, 6, combinedScale) : null;
-  const robustChart = robustValues.length > 1 ? seriesToPath(robustValues, 360, 126, 6, combinedScale) : null;
+  const values = historyValues.length > 1 ? historyValues : [];
+  const chart = values.length > 1 ? seriesToPath(values, 360, 126, 6) : null;
   const available = new Set(market.availableRanges || []);
   const rangeButtons = RANGE_KEYS.map((key, i) => {
     const disabled = !isDemo && !available.has(key);
@@ -318,21 +312,14 @@ function metricCard(indicator, index) {
     ? '<span class="metric-value-skeleton" aria-label="加载中"></span>'
     : market.value === null || market.value === undefined
       ? '—'
-      : indicator.id === 'pe'
-        ? `原始 ${escapeHtml(displayNumber(market.value))}${escapeHtml(market.unit || indicator.unit)}`
-        : `${escapeHtml(displayNumber(market.value))}${escapeHtml(market.unit || indicator.unit)}`;
-  const secondaryValue = indicator.id === 'pe' && hasFiniteValue(market.secondaryValue)
-    ? `稳健 ${escapeHtml(displayNumber(market.secondaryValue))}${escapeHtml(market.unit || indicator.unit)}`
-    : isDemo && Number.isFinite(indicator.percentile)
-    ? `演示历史分位 ${indicator.percentile}%`
-    : market.asOf ? `数据日期 ${escapeHtml(market.asOf)}` : '暂无可用数据日期';
+      : `${escapeHtml(displayNumber(market.value))}${escapeHtml(market.unit === 'index_points' ? '' : market.unit || indicator.unit || '')}`;
+  const secondaryValue = hasFiniteValue(market.change) ? `较前值 ${Number(market.change) >= 0 ? '+' : ''}${displayNumber(market.change)}` : market.asOf ? `数据日期 ${escapeHtml(market.asOf)}` : '暂无可用数据日期';
   const chartMarkup = chart ? `
       <svg class="metric-chart" viewBox="0 0 360 126" preserveAspectRatio="none" aria-label="${escapeHtml(indicator.name)} ${rangeKey}${isDemo ? '演示' : '历史'}曲线">
         <defs><linearGradient id="metricGradient-${index}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--accent)" stop-opacity=".65"/><stop offset="1" stop-color="var(--accent)" stop-opacity="0"/></linearGradient></defs>
         <line class="baseline" x1="0" x2="360" y1="63" y2="63"></line>
         <path d="${chart.area}" fill="url(#metricGradient-${index})" opacity=".25"></path>
         <path class="line" d="${chart.line}"></path>
-        ${robustChart ? `<path class="line line--robust" d="${robustChart.line}"></path>` : ''}
       </svg>` : `<div class="metric-chart-empty" role="status"><span>${market.status === 'loading' ? '正在读取本地缓存…' : '没有可展示的历史曲线'}</span></div>`;
   const rangeSummary = chart
     ? `${isDemo ? '演示' : '可见'}区间：${chart.min.toFixed(1)}–${chart.max.toFixed(1)}`
@@ -352,7 +339,6 @@ function metricCard(indicator, index) {
       <div class="metric-status-row"><span class="metric-status" data-status="${statusMeta.tone}">${statusMeta.label}</span><span>${escapeHtml(market.statusMessage || '')}</span></div>
       ${market.qualityStatus === 'quality_warning' ? '<div class="metric-quality-warning"><span class="metric-status" data-status="warning">质量提示</span><span>结果可显示，但存在需要核对的数据质量标记。</span></div>' : ''}
       ${chartMarkup}
-      ${robustChart ? '<div class="metric-chart-legend"><span>原始PE</span><span>稳健PE</span></div>' : ''}
       <div class="range-tabs" role="group" aria-label="时间范围">${rangeButtons}</div>
       <dl class="metric-data-meta">
         <div><dt>数据来源</dt><dd>${escapeHtml(market.source || '—')}</dd></div>
@@ -363,7 +349,7 @@ function metricCard(indicator, index) {
         ${market.status === 'stale' ? `<div class="metric-stale-note"><dt>上次成功</dt><dd>${escapeHtml(formatDateTime(market.lastSuccessAt))}</dd></div>` : ''}
       </dl>
       <p class="metric-explain">${escapeHtml(indicator.explain)}</p>
-      ${indicator.id === 'pe' ? '<a class="metric-detail-link" href="#/indicators/pe">查看PE口径、覆盖与极值诊断</a>' : ''}
+      <a class="metric-detail-link" href="#/indicators/${escapeHtml(indicator.id)}">查看指标详情与真实历史</a>
       <p class="metric-subtitle">${rangeSummary}</p>
     </article>`;
 }
@@ -644,51 +630,20 @@ function externalPeTemplate() {
   </section>`;
 }
 
-function peDetailTemplate() {
-  const indicator = state.indicators.find(item => item.id === 'pe');
-  const market = state.marketData.pe || initialMarketModel(indicator || { id: 'pe', name: 'QQQ组合TTM PE' });
-  const status = DATA_STATUS[market.status] || DATA_STATUS.error;
-  const number = value => hasFiniteValue(value) ? Number(value).toFixed(4).replace(/0+$/, '').replace(/\.$/, '') : '—';
-  const percent = value => hasFiniteValue(value) ? `${(Number(value) * 100).toFixed(2)}%` : '—';
-  const flags = Array.isArray(market.qualityFlags) ? market.qualityFlags : [];
-  const affected = Array.isArray(market.affectedConstituents) ? market.affectedConstituents : [];
-  return `
-    <div class="page">
-      <div class="breadcrumb"><a href="#/">首页</a><span>/</span><a href="#/indicators">指标说明</a><span>/</span><span>QQQ组合TTM PE</span></div>
-      <header class="page-title pe-detail-title"><div><p class="eyebrow">Valuation Diagnostics</p><h1>PE估值详情</h1><p>外部参考与本站自计算结果严格分区。外部值只用于交叉参考，不能替代本站算法输入。</p></div></header>
-      ${externalPeTemplate()}
-      <section class="self-calculated-pe-section" aria-labelledby="selfCalculatedPeTitle">
-      <header class="external-pe-header"><div><p class="eyebrow">Self-calculated Data</p><h2 id="selfCalculatedPeTitle">本站自计算PE</h2><p>原始口径保留普通亏损公司；稳健口径在E/P层面缩尾极值并保持原QQQ权重。两者均不是Invesco官方发布的基金估值。</p></div><span class="metric-status" data-status="${status.tone}">${status.label}</span></header>
-      <div class="notice"><strong>当前结论</strong><span>${escapeHtml(market.statusMessage || '尚无可用结果。')}</span></div>
-      ${market.qualityStatus === 'quality_warning' ? '<div class="notice warning"><strong>质量提示</strong><span>当前状态允许显示结果，但请先核对下列质量标记和受影响成分。</span></div>' : ''}
-      <section class="pe-value-grid">
-        <article><span>PE-Q1-RAW-v1</span><strong>${number(market.rawPE ?? market.value)}x</strong><p>QQQ权重加权盈利收益率的倒数。</p></article>
-        <article><span>PE-Q1-ROBUST-WMAD4-v1</span><strong>${number(market.robustPE ?? market.secondaryValue)}x</strong><p>加权中位数与加权MAD的四倍稳健尺度缩尾。</p></article>
-        <article><span>两口径差值</span><strong>${number(market.rawRobustDifference)}x</strong><p>差异扩大时优先检查高权重极值和口径错配。</p></article>
-      </section>
-      <section class="pe-diagnostic-grid">
-        <article class="content-card"><h2>覆盖与日期</h2><dl class="diagnostic-list">
-          <div><dt>财务覆盖权重</dt><dd>${percent(market.financialCoverageWeight)}</dd></div>
-          <div><dt>价格覆盖权重</dt><dd>${percent(market.priceCoverageWeight)}</dd></div>
-          <div><dt>权重日期</dt><dd>${escapeHtml(market.weightAsOf || '—')}</dd></div>
-          <div><dt>价格日期</dt><dd>${escapeHtml(market.priceAsOf || '—')}</dd></div>
-          <div><dt>财务截止日期</dt><dd>${escapeHtml(market.financialAsOf || '—')}</dd></div>
-          <div><dt>有效成分 / 总成分</dt><dd>${escapeHtml(valueOr(market.validComponentCount, '—'))} / ${escapeHtml(valueOr(market.componentCount, '—'))}</dd></div>
-        </dl></article>
-        <article class="content-card"><h2>亏损与极值</h2><dl class="diagnostic-list">
-          <div><dt>亏损公司数量</dt><dd>${escapeHtml(valueOr(market.lossMakingCount, '—'))}</dd></div>
-          <div><dt>亏损公司权重</dt><dd>${percent(market.lossMakingWeight)}</dd></div>
-          <div><dt>极值数量</dt><dd>${escapeHtml(valueOr(market.outlierCount, '—'))}</dd></div>
-          <div><dt>极值权重</dt><dd>${percent(market.outlierWeight)}</dd></div>
-          <div><dt>分母稳定性</dt><dd>${escapeHtml(valueOr(market.denominatorStability, '—'))}</dd></div>
-          <div><dt>计算时间</dt><dd>${escapeHtml(formatDateTime(market.calculatedAt))}</dd></div>
-        </dl></article>
-      </section>
-      <section class="content-card"><h2>数据质量标记</h2>${flags.length ? renderList(flags) : '<p>当前没有质量标记。</p>'}</section>
-      <section class="content-card"><h2>受稳健缩尾影响的成分</h2>${affected.length ? renderList(affected.map(item => typeof item === 'string' ? item : `${item.ticker || '未知'}：${item.reason || 'E/P超出稳健边界'}`)) : '<p>当前没有受影响成分，或尚无可用结果。</p>'}</section>
-      <div class="notice"><strong>使用边界</strong><span>本页不展示市值聚合诊断算法或排除亏损诊断值作为正式PE；结果仅用于本人投资研究，不构成自动阶段判断、仓位建议或收益保证。</span></div>
-      </section>
-    </div>`;
+function metricDetailTemplate(id) {
+  const indicator = state.indicators.find(item => item.id === id);
+  if (!indicator) return `<div class="page"><div class="notice"><strong>该指标当前版本未启用</strong><span>当前正式范围仅包含首页展示的六项指标。</span></div></div>`;
+  const market = state.marketData[id] || initialMarketModel(indicator); const status = DATA_STATUS[market.status] || DATA_STATUS.error;
+  const history = Array.isArray(market.history) ? market.history : []; const values = history.map(point => Number(point.value)).filter(Number.isFinite); const chart = values.length > 1 ? seriesToPath(values, 720, 220, 14) : null;
+  const high = values.length ? Math.max(...values) : null; const low = values.length ? Math.min(...values) : null; const isPe = id.endsWith('_pe');
+  const statistics = market.historicalStatistics || {}; const ranges = [['1年', '1y'], ['5年', '5y'], ['10年', '10y'], ['20年', '20y']];
+  const statsMarkup = isPe ? `<section class="external-pe-ranges">${ranges.map(([label, key]) => externalPeRangeCard(label, { mean: statistics[key]?.average, stdDev: statistics[key]?.standardDeviation }, market.value)).join('')}</section>` : '';
+  const rangeKey = state.ranges[id] || '1Y';
+  const rangeTabs = `<div class="range-tabs detail-range-tabs" role="group" aria-label="历史时间范围">${RANGE_KEYS.map((key, index) => `<button class="range-tab${key === rangeKey ? ' active' : ''}" data-indicator-id="${id}" data-range="${key}" type="button" aria-pressed="${key === rangeKey}">${RANGE_LABELS[index]}</button>`).join('')}</div>`;
+  const chartPoints = history.map(point => ({ date: point.date, value: Number(point.value) })).filter(point => point.date && Number.isFinite(point.value));
+  const lastPoint = chart?.points?.at(-1);
+  const chartMarkup = chart ? `<figure class="external-pe-series interactive-history-chart" data-chart-points="${escapeHtml(JSON.stringify(chartPoints))}"><figcaption>${isPe ? '真实快照曲线' : '真实日频历史曲线'}</figcaption><div class="history-chart-frame"><svg viewBox="0 0 720 220" preserveAspectRatio="none" role="img" aria-label="${escapeHtml(indicator.name)}真实历史曲线"><line class="baseline" x1="14" x2="706" y1="206" y2="206"></line><path class="line" d="${chart.line}"></path><circle class="current-marker" cx="${lastPoint?.[0]}" cy="${lastPoint?.[1]}" r="5"></circle></svg><output class="history-chart-tooltip" hidden></output></div><div class="history-chart-axis history-chart-axis-y"><span>${high}</span><span>${low}</span></div><div class="history-chart-axis history-chart-axis-x"><span>${escapeHtml(history[0]?.date)}</span><span>${escapeHtml(history.at(-1)?.date)}</span></div><p>${history.length}点 · 低点 ${low} · 高点 ${high}</p></figure>` : `<div class="external-pe-series-empty"><strong>${history.length ? '当前PE与历史统计区间' : '暂无数据'}</strong><span>${isPe ? `当前有${history.length}个真实快照；不足2点不绘制折线。` : '历史不足2点时不绘制折线。'}</span></div>`;
+  return `<div class="page"><div class="breadcrumb"><a href="#/">首页</a><span>/</span><a href="#/indicators">指标说明</a><span>/</span><span>${escapeHtml(indicator.name)}</span></div><header class="page-title"><div><p class="eyebrow">Market Data</p><h1>${escapeHtml(indicator.name)}</h1><p>${escapeHtml(indicator.definition)}</p></div><span class="metric-status" data-status="${status.tone}">${status.label}</span></header><section class="external-pe-section"><div class="external-pe-summary"><article><span>当前值</span><strong>${hasFiniteValue(market.value) ? escapeHtml(market.value) : '—'}${isPe ? 'x' : ''}</strong></article><dl><div><dt>数据日期</dt><dd>${escapeHtml(market.asOf || '—')}</dd></div><div><dt>数据来源</dt><dd>${escapeHtml(market.source || '—')}</dd></div><div><dt>更新时间</dt><dd>${escapeHtml(formatDateTime(market.updatedAt))}</dd></div><div><dt>${isPe ? '估值标签' : '相对前值'}</dt><dd>${escapeHtml(isPe ? market.valuationLabel || '—' : hasFiniteValue(market.change) ? market.change : '—')}</dd></div></dl></div><h2>${isPe ? '当前PE与历史统计区间' : '历史曲线'}</h2>${statsMarkup}${rangeTabs}${chartMarkup}<div class="notice"><strong>数据说明</strong><span>本站数据仅用于个人市场观察和研究，不构成投资建议。数据可能存在延迟、修订或来源口径差异。</span></div>${isPe ? '<div class="notice"><strong>PE口径</strong><span>Nasdaq-100和S&P 500 PE来自第三方公开参考数据，不代表指数编制机构官方估值。PE历史曲线从本站首次成功采集日期开始积累。</span></div>' : '<div class="notice"><strong>FRED口径</strong><span>数据通过FRED获取，原始来源以指标详情页标注为准。</span></div>'}</section></div>`;
 }
 
 function notFoundTemplate() {
@@ -817,6 +772,26 @@ function bindCommonEvents() {
       await loadIndicatorRange(button.dataset.indicatorId, button.dataset.range);
       requestAnimationFrame(() => document.querySelector(`[data-indicator-id="${button.dataset.indicatorId}"][data-range="${button.dataset.range}"]`)?.focus());
     });
+  });
+
+  document.querySelectorAll('.interactive-history-chart').forEach(figure => {
+    const frame = figure.querySelector('.history-chart-frame');
+    const tooltip = figure.querySelector('.history-chart-tooltip');
+    let points = [];
+    try { points = JSON.parse(figure.dataset.chartPoints || '[]'); } catch { points = []; }
+    if (!frame || !tooltip || points.length < 2) return;
+    const showPoint = event => {
+      const rect = frame.getBoundingClientRect();
+      const relativeX = Math.max(0, Math.min(rect.width, event.clientX - rect.left));
+      const index = Math.round((relativeX / Math.max(rect.width, 1)) * (points.length - 1));
+      const point = points[index];
+      tooltip.textContent = `${point.date} · ${point.value}`;
+      tooltip.style.left = `${(index / (points.length - 1)) * 100}%`;
+      tooltip.hidden = false;
+    };
+    frame.addEventListener('pointermove', showPoint);
+    frame.addEventListener('pointerdown', showPoint);
+    frame.addEventListener('pointerleave', event => { if (event.pointerType !== 'touch') tooltip.hidden = true; });
   });
 
   document.querySelectorAll('.formula-details, .compact-details, .option-detail-group').forEach(details => {
@@ -967,7 +942,7 @@ function render({ preserveScroll = false } = {}) {
   else if (route === '/compare') app.innerHTML = compareTemplate();
   else if (route === '/options' || route.startsWith('/options/')) app.innerHTML = optionsTemplate(route.split('/')[2]);
   else if (route === '/indicators') app.innerHTML = indicatorsTemplate();
-  else if (route === '/indicators/pe') app.innerHTML = peDetailTemplate();
+  else if (route.startsWith('/indicators/')) app.innerHTML = metricDetailTemplate(route.split('/')[2]);
   else if (route.startsWith('/stage/')) app.innerHTML = stageTemplate(state.stages.find(stage => stage.id === route.split('/')[2]));
   else app.innerHTML = notFoundTemplate();
 
@@ -1017,12 +992,7 @@ document.addEventListener('keydown', event => {
 window.addEventListener('hashchange', async () => {
   marketDataControllers.forEach(controller => controller.abort());
   marketDataControllers.clear();
-  externalPEController?.abort();
   render();
-  if (parseRoute() === '/indicators/pe' && !state.externalPE.loaded) {
-    await loadExternalPE();
-    if (parseRoute() === '/indicators/pe') render({ preserveScroll: true });
-  }
 });
 
 async function loadData() {
@@ -1049,7 +1019,6 @@ async function loadData() {
     await loadData();
     render();
     await loadMarketData('1Y');
-    if (parseRoute() === '/indicators/pe') await loadExternalPE();
     render({ preserveScroll: true });
   } catch (error) {
     console.error(error);

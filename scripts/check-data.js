@@ -38,7 +38,7 @@ const providerRegistry = loadProviderRegistry(ROOT);
 
 const stageNames = ['高位震荡', '震荡下跌', '单边下跌', '恐慌暴跌', '底部震荡', '右侧反转', '单边上涨', '震荡上涨', '加速上涨／过热'];
 const optionNames = ['Protective Put', 'Collar', 'Put Debit Spread', 'Put Credit Spread', 'Covered Call', 'Cash-Secured Put', 'Call Debit Spread', 'Long Call'];
-const indicatorNames = ['QQQ组合TTM PE', 'Forward PE', 'QQQ RV20', 'QQQ波动率分位', '自建风险偏好', '纳指期货机构仓位'];
+const indicatorNames = ['Nasdaq-100 PE', 'S&P 500 PE', 'VIX恐慌指数', 'VXN纳斯达克波动率指数', 'Nasdaq-100指数', 'S&P 500指数'];
 const allocationTickers = ['QQQ', 'SOXX', 'SOXL', '现金/SGOV'];
 const rangeLabels = ['1个月', '3个月', '6个月', '1年', '3年', '5年', '10年'];
 const rangeKeys = ['1M', '3M', '6M', '1Y', '3Y', '5Y', '10Y'];
