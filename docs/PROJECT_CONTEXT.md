@@ -22,7 +22,7 @@
 - 九种固定市场阶段的周期图、详情页和对比页。
 - QQQ、SOXX、SOXL、现金/SGOV 的独立允许仓位区间与资产规则。
 - 八种固定期权策略的单策略详情、损益公式、管理规则与风险边界。
-- 六张指标卡、七个时间范围、状态元数据和历史曲线结构。
+- 六张正式指标卡：Nasdaq-100 PE、S&P 500 PE、VIX、VXN、Nasdaq-100指数和S&P 500指数；支持七个时间范围、状态元数据和真实历史/快照结构。
 - 首页指标状态支持 `loading`、`fresh`、`stale`、`error`、`demo`、`unavailable`、`provisional`、`insufficient_coverage` 和 `manual`，并可独立显示 `quality_warning`。
 - 深浅主题、Hash Router、键盘/触摸交互和响应式布局。
 - Node.js 静态服务、健康检查和内部市场数据 API。
@@ -30,14 +30,15 @@
 ## 当前稳定状态
 
 - 稳定版本：`main` 上的 `v0.4.0`；v0.4功能合并提交为 `a0eb46ea612dbe37254acf886b4d6a56c1cf1c66`。
-- 当前开发分支：`feature/v0.5-public-web-data-providers`；已完成 WorldPEratio 第二检查点的有限风险接受、受控真实采集、标准化缓存、快照历史、诊断 API 和 PE 详情页外部参考原型。
+- 当前开发分支：`feature/v0.5-public-web-data-providers`；已把六项成功数据接入统一服务、内部API、首页与详情页，并建立每日07:30受控更新和stale缓存回退。
 - v0.4检查点B已把自计算数据层接入正式内部API与首页。`PE-Q1-RAW-v1`和`PE-Q1-ROBUST-WMAD4-v1`在同一张卡及PE详情页展示；排除亏损版和旧完整公司总市值/总盈利方法仍仅作内部诊断。
 - IBKR登记为`not_tested`、`pending_written_confirmation`、`not_selected_by_owner`、`enabled=false`；Twelve Data和Alpha Vantage为`deferred`。未安装组件、未登录、未请求数据。
 - 当前没有用户本地持仓、价格、Forward PE或SEC运行输入时，六张新卡均可独立显示`unavailable`并保持离线启动；不会回退到旧VIX/VXN或演示数值。
 - Cboe和IBKR在Provider注册表中均为 `pending_written_confirmation`、`enabled=false`；旧环境变量不能绕过注册表门禁。Twelve Data和Alpha Vantage为`not_evaluated`、`enabled=false`。
-- 正式首页六卡现为原始/稳健QQQ组合TTM PE、Forward PE人工录入、QQQ RV20、RV20历史分位、自建风险偏好和Nasdaq期货机构仓位代理。
+- 正式首页六卡现为Nasdaq-100 PE、S&P 500 PE、VIX、VXN、Nasdaq-100指数和S&P 500指数。旧自计算指标不进入首页或正常导航。
 - v0.4的发布边界是自计算市场指标MVP、真实数据输入基础设施、原始和稳健QQQ PE计算、SEC/CFTC接入框架、本地CSV导入及完整数据质量状态；它不是全部真实行情、官方QQQ PE、官方VIX/VXN或实时数据正式版。
-- WorldPEratio 当前为 `approved_with_conditions`、`selected`、`enabled=true`，风险接受标识为 `owner_accepted_limited_internal_use`。该状态是项目所有者的有限剩余风险接受决定，不代表来源方书面授权；Provider 不进入首页或通用调度。
+- WorldPEratio 当前按项目所有者的有限剩余风险接受边界进入六指标正式服务与每日调度；这不代表来源方书面授权，访问控制或结构异常时必须停止并保留最后成功缓存。
+- 九类核心市场数据的首次可用性验证已在独立实验目录完成；实验工具不进入正式服务，真实结果和九项报告只保存在被Git忽略的运行目录。来源受限或字段缺失保持不可用，不回填、不合并成不透明数值。
 
 ## 当前数据与生成目录
 
@@ -56,17 +57,20 @@
 | `runtime-data/normalized/` | 标准化运行数据 | 忽略 | 导入manifest和标准化记录 |
 | `runtime-data/derived/` | 派生结果 | 忽略 | 算法结果、版本和覆盖率 |
 | `runtime-data/market-data/web-pages/worldperatio/` | 运行数据 | 忽略 | 保存标准化latest、请求状态、去重快照历史和last-good备份；不保存HTML，内容不得提交 |
+| `runtime-data/market-data/production/` | 正式运行数据 | 忽略 | 保存四项FRED序列、两个PE当前值、PE快照历史及每日请求状态；由离线导入或正式Provider原子更新 |
+| `tools/market-data-lab/core-data-acquisition/` | 隔离实验工具 | 跟踪 | 分来源一次性采集、规范化、冻结校验与本地报告；最新缺失项入口仅包含Invesco、Twelve Data和CFTC，不进入正式启动路径 |
+| `runtime-data/market-data-lab/core-data-acquisition/` | 实验运行数据 | 忽略 | raw、normalized、snapshots、reports、state和logs；不得提交 |
 
 当前不存在数据库、缩略图目录、视频缩略图目录、HLS、上传文件或视频切片功能。数据库路径、媒体源路径和可再生成媒体规则：不适用。
 
 ## 当前已知限制
 
-- 真实市场数据受来源定义、机器接口和再展示许可阻塞。
+- 六项正式指标已有本地成功缓存；来源仍可能延迟、修订或改变访问条件，失败时只显示最后成功数据并标记stale。
 - WorldPEratio 当前按项目所有者风险接受边界低频读取；来源方书面授权仍不存在，完整公式和长期历史可用性仍以每次公开响应验证结果为准。
 - 远程仓库当前已由项目所有者设置为 Private；即使在私有仓库中，仍必须排除密钥、会话、私人运行数据和机器标识。
 - IBKR路线已由用户延期；若未来恢复，仍需用户选择并安装官方组件、人工登录和书面许可确认。
 - QQQ PE已确定原始与稳健双口径；至少80个有效成分和不超过10%的极值处理权重已由虚构fixture覆盖，仍需用户真实本地输入验证实际覆盖率。风险偏好最终权重仍待用户审定。
-- 真实QQQ成分/权重、复权价格和Forward PE仍需用户本地CSV。SEC bulk只有在本机显式配置应用名、联系邮箱和更新开关后才允许下载；CFTC正式选择`209742`，但运行缓存不进入Git。
+- Forward PE、QQQ/SPY/SOXX价格和机构仓位代理已从当前版本范围移除；不得以现有六项替代或继续自动补采。
 - 不自动判断市场阶段，不提供自动仓位建议。
 - 不读取IBKR账户、持仓或余额，不执行交易；当前只登记非敏感Provider评估结果。
 - 没有登录、多用户、数据库、后台编辑器、回测或历史策略记录。

@@ -13,6 +13,28 @@
 npm.cmd run check
 ```
 
+核心数据隔离实验使用Node.js 22或更高版本和实验目录自己的依赖；只运行合成测试时：
+
+```powershell
+cd tools/market-data-lab/core-data-acquisition
+node --test test/*.test.js
+```
+
+实验测试不得读取真实`runtime-data/`或发起外部请求。真实`run-once.js`只在明确授权后执行，且不能通过删除state绕过当日请求预算。
+
+缺失项入口无参数时必须只显示帮助并保持零请求；真实分项运行必须使用明确开关：
+
+```powershell
+node run-missing-only.js
+node run-missing-only.js --nasdaq100-forward-pe
+node run-missing-only.js --twelvedata-prices
+node run-missing-only.js --cftc-positioning
+```
+
+不得在验收或常规测试中执行这些真实分项开关。
+
+缺失项合成测试还必须覆盖：普通P/E不冒充Forward P/E、Twelve Data窗口合并/边界去重/同日冲突/Key脱敏/缺Key零请求、CFTC Futures Only字段门禁、Combined与Disaggregated拒绝、`209742`与`13874A`身份、Micro排除、null不转0、ZIP路径穿越，以及8个冻结文件的哈希保护。
+
 该命令执行：
 
 1. `server.js`、`public/app.js` 和 UI 评审服务语法检查。
@@ -21,6 +43,7 @@ npm.cmd run check
 4. Provider登记检查：固定状态枚举、必填字段、重复ID、附加条件和`enabled`硬门禁。
 5. 自计算指标检查：有界CSV、SEC字段/季度TTM、QQQ原始PE与WMAD4稳健PE、实现波动率、历史分位、风险偏好、CFTC候选合约和人工Forward PE边界。
 6. WorldPEratio检查：风险接受与30天条款复查门禁、采集前robots、服务器HTML提取、完整序列/仅汇总判定、目标/日期/数值歧义、403/429/登录/验证码停止、每日1+1请求、快照去重/损坏恢复、HTML不落盘、四个诊断API和Trim 10%统计。
+7. v0.5六指标检查：离线导入、FRED缺失值、PE统计/快照分离、日期去重与修订、stale回退、单项故障隔离、每日预算、启动补采、周末去重、API脱敏和正式六卡范围。
 
 单独运行测试：
 
@@ -56,6 +79,9 @@ npm.cmd start
 ```powershell
 Invoke-RestMethod http://127.0.0.1:48101/api/health
 Invoke-RestMethod 'http://127.0.0.1:48101/api/market-data/indicators?range=1Y'
+Invoke-RestMethod http://127.0.0.1:48101/api/market-data/summary
+Invoke-RestMethod http://127.0.0.1:48101/api/market-data/metrics/vix
+Invoke-RestMethod 'http://127.0.0.1:48101/api/market-data/metrics/vix/history?range=10Y'
 Invoke-RestMethod http://127.0.0.1:48101/api/market-data/status
 Invoke-RestMethod http://127.0.0.1:48101/api/market-data/providers/worldperatio/status
 Invoke-RestMethod http://127.0.0.1:48101/api/market-data/providers/worldperatio/latest
@@ -64,11 +90,20 @@ Invoke-RestMethod http://127.0.0.1:48101/api/market-data/providers/worldperatio/
 通过标准：
 
 - `/api/health` 返回 HTTP 200、`ok: true`、`marketData: "ready"`，版本与 `package.json` 一致（当前为 `0.5.0-dev`）。
-- 指标接口返回 6 个指标；没有本地导入或运行缓存时，QQQ组合TTM PE、Forward PE、QQQ RV20、QQQ波动率分位、自建风险偏好和纳指期货机构仓位均独立显示 `unavailable`。
+- 指标接口按固定顺序返回六项正式指标；没有本地导入或运行缓存时各项独立显示`unavailable`，不得回退旧自计算指标、0或模拟值。
 - 状态接口时区为 Asia/Shanghai，并返回Provider的技术状态、合规状态、登记启用值和实际启用值。
 - SEC与CFTC只有在合规登记和运行配置同时满足时才可实际启用；IBKR、Twelve Data、Alpha Vantage和Cboe保持未选择或禁用，环境变量不能绕过登记门禁。
 - 没有外部网络、没有 `FRED_API_KEY` 时仍能启动。
 - WorldPEratio 四个 GET 诊断接口不得触发第三方请求；登记应返回 `enabled: true`、`complianceStatus: approved_with_conditions` 和风险接受标识。存在本地成功缓存时读取缓存；不存在时返回 unavailable/null。
+
+## v0.5六指标正式集成
+
+- 先执行`node tools/market-data/import-successful-data.js`；命令必须零网络、只读取六项成功规范化文件、原子写入正式运行目录，第二次执行应报告零个数据文件变化。
+- 自动测试只使用未来日期、`.invalid`来源和临时目录，不能读取或写入真实`runtime-data/market-data/production/`。
+- 四项FRED详情必须能切换1M、3M、6M、1Y、3Y、5Y、10Y；null观察不进入曲线、不补非交易日、不转0。
+- 两项PE页面必须显示1/5/10/20年统计区间；0点显示暂无、1点只显示当前值与统计、2点及以上才显示真实快照折线。
+- 页面应在桌面、iPad和iPhone视口检查六卡顺序、无横向溢出、曲线压缩、触控提示和旧指标不可见。
+- 验收真实运行数据时只报告状态和点数，不把真实值、日期、截图或内容哈希写入Git。
 
 ## WorldPEratio第二检查点
 

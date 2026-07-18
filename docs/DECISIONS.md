@@ -281,3 +281,17 @@ WorldPEratio 登记为 `approved_with_conditions`、`selected`、`conditionsSati
 
 ### Status
 有效
+
+## DEC-021：v0.5正式范围固定为六项已成功数据
+
+### Decision
+v0.5首页和正式市场数据服务只接入Nasdaq-100 PE、S&P 500 PE、VIX、VXN、Nasdaq-100指数和S&P 500指数。真实数据保存在`runtime-data/market-data/production/`，由离线导入器和现有市场数据服务中的FRED、WorldPEratio Provider维护。Forward PE、QQQ/SPY/SOXX价格和机构仓位代理不显示、不调度、不以其他指标代替。
+
+### Reason
+六项来源、字段和本地成功缓存已经验证；其余指标仍受访问、定义或输入条件阻塞。固定正式范围可以避免伪造、口径替代和继续扩大数据源风险。
+
+### Impact
+六项通过统一API提供摘要、详情、历史和Provider状态；每天Asia/Shanghai 07:30受控检查，失败保留最后成功缓存并标记stale。PE统计与逐日快照严格分离，真实运行数据不得进入Git。DEC-018定义的旧首页六卡不再是当前产品范围，但其自计算模块可保留为内部兼容代码。
+
+### Status
+有效；取代DEC-018的正式首页六卡定义。

@@ -43,6 +43,8 @@ server/
 templates/imports/              # 仅含虚构数据的导入模板
 scripts/                        # 数据检查、启动和防火墙辅助脚本
 tests/                          # Node 自动测试与 UI 评审夹具服务
+tools/market-data-lab/
+  core-data-acquisition/       # 九类核心数据的一次性隔离采集与本地报告；不进入正式服务
 runtime-data/market-data/       # 运行缓存、请求状态和日志；不进入 Git
 previews/                       # 经确认提交的产品评审截图
 docs/                           # 长期上下文与专项设计文档
@@ -126,7 +128,24 @@ WorldPEratio 不加入上述通用启动或定时刷新。经项目所有者有�
 
 统一页面模型允许`loading/fresh/stale/error/demo/unavailable/insufficient_coverage/manual/provisional/quality_warning`。`quality_warning`是与主状态并列的质量维度，允许与`provisional`同时存在。无数据使用`null`，不使用0或未标记模拟点。单指标失败不影响其他指标、健康检查或静态策略页面。
 
-## 自计算数据流（检查点B）
+## 六指标正式数据流（v0.5）
+
+```text
+隔离实验中已成功的六项规范化文件
+  -> 离线一次性导入器（校验、临时文件、原子替换）
+  -> runtime-data/market-data/production/
+  -> FredProvider / WorldPERatioProductionProvider
+  -> ProductionDataCoordinator
+  -> MarketDataService
+  -> 内部API
+  -> 首页六卡 / 指标详情与真实历史
+```
+
+正式指标ID固定为`nasdaq100_pe`、`sp500_pe`、`vix`、`vxn`、`nasdaq100_index`、`sp500_index`。PE的1/5/10/20年统计只进入`historicalStatistics`，不得混入本站逐日快照；快照不足2点时不绘制折线。FRED缺失观察保留为`null`且不连成0。
+
+四项FRED序列和两个WorldPEratio页面由现有市场数据服务统一协调。每天Asia/Shanghai 07:30检查；同一来源当天成功后不重复请求，只有超时或5xx允许再尝试一次。单项更新失败不清空缓存，也不影响其他指标或静态页面。
+
+## 历史自计算数据流（保留兼容，不进入v0.5首页）
 
 ```text
 虚构fixture / 用户未来本地CSV
@@ -138,7 +157,7 @@ WorldPEratio 不加入上述通用启动或定时刷新。经项目所有者有�
 
 `server/self-calculated/coordinator.js`已将该流接入正式内部API。启动时只读取本地导入、运行缓存和已存在的官方源缓存，不因浏览器访问触发外部请求。原始、标准化和派生文件分层位于`runtime-data/sources|imports|normalized|derived|market-data`并继续由Git忽略。
 
-正式六卡为：QQQ组合TTM PE（原始与稳健双口径）、Forward PE、QQQ RV20、QQQ波动率分位、自建风险偏好和纳指期货机构仓位。PE详情路由为`#/indicators/pe`，只展示正式双口径、覆盖、日期、亏损与极值诊断；完整公司市值聚合和排除亏损结果仍只保留在内部模型中。
+该模块的旧指标与详情代码只作历史兼容，不再属于v0.5正式六卡、正常导航或每日调度。直接访问旧指标ID时页面必须显示当前版本未启用，不显示模拟历史。
 
 SEC bulk默认关闭。只有`SEC_BULK_UPDATE_ENABLED=true`、`SEC_USER_AGENT_APP`非空且`SEC_USER_AGENT_EMAIL`为有效邮箱时，Provider合规门禁和运行配置才同时允许请求；每天最多一次。CFTC使用官方TFF Futures Only数据集`gpe5-46if`，`209742`为正式代理，`209747`只作诊断候选；调度器只在Asia/Shanghai周六检查。两类外部源均原子写入、保留最后成功结果且不提交运行数据。
 
@@ -167,6 +186,8 @@ QQQ PE派生结果同时保留原始与WMAD4稳健分母稳定性、价格/财�
 - 应进入 Git：源代码、`public/data/*.json`、测试、配置模板、脚本、文档和经确认的评审截图。
 - Provider注册表只保存非敏感结论；账户ID、凭据、会话、订阅账单和真实响应不得进入注册表。
 - 不应进入 Git：`runtime-data/`、`.env`、密钥、日志、缓存、PID、临时文件和机器相关状态。
+- 核心数据实验的真实raw、normalized、snapshots、reports、state和logs位于`runtime-data/market-data-lab/core-data-acquisition/`；实验代码及独立锁文件位于`tools/market-data-lab/core-data-acquisition/`，不由正式服务导入。
+- 缺失项实验流先校验8个冻结文件，再按Invesco、Twelve Data、CFTC串行执行并在每个来源后复核；Twelve Data Key只从进程环境读取，CFTC只接受固定TFF Futures Only ZIP白名单。失败只更新隔离报告，不扩展来源或触发正式Provider/调度。
 - `node_modules/` 是本机依赖目录并被忽略；当前项目没有第三方运行依赖，不应提交。
 
 ## 不存在或不适用的模块

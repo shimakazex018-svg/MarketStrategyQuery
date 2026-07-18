@@ -1,5 +1,31 @@
 # 变更日志
 
+## 2026-07-18 - v0.5六项成功市场数据正式集成
+
+- 正式指标范围固定为Nasdaq-100 PE、S&P 500 PE、VIX、VXN、Nasdaq-100指数和S&P 500指数；首页、正常导航和每日调度不再包含Forward PE、ETF价格、机构仓位或旧自计算指标。
+- 增加零网络、幂等、原子写入的一次性导入器，将六项已成功规范化数据复制到被Git忽略的正式运行目录；隔离实验和原成功文件保持不变。
+- 将FRED与WorldPEratio接入现有市场数据服务，提供统一摘要、详情、历史和Provider状态API；PE统计与本站快照分离，缺失观察不转为0。
+- 每天Asia/Shanghai 07:30执行受控检查；当日成功不重复请求，只有超时或5xx允许一次重试，失败保留最后成功数据并只标记受影响指标为stale。
+- 首页保留现有三列设计显示六张正式卡，详情页支持七个范围、真实曲线、当前点、高低点、日期/数值轴及鼠标和触控提示；PE不足2个快照时不绘制折线。
+- 新增全合成自动测试和独立端口smoke检查；真实运行数据、视觉验收截图、原始响应、哈希与机器信息均不进入Git。
+
+## 2026-07-18 - 核心市场数据隔离采集实验
+
+- 将最新缺失项入口收窄为Invesco Forward PE、Twelve Data价格和CFTC TFF Futures Only；删除该入口中的WorldPEratio与Stooq开关，冻结清单扩展为包含S&P 500 PE在内的8个实际成功文件。
+- Invesco改用指定官方产品详情URL、同域重定向和一次受限重试策略；主页面出现访问挑战后硬停止。Twelve Data只从环境变量读取Key，本机缺Key时保持零请求且不记录凭据。
+- CFTC改用11个明确白名单官方ZIP并在解析前验证报告类型、三类持仓字段、ZIP边界和E-mini合约身份；首包内容验证失败后停止，未推断或请求替代文件。
+- 本轮开始和结束的8文件大小、修改时间及SHA-256一致；没有请求任何冻结来源，也没有访问Yahoo、Stooq、EODHD、FRED或WorldPEratio。
+- 在已验收结果上增加严格的缺失项入口；无参数只显示帮助且零网络请求，分项开关不会导入或重跑FRED、Yahoo或已成功Nasdaq-100 PE采集器。
+- 缺失项运行取得S&P 500 PE单日快照；Invesco公开页超时后停止，Stooq因robots禁止CSV路径而在价格请求前停止，CFTC误匹配的非TFF归档被隔离并标记为错误报告类型。
+- 增加六个冻结成功文件的运行前后大小、修改时间和SHA-256比对；本轮结束时全部一致。真实数值、日期与完整哈希仅保存在被Git忽略的本地报告。
+- 增加流量预算、显式Forward字段识别、Stooq CSV质量、CFTC ZIP路径穿越/解压上限/字段别名/合约排除以及冻结完整性的合成测试。
+- 暂停网站页面、正式Provider和调度开发；新增`tools/market-data-lab/core-data-acquisition/`一次性隔离采集工具，不进入`npm start`或48101服务。
+- 使用FRED公开CSV、`yahoo-finance2`、WorldPEratio指定公开页和CFTC TFF候选接口验证九类数据；真实响应、标准化结果、快照、报告、状态和日志只写入被Git忽略的运行目录。
+- 首次受控运行按来源请求预算串行执行；FRED四序列和Nasdaq-100 PE取得可用结果，Yahoo地区访问限制、CFTC 403与WorldPEratio S&P页面响应上限均按硬边界停止，不重试、不绕过、不伪造缺失数据。
+- 生成恰好九项的本地JSON/Markdown可用性报告，并补充四家商业API的Forward PE只读可行性结论；未注册、购买或写入API凭据。
+- 增加合成测试覆盖FRED缺失值、日期修订、Yahoo字段路径、WorldPEratio无历史伪造、CFTC合约发现/派生比例和错误响应脱敏。
+- 未修改`public/`、正式market-data service、现有Provider、调度、48101服务、main或标签；未提交或推送。
+
 ## 2026-07-16 - v0.5第二检查点：WorldPEratio受控采集与外部PE详情
 
 - 记录项目所有者有限剩余风险接受决定；明确`approved_with_conditions`不代表WorldPEratio书面授权。
