@@ -10,6 +10,19 @@ const state = {
   ranges: {},
   marketData: {},
   externalPE: { loaded: false, loading: false, status: null, latest: null, history: null, statistics: null, error: null },
+  drawdown: {
+    primaryId: 'nasdaq100_index',
+    comparisonId: 'sp500_index',
+    preset: '10Y',
+    customStart: '',
+    customEnd: '',
+    threshold: 0.15,
+    sort: 'date-desc',
+    loading: new Set(),
+    errors: {},
+    calculationCache: new Map(),
+    validationMessage: ''
+  },
   route: ''
 };
 
@@ -35,6 +48,25 @@ const mobileNav = document.getElementById('mobileNav');
 let indicatorDialogTrigger = null;
 const marketDataControllers = new Map();
 let externalPEController = null;
+const drawdownControllers = new Map();
+const DRAWDOWN_METRICS = Object.freeze({
+  nasdaq100_index: { label: 'Nasdaq-100指数', shortLabel: 'Nasdaq-100', source: 'FRED NASDAQ100' },
+  sp500_index: { label: 'S&P 500指数', shortLabel: 'S&P 500', source: 'FRED SP500' }
+});
+const DRAWDOWN_PRESETS = Object.freeze([
+  ['1Y', '近1年', 1], ['3Y', '近3年', 3], ['5Y', '近5年', 5], ['10Y', '近10年', 10],
+  ['15Y', '近15年', 15], ['20Y', '近20年', 20], ['ALL', '全历史', null]
+]);
+const drawdownDatasetCache = DrawdownAnalysis.createDatasetCache(async (id, options = {}) => {
+  const response = await fetch(`/api/market-data/metrics/${encodeURIComponent(id)}/history?range=ALL`, {
+    headers: { Accept: 'application/json' },
+    signal: options.signal
+  });
+  if (!response.ok) throw new Error(`Drawdown history API ${response.status}`);
+  const payload = await response.json();
+  if (!Array.isArray(payload.history)) throw new TypeError('Drawdown history response is invalid');
+  return payload.history;
+});
 
 function formatDateTime(value) {
   if (!value) return '—';
@@ -646,6 +678,233 @@ function metricDetailTemplate(id) {
   return `<div class="page"><div class="breadcrumb"><a href="#/">首页</a><span>/</span><a href="#/indicators">指标说明</a><span>/</span><span>${escapeHtml(indicator.name)}</span></div><header class="page-title"><div><p class="eyebrow">Market Data</p><h1>${escapeHtml(indicator.name)}</h1><p>${escapeHtml(indicator.definition)}</p></div><span class="metric-status" data-status="${status.tone}">${status.label}</span></header><section class="external-pe-section"><div class="external-pe-summary"><article><span>当前值</span><strong>${hasFiniteValue(market.value) ? escapeHtml(market.value) : '—'}${isPe ? 'x' : ''}</strong></article><dl><div><dt>数据日期</dt><dd>${escapeHtml(market.asOf || '—')}</dd></div><div><dt>数据来源</dt><dd>${escapeHtml(market.source || '—')}</dd></div><div><dt>更新时间</dt><dd>${escapeHtml(formatDateTime(market.updatedAt))}</dd></div><div><dt>${isPe ? '估值标签' : '相对前值'}</dt><dd>${escapeHtml(isPe ? market.valuationLabel || '—' : hasFiniteValue(market.change) ? market.change : '—')}</dd></div></dl></div><h2>${isPe ? '当前PE与历史统计区间' : '历史曲线'}</h2>${statsMarkup}${rangeTabs}${chartMarkup}<div class="notice"><strong>数据说明</strong><span>本站数据仅用于个人市场观察和研究，不构成投资建议。数据可能存在延迟、修订或来源口径差异。</span></div>${isPe ? '<div class="notice"><strong>PE口径</strong><span>Nasdaq-100和S&P 500 PE来自第三方公开参考数据，不代表指数编制机构官方估值。PE历史曲线从本站首次成功采集日期开始积累。</span></div>' : '<div class="notice"><strong>FRED口径</strong><span>数据通过FRED获取，原始来源以指标详情页标注为准。</span></div>'}</section></div>`;
 }
 
+function formatPercent(value, digits = 1) {
+  if (!Number.isFinite(Number(value))) return '—';
+  const percentage = Number(value) * 100;
+  return `${percentage > 0 ? '+' : ''}${percentage.toFixed(digits)}%`;
+}
+
+function subtractCalendarYears(dateString, years) {
+  const date = new Date(`${dateString}T00:00:00Z`);
+  date.setUTCFullYear(date.getUTCFullYear() - years);
+  return date.toISOString().slice(0, 10);
+}
+
+function drawdownRangeFor(series) {
+  if (!series?.length) return null;
+  const firstDate = series[0].date;
+  const lastDate = series.at(-1).date;
+  if (state.drawdown.preset === 'CUSTOM') {
+    const startDate = state.drawdown.customStart || firstDate;
+    const endDate = state.drawdown.customEnd || lastDate;
+    if (startDate > endDate) return { error: '起始日期不能晚于结束日期。', firstDate, lastDate };
+    if (startDate < firstDate || endDate > lastDate) return { error: '所选日期必须位于当前指数的实际数据范围内。', firstDate, lastDate };
+    return { startDate, endDate, firstDate, lastDate, label: `${startDate} 至 ${endDate}`, limited: false };
+  }
+  const preset = DRAWDOWN_PRESETS.find(([key]) => key === state.drawdown.preset) || DRAWDOWN_PRESETS[3];
+  const requestedStart = preset[2] ? subtractCalendarYears(lastDate, preset[2]) : firstDate;
+  const startDate = requestedStart < firstDate ? firstDate : requestedStart;
+  return {
+    startDate,
+    endDate: lastDate,
+    firstDate,
+    lastDate,
+    label: preset[1],
+    limited: requestedStart < firstDate
+  };
+}
+
+function drawdownAnalysisView() {
+  const primarySeries = drawdownDatasetCache.get(state.drawdown.primaryId);
+  if (!primarySeries) return null;
+  const range = drawdownRangeFor(primarySeries);
+  if (range?.error) return { range, error: range.error };
+  const cacheKey = [state.drawdown.primaryId, state.drawdown.comparisonId, range.startDate, range.endDate].join('|');
+  if (state.drawdown.calculationCache.has(cacheKey)) return { ...state.drawdown.calculationCache.get(cacheKey), range };
+  const filteredPrimary = DrawdownAnalysis.filterSeriesByDateRange(primarySeries, range.startDate, range.endDate);
+  const comparisonAll = state.drawdown.comparisonId ? drawdownDatasetCache.get(state.drawdown.comparisonId) : null;
+  const filteredComparison = comparisonAll
+    ? DrawdownAnalysis.filterSeriesByDateRange(comparisonAll, range.startDate, range.endDate)
+    : [];
+  const summary = DrawdownAnalysis.calculateDrawdownSummary(filteredPrimary);
+  const aligned = DrawdownAnalysis.alignComparisonSeries(filteredPrimary, filteredComparison);
+  const result = {
+    primarySeries: filteredPrimary,
+    comparisonSeries: filteredComparison,
+    summary,
+    aligned,
+    annualReturns: DrawdownAnalysis.calculateAnnualReturns(filteredPrimary),
+    distribution: DrawdownAnalysis.calculateDrawdownDistribution(summary?.episodes || [])
+  };
+  state.drawdown.calculationCache.set(cacheKey, result);
+  if (state.drawdown.calculationCache.size > 24) state.drawdown.calculationCache.delete(state.drawdown.calculationCache.keys().next().value);
+  return { ...result, range };
+}
+
+function sampleChartPoints(points, maxPoints, preserveDates = []) {
+  if (points.length <= maxPoints) return points;
+  const indexes = new Set([0, points.length - 1]);
+  for (let index = 0; index < maxPoints; index += 1) indexes.add(Math.round(index * (points.length - 1) / (maxPoints - 1)));
+  const byDate = new Map(points.map((point, index) => [point.date, index]));
+  preserveDates.forEach(date => { if (byDate.has(date)) indexes.add(byDate.get(date)); });
+  return [...indexes].sort((left, right) => left - right).map(index => points[index]);
+}
+
+function chartCoordinates(points, key, { width = 1000, height = 230, padX = 18, padY = 18, minValue, maxValue, startDate, endDate } = {}) {
+  if (!points.length) return [];
+  const start = new Date(`${startDate || points[0].date}T00:00:00Z`).valueOf();
+  const end = new Date(`${endDate || points.at(-1).date}T00:00:00Z`).valueOf();
+  const low = Number.isFinite(minValue) ? minValue : Math.min(...points.map(point => Number(point[key])));
+  const high = Number.isFinite(maxValue) ? maxValue : Math.max(...points.map(point => Number(point[key])));
+  const span = Math.max(high - low, Number.EPSILON);
+  return points.map(point => {
+    const time = new Date(`${point.date}T00:00:00Z`).valueOf();
+    return {
+      ...point,
+      x: padX + ((time - start) / Math.max(end - start, 1)) * (width - padX * 2),
+      y: padY + ((high - Number(point[key])) / span) * (height - padY * 2)
+    };
+  });
+}
+
+function coordinatesPath(points) {
+  return points.map((point, index) => `${index ? 'L' : 'M'}${point.x.toFixed(2)},${point.y.toFixed(2)}`).join(' ');
+}
+
+function drawdownChartMarkup(view) {
+  const { summary, aligned, range } = view;
+  const maximumEpisode = summary.maximumEpisode;
+  const preserved = [maximumEpisode?.peakDate, maximumEpisode?.troughDate, maximumEpisode?.recoveryDate, summary.lastDate].filter(Boolean);
+  const drawdownPoints = sampleChartPoints(summary.drawdowns, 620, preserved);
+  const drawdownMin = Math.min(summary.maximumDrawdown, -0.01) * 1.08;
+  const drawdownCoords = chartCoordinates(drawdownPoints, 'drawdown', { minValue: drawdownMin, maxValue: 0, startDate: range.startDate, endDate: range.endDate });
+  const baselineY = 18;
+  const areaPath = drawdownCoords.length ? `${coordinatesPath(drawdownCoords)} L${drawdownCoords.at(-1).x.toFixed(2)},${baselineY} L${drawdownCoords[0].x.toFixed(2)},${baselineY} Z` : '';
+  const maximumCoord = drawdownCoords.find(point => point.date === summary.maximumDrawdownDate);
+  const ongoing = summary.episodes.find(episode => episode.status === 'ongoing');
+  const dateX = date => chartCoordinates([{ date, value: 0 }], 'value', { minValue: 0, maxValue: 1, startDate: range.startDate, endDate: range.endDate })[0]?.x || 18;
+  const ongoingX = ongoing ? dateX(ongoing.peakDate) : null;
+  const maximumPeakX = maximumEpisode ? dateX(maximumEpisode.peakDate) : null;
+  const maximumTroughX = maximumEpisode ? dateX(maximumEpisode.troughDate) : null;
+  const drawdownTooltipPoints = drawdownCoords.map(point => ({ date: point.date, value: formatPercent(point.drawdown, 2) }));
+
+  const primaryNormalized = sampleChartPoints(aligned.primary, 620, [aligned.startDate, summary.lastDate]);
+  const comparisonNormalized = sampleChartPoints(aligned.comparison, 620, [aligned.startDate]);
+  const allNormalized = [...primaryNormalized, ...comparisonNormalized];
+  const normalizedLow = allNormalized.length ? Math.min(...allNormalized.map(point => point.normalizedValue)) : 90;
+  const normalizedHigh = allNormalized.length ? Math.max(...allNormalized.map(point => point.normalizedValue)) : 110;
+  const normalizedPad = Math.max((normalizedHigh - normalizedLow) * 0.08, 1);
+  const normalizedOptions = { minValue: normalizedLow - normalizedPad, maxValue: normalizedHigh + normalizedPad, startDate: range.startDate, endDate: range.endDate };
+  const primaryCoords = chartCoordinates(primaryNormalized, 'normalizedValue', normalizedOptions);
+  const comparisonCoords = chartCoordinates(comparisonNormalized, 'normalizedValue', normalizedOptions);
+  const baseCoords = chartCoordinates([{ date: range.startDate, normalizedValue: 100 }, { date: range.endDate, normalizedValue: 100 }], 'normalizedValue', normalizedOptions);
+  const normalizedTooltipPoints = primaryCoords.map(point => ({ date: point.date, value: `${point.normalizedValue.toFixed(2)}` }));
+
+  return `<section class="drawdown-chart-card" aria-labelledby="drawdownChartTitle">
+    <div class="section-heading compact"><div><h2 id="drawdownChartTitle">回撤与归一化走势</h2><p>上图使用负百分比显示每日回撤；下图从首个共同交易日以100为起点。</p></div></div>
+    <div class="drawdown-chart-stack">
+      <figure class="drawdown-chart drawdown-interactive-chart" data-chart-points="${escapeHtml(JSON.stringify(drawdownTooltipPoints))}">
+        <figcaption><strong>每日回撤</strong><span>0%位于顶部 · 最深 ${formatPercent(summary.maximumDrawdown, 2)}</span></figcaption>
+        <div class="drawdown-chart-frame">
+          <svg viewBox="0 0 1000 230" preserveAspectRatio="none" role="img" aria-label="${escapeHtml(DRAWDOWN_METRICS[state.drawdown.primaryId].label)}每日回撤面积图">
+            ${ongoingX === null ? '' : `<rect class="ongoing-zone" x="${ongoingX.toFixed(2)}" y="18" width="${Math.max(0, 982 - ongoingX).toFixed(2)}" height="194"></rect>`}
+            ${maximumPeakX === null ? '' : `<rect class="maximum-zone" x="${maximumPeakX.toFixed(2)}" y="18" width="${Math.max(2, maximumTroughX - maximumPeakX).toFixed(2)}" height="194"></rect>`}
+            <line class="zero-line" x1="18" x2="982" y1="${baselineY}" y2="${baselineY}"></line>
+            <path class="drawdown-area" d="${areaPath}"></path>
+            <path class="drawdown-line" d="${coordinatesPath(drawdownCoords)}"></path>
+            ${maximumCoord ? `<circle class="maximum-marker" cx="${maximumCoord.x.toFixed(2)}" cy="${maximumCoord.y.toFixed(2)}" r="6"></circle><text class="maximum-label" x="${Math.min(maximumCoord.x + 10, 932).toFixed(2)}" y="${Math.max(maximumCoord.y - 10, 36).toFixed(2)}">${formatPercent(summary.maximumDrawdown, 1)}</text>` : ''}
+          </svg>
+          <output class="drawdown-chart-tooltip" hidden></output>
+        </div>
+        <div class="drawdown-chart-axis"><span>0%</span><span>${formatPercent(drawdownMin, 0)}</span></div>
+        <div class="drawdown-chart-dates"><span>${escapeHtml(range.startDate)}</span><span>${escapeHtml(range.endDate)}</span></div>
+      </figure>
+      <figure class="drawdown-chart drawdown-interactive-chart" data-chart-points="${escapeHtml(JSON.stringify(normalizedTooltipPoints))}">
+        <figcaption><strong>归一化走势</strong><span>鼠标悬停或触摸图表查看主对象数据</span></figcaption>
+        <div class="drawdown-chart-frame">
+          <svg viewBox="0 0 1000 230" preserveAspectRatio="none" role="img" aria-label="Nasdaq-100与S&P 500归一化走势对比">
+            ${baseCoords.length ? `<line class="normalization-line" x1="${baseCoords[0].x}" x2="${baseCoords[1].x}" y1="${baseCoords[0].y}" y2="${baseCoords[1].y}"></line>` : ''}
+            <path class="normalized-primary" d="${coordinatesPath(primaryCoords)}"></path>
+            ${comparisonCoords.length ? `<path class="normalized-comparison" d="${coordinatesPath(comparisonCoords)}"></path>` : ''}
+          </svg>
+          <output class="drawdown-chart-tooltip" hidden></output>
+        </div>
+        <div class="drawdown-chart-legend"><span class="primary">${escapeHtml(DRAWDOWN_METRICS[state.drawdown.primaryId].shortLabel)}</span>${state.drawdown.comparisonId && comparisonCoords.length ? `<span class="comparison">${escapeHtml(DRAWDOWN_METRICS[state.drawdown.comparisonId].shortLabel)}</span>` : ''}<span class="baseline">起点100</span></div>
+        <div class="drawdown-chart-dates"><span>${escapeHtml(aligned.startDate || range.startDate)}</span><span>${escapeHtml(range.endDate)}</span></div>
+      </figure>
+    </div>
+  </section>`;
+}
+
+function drawdownEventsMarkup(episodes) {
+  const thresholdLabel = Math.round(state.drawdown.threshold * 100);
+  const sorted = [...episodes].filter(episode => episode.maximumDrawdown <= -state.drawdown.threshold);
+  const sorters = {
+    'date-desc': (left, right) => right.peakDate.localeCompare(left.peakDate),
+    'date-asc': (left, right) => left.peakDate.localeCompare(right.peakDate),
+    depth: (left, right) => left.maximumDrawdown - right.maximumDrawdown,
+    duration: (left, right) => right.totalTradingDays - left.totalTradingDays
+  };
+  sorted.sort(sorters[state.drawdown.sort]);
+  const rows = sorted.map(episode => `<tr><td>${episode.peakDate}</td><td>${episode.troughDate}</td><td class="risk-value">${formatPercent(episode.maximumDrawdown, 2)}</td><td>${episode.declineTradingDays}</td><td>${episode.recoveryDate || '—'}</td><td>${episode.recoveryTradingDays ?? '—'}</td><td><span class="episode-status ${episode.status}">${episode.status === 'ongoing' ? '进行中' : '已恢复'}</span></td></tr>`).join('');
+  const cards = sorted.map(episode => `<article><header><div><span>峰值 ${episode.peakDate}</span><strong>${formatPercent(episode.maximumDrawdown, 2)}</strong></div><span class="episode-status ${episode.status}">${episode.status === 'ongoing' ? '进行中' : '已恢复'}</span></header><dl><div><dt>谷底日期</dt><dd>${episode.troughDate}</dd></div><div><dt>下跌交易日</dt><dd>${episode.declineTradingDays}</dd></div><div><dt>恢复日期</dt><dd>${episode.recoveryDate || '—'}</dd></div><div><dt>恢复交易日</dt><dd>${episode.recoveryTradingDays ?? '—'}</dd></div></dl></article>`).join('');
+  const empty = `<div class="drawdown-empty-inline"><strong>当前区间没有超过${thresholdLabel}%的回撤事件</strong><span>可以降低阈值或扩大时间范围继续查看。</span></div>`;
+  return `<section class="drawdown-section-card"><div class="section-heading compact"><div><h2>超过${thresholdLabel}%的回撤事件</h2><p>每一行对应一个非重叠回撤周期，同一轮下跌不会重复计数。</p></div><span class="event-count">${sorted.length} 段</span></div>${sorted.length ? `<div class="drawdown-event-table-wrap"><table class="drawdown-event-table"><thead><tr><th>峰值日期</th><th>谷底日期</th><th>最大回撤</th><th>下跌交易日</th><th>恢复日期</th><th>恢复交易日</th><th>状态</th></tr></thead><tbody>${rows}</tbody></table></div><div class="drawdown-event-list">${cards}</div>` : empty}</section>`;
+}
+
+function drawdownDistributionMarkup(distribution) {
+  const maximum = Math.max(1, ...distribution.map(bucket => bucket.count));
+  return `<section class="drawdown-section-card"><div class="section-heading compact"><div><h2>回撤深度分布</h2><p>按独立回撤事件的最大深度分组，而不是按每日观察值计数。</p></div></div><div class="drawdown-distribution">${distribution.map(bucket => `<div><span>${bucket.label}</span><div class="distribution-track"><i style="width:${(bucket.count / maximum * 100).toFixed(2)}%"></i></div><strong>${bucket.count}次</strong></div>`).join('')}</div></section>`;
+}
+
+function annualReturnsMarkup(returns) {
+  return `<section class="drawdown-section-card"><div class="section-heading compact"><div><h2>历年涨幅</h2><p>每个自然年使用首条与末条有效记录计算，未结束年份标记为YTD。</p></div></div><div class="annual-return-grid">${returns.map(year => {
+    const tone = year.return === null ? 'neutral' : year.return >= 0 ? 'positive' : 'negative';
+    return `<article class="${tone}"><span>${year.label}</span><strong>${year.return === null ? '—' : formatPercent(year.return, 1)}</strong><small>${year.pointCount}个交易日记录</small></article>`;
+  }).join('')}</div></section>`;
+}
+
+function drawdownLoadingTemplate() {
+  return `<div class="page drawdown-page"><div class="breadcrumb"><a href="#/">首页</a><span>/</span><span>回撤分析</span></div><section class="hero drawdown-hero"><div class="hero-copy"><p class="eyebrow">DRAWDOWN ANALYSIS</p><h1>回撤分析</h1><p>分析指数在不同时间区间内的收益、回撤深度、持续时间和历史风险分布。</p></div><aside class="hero-panel drawdown-hero-summary" aria-label="正在加载分析摘要"><span class="drawdown-skeleton wide"></span><span class="drawdown-skeleton"></span><span class="drawdown-skeleton"></span><span class="drawdown-skeleton"></span></aside></section><section class="drawdown-loading-panel" role="status"><span class="drawdown-skeleton wide"></span><span class="drawdown-skeleton wide"></span><span class="drawdown-skeleton wide"></span><strong>正在读取本地历史数据…</strong></section></div>`;
+}
+
+function drawdownErrorTemplate() {
+  return `<div class="page drawdown-page"><div class="breadcrumb"><a href="#/">首页</a><span>/</span><span>回撤分析</span></div><header class="page-title"><div><p class="eyebrow">DRAWDOWN ANALYSIS</p><h1>回撤分析</h1><p>分析指数在不同时间区间内的收益、回撤深度、持续时间和历史风险分布。</p></div></header><section class="drawdown-state-card" role="alert"><strong>暂时无法读取该指数的历史数据。</strong><span>页面不会请求外部来源；你可以重新读取本站本地API。</span><button class="button primary" type="button" data-drawdown-retry>重新读取本地API</button></section></div>`;
+}
+
+function drawdownAnalysisTemplate() {
+  const primaryId = state.drawdown.primaryId;
+  if (!drawdownDatasetCache.has(primaryId)) {
+    return state.drawdown.errors[primaryId] ? drawdownErrorTemplate() : drawdownLoadingTemplate();
+  }
+  const view = drawdownAnalysisView();
+  const primary = DRAWDOWN_METRICS[primaryId];
+  const comparison = state.drawdown.comparisonId ? DRAWDOWN_METRICS[state.drawdown.comparisonId] : null;
+  const range = view?.range || drawdownRangeFor(drawdownDatasetCache.get(primaryId));
+  const dateInputs = `<label><span>起始日期</span><input type="date" data-drawdown-date="start" min="${range.firstDate}" max="${range.lastDate}" value="${state.drawdown.preset === 'CUSTOM' ? state.drawdown.customStart : range.startDate}"></label><label><span>结束日期</span><input type="date" data-drawdown-date="end" min="${range.firstDate}" max="${range.lastDate}" value="${state.drawdown.preset === 'CUSTOM' ? state.drawdown.customEnd : range.endDate}"></label>`;
+  const controls = `<section class="drawdown-control-panel" aria-labelledby="drawdownControlsTitle"><div class="section-heading compact"><div><h2 id="drawdownControlsTitle">分析设置</h2><p>完整历史仅从本站API读取一次；切换区间只在浏览器内重新计算。</p></div></div><div class="drawdown-control-grid"><label><span>主分析对象</span><select data-drawdown-control="primary">${Object.entries(DRAWDOWN_METRICS).map(([id, metric]) => `<option value="${id}"${id === primaryId ? ' selected' : ''}>${metric.label}</option>`).join('')}</select></label><label><span>对比对象</span><select data-drawdown-control="comparison"><option value="">不对比</option>${Object.entries(DRAWDOWN_METRICS).map(([id, metric]) => `<option value="${id}"${id === state.drawdown.comparisonId ? ' selected' : ''}${id === primaryId ? ' disabled' : ''}>${metric.label}</option>`).join('')}</select></label>${dateInputs}<label><span>回撤阈值</span><select data-drawdown-control="threshold">${[5, 10, 15, 20].map(value => `<option value="${value / 100}"${value / 100 === state.drawdown.threshold ? ' selected' : ''}>${value}%</option>`).join('')}</select></label><label><span>表格排序</span><select data-drawdown-control="sort"><option value="date-desc"${state.drawdown.sort === 'date-desc' ? ' selected' : ''}>时间倒序</option><option value="date-asc"${state.drawdown.sort === 'date-asc' ? ' selected' : ''}>时间顺序</option><option value="depth"${state.drawdown.sort === 'depth' ? ' selected' : ''}>回撤最深</option><option value="duration"${state.drawdown.sort === 'duration' ? ' selected' : ''}>持续时间最长</option></select></label></div><div class="drawdown-range-buttons" role="group" aria-label="快捷时间范围">${DRAWDOWN_PRESETS.map(([key, label]) => `<button class="range-tab${key === state.drawdown.preset ? ' active' : ''}" type="button" data-drawdown-preset="${key}" aria-pressed="${key === state.drawdown.preset}">${label}</button>`).join('')}${state.drawdown.preset === 'CUSTOM' ? '<span class="custom-range-badge">自定义</span>' : ''}</div>${state.drawdown.validationMessage || view?.error ? `<p class="drawdown-control-error" role="alert">${escapeHtml(state.drawdown.validationMessage || view.error)}</p>` : ''}${range.limited ? '<p class="drawdown-range-note">所选时间范围早于当前可用历史，已使用实际可用起始日期。</p>' : ''}</section>`;
+
+  if (view?.error) return `<div class="page drawdown-page"><div class="breadcrumb"><a href="#/">首页</a><span>/</span><span>回撤分析</span></div><header class="page-title"><div><p class="eyebrow">DRAWDOWN ANALYSIS</p><h1>回撤分析</h1><p>分析指数在不同时间区间内的收益、回撤深度、持续时间和历史风险分布。</p></div></header>${controls}</div>`;
+  if (!view?.summary) return `<div class="page drawdown-page"><div class="breadcrumb"><a href="#/">首页</a><span>/</span><span>回撤分析</span></div><header class="page-title"><div><p class="eyebrow">DRAWDOWN ANALYSIS</p><h1>回撤分析</h1><p>分析指数在不同时间区间内的收益、回撤深度、持续时间和历史风险分布。</p></div></header>${controls}<section class="drawdown-state-card"><strong>当前区间内有效数据不足，无法计算回撤。</strong><span>请扩大时间范围，或检查本地历史数据是否可用。</span></section></div>`;
+
+  const summary = view.summary;
+  const thresholdEpisodes = summary.episodes.filter(episode => episode.maximumDrawdown <= -state.drawdown.threshold);
+  const maximumEpisode = summary.maximumEpisode;
+  const comparisonInsufficient = comparison && (state.drawdown.errors[state.drawdown.comparisonId] || view.aligned.comparison.length < 2);
+  const summaryItems = [
+    ['区间收益', formatPercent(summary.intervalReturn, 2), summary.intervalReturn >= 0 ? 'positive' : 'negative'],
+    ['区间最大回撤', formatPercent(summary.maximumDrawdown, 2), 'negative'],
+    ['最大回撤日期区间', maximumEpisode ? `${maximumEpisode.peakDate} → ${maximumEpisode.troughDate}` : '未发生回撤', 'neutral'],
+    [`超过${Math.round(state.drawdown.threshold * 100)}%的回撤段数`, `${thresholdEpisodes.length} 段`, 'neutral'],
+    ['当前回撤', formatPercent(summary.currentDrawdown, 2), summary.currentDrawdown < 0 ? 'negative' : 'positive'],
+    ['平均恢复交易日数', summary.averageRecoveryTradingDays === null ? '暂无已修复样本' : `${summary.averageRecoveryTradingDays.toFixed(1)} 日`, 'neutral']
+  ];
+  const summaryMarkup = `<section class="drawdown-summary-grid" aria-label="回撤分析摘要">${summaryItems.map(([label, value, tone]) => `<article class="${tone}"><span>${label}</span><strong>${value}</strong></article>`).join('')}</section>`;
+  const recoveryStatus = maximumEpisode?.status === 'ongoing' ? '进行中' : maximumEpisode ? `已于 ${maximumEpisode.recoveryDate} 恢复` : '当前位于历史新高';
+  const comparisonNotice = comparisonInsufficient ? '<div class="notice drawdown-warning"><strong>对比数据不足</strong><span>对比对象在当前区间内缺少足够数据。主对象分析不受影响。</span></div>' : '';
+  return `<div class="page drawdown-page"><div class="breadcrumb"><a href="#/">首页</a><span>/</span><span>回撤分析</span></div><section class="hero drawdown-hero"><div class="hero-copy"><p class="eyebrow">DRAWDOWN ANALYSIS</p><h1>回撤分析</h1><p>分析指数在不同时间区间内的收益、回撤深度、持续时间和历史风险分布。</p></div><aside class="hero-panel drawdown-hero-summary"><p class="hero-panel-label">当前分析摘要</p><h2>${primary.shortLabel}</h2><dl><div><dt>选择区间</dt><dd>${escapeHtml(range.label)}</dd></div><div><dt>当前回撤</dt><dd>${formatPercent(summary.currentDrawdown, 2)}</dd></div><div><dt>区间最大回撤</dt><dd>${formatPercent(summary.maximumDrawdown, 2)}</dd></div><div><dt>恢复状态</dt><dd>${escapeHtml(recoveryStatus)}</dd></div></dl></aside></section>${controls}${summaryMarkup}${comparisonNotice}${drawdownChartMarkup(view)}${drawdownEventsMarkup(summary.episodes)}${drawdownDistributionMarkup(view.distribution)}${annualReturnsMarkup(view.annualReturns)}<section class="drawdown-data-note"><p>回撤根据所选指数的日度收盘序列计算。历史缺失日期不插值，非交易日不补造。回撤分析仅用于个人市场观察和研究，不构成投资建议。</p><dl><div><dt>主对象来源</dt><dd>${primary.source}</dd></div>${comparison ? `<div><dt>对比来源</dt><dd>${comparison.source}</dd></div>` : ''}<div><dt>有效区间</dt><dd>${summary.firstDate} 至 ${summary.lastDate} · ${summary.pointCount}点</dd></div></dl></section></div>`;
+}
+
 function notFoundTemplate() {
   return `<div class="page"><header class="page-title"><div><p class="eyebrow">404</p><h1>页面不存在</h1><p>该地址没有对应内容。</p><div class="hero-actions"><a class="button primary" href="#/">返回首页</a></div></div></header></div>`;
 }
@@ -721,15 +980,115 @@ async function loadIndicatorRange(id, range) {
   render({ preserveScroll: true });
 }
 
+async function loadDrawdownDataset(id, { force = false } = {}) {
+  if (!id || state.drawdown.loading.has(id)) return;
+  const controller = new AbortController();
+  drawdownControllers.get(id)?.abort();
+  drawdownControllers.set(id, controller);
+  state.drawdown.loading.add(id);
+  delete state.drawdown.errors[id];
+  try {
+    await drawdownDatasetCache.load(id, { force, signal: controller.signal });
+    state.drawdown.calculationCache.clear();
+  } catch (error) {
+    if (error.name !== 'AbortError') {
+      console.error(`Drawdown history ${id}:`, error);
+      state.drawdown.errors[id] = 'local-api-unavailable';
+    }
+  } finally {
+    if (drawdownControllers.get(id) === controller) drawdownControllers.delete(id);
+    state.drawdown.loading.delete(id);
+  }
+}
+
+async function ensureDrawdownData() {
+  const ids = [state.drawdown.primaryId, state.drawdown.comparisonId].filter(Boolean);
+  const missing = [...new Set(ids)].filter(id => !drawdownDatasetCache.has(id) && !state.drawdown.loading.has(id) && !state.drawdown.errors[id]);
+  if (!missing.length) return;
+  await Promise.all(missing.map(id => loadDrawdownDataset(id)));
+  if (parseRoute() === '/drawdown-analysis') render({ preserveScroll: true });
+}
+
+function abortDrawdownRequests() {
+  drawdownControllers.forEach(controller => controller.abort());
+  drawdownControllers.clear();
+}
+
 function setActiveNav(route) {
-  document.querySelectorAll('.desktop-nav a').forEach(link => {
+  document.querySelectorAll('.desktop-nav a, .mobile-nav a').forEach(link => {
     const href = link.getAttribute('href').slice(1);
     const active = route === href || (href === '/' && route.startsWith('/stage/')) || (href === '/options' && route.startsWith('/options/')) || (href === '/indicators' && route.startsWith('/indicators/'));
     link.classList.toggle('active', active);
+    if (active) link.setAttribute('aria-current', 'page');
+    else link.removeAttribute('aria-current');
   });
 }
 
 function bindCommonEvents() {
+  document.querySelector('[data-drawdown-control="primary"]')?.addEventListener('change', event => {
+    state.drawdown.primaryId = event.target.value;
+    if (state.drawdown.comparisonId === state.drawdown.primaryId) {
+      state.drawdown.comparisonId = state.drawdown.primaryId === 'nasdaq100_index' ? 'sp500_index' : 'nasdaq100_index';
+    }
+    state.drawdown.validationMessage = '';
+    render({ preserveScroll: true });
+  });
+  document.querySelector('[data-drawdown-control="comparison"]')?.addEventListener('change', event => {
+    state.drawdown.comparisonId = event.target.value === state.drawdown.primaryId ? '' : event.target.value;
+    render({ preserveScroll: true });
+  });
+  document.querySelector('[data-drawdown-control="threshold"]')?.addEventListener('change', event => {
+    state.drawdown.threshold = Number(event.target.value);
+    render({ preserveScroll: true });
+  });
+  document.querySelector('[data-drawdown-control="sort"]')?.addEventListener('change', event => {
+    state.drawdown.sort = event.target.value;
+    render({ preserveScroll: true });
+  });
+  document.querySelectorAll('[data-drawdown-preset]').forEach(button => {
+    button.addEventListener('click', () => {
+      state.drawdown.preset = button.dataset.drawdownPreset;
+      state.drawdown.validationMessage = '';
+      render({ preserveScroll: true });
+    });
+  });
+  document.querySelectorAll('[data-drawdown-date]').forEach(input => {
+    input.addEventListener('change', () => {
+      const startInput = document.querySelector('[data-drawdown-date="start"]');
+      const endInput = document.querySelector('[data-drawdown-date="end"]');
+      state.drawdown.preset = 'CUSTOM';
+      state.drawdown.customStart = startInput?.value || '';
+      state.drawdown.customEnd = endInput?.value || '';
+      state.drawdown.validationMessage = state.drawdown.customStart > state.drawdown.customEnd ? '起始日期不能晚于结束日期。' : '';
+      render({ preserveScroll: true });
+    });
+  });
+  document.querySelector('[data-drawdown-retry]')?.addEventListener('click', async () => {
+    const ids = [state.drawdown.primaryId, state.drawdown.comparisonId].filter(Boolean);
+    ids.forEach(id => { delete state.drawdown.errors[id]; });
+    render({ preserveScroll: true });
+    await Promise.all([...new Set(ids)].map(id => loadDrawdownDataset(id, { force: true })));
+    if (parseRoute() === '/drawdown-analysis') render({ preserveScroll: true });
+  });
+  document.querySelectorAll('.drawdown-interactive-chart').forEach(figure => {
+    const frame = figure.querySelector('.drawdown-chart-frame');
+    const tooltip = figure.querySelector('.drawdown-chart-tooltip');
+    let points = [];
+    try { points = JSON.parse(figure.dataset.chartPoints || '[]'); } catch { points = []; }
+    if (!frame || !tooltip || points.length < 2) return;
+    const showPoint = event => {
+      const rect = frame.getBoundingClientRect();
+      const relativeX = Math.max(0, Math.min(rect.width, event.clientX - rect.left));
+      const index = Math.round(relativeX / Math.max(rect.width, 1) * (points.length - 1));
+      tooltip.textContent = `${points[index].date} · ${points[index].value}`;
+      tooltip.style.left = `${Math.max(8, Math.min(92, relativeX / Math.max(rect.width, 1) * 100))}%`;
+      tooltip.hidden = false;
+    };
+    frame.addEventListener('pointermove', showPoint);
+    frame.addEventListener('pointerdown', showPoint);
+    frame.addEventListener('pointerleave', event => { if (event.pointerType !== 'touch') tooltip.hidden = true; });
+  });
+
   document.querySelectorAll('[data-stage-id]').forEach(element => {
     const activate = () => {
       const id = element.dataset.stageId;
@@ -940,13 +1299,24 @@ function render({ preserveScroll = false } = {}) {
 
   if (route === '/') app.innerHTML = homeTemplate();
   else if (route === '/compare') app.innerHTML = compareTemplate();
+  else if (route === '/drawdown-analysis') app.innerHTML = drawdownAnalysisTemplate();
   else if (route === '/options' || route.startsWith('/options/')) app.innerHTML = optionsTemplate(route.split('/')[2]);
   else if (route === '/indicators') app.innerHTML = indicatorsTemplate();
   else if (route.startsWith('/indicators/')) app.innerHTML = metricDetailTemplate(route.split('/')[2]);
   else if (route.startsWith('/stage/')) app.innerHTML = stageTemplate(state.stages.find(stage => stage.id === route.split('/')[2]));
   else app.innerHTML = notFoundTemplate();
 
+  const titleByRoute = {
+    '/': 'Market Cycle Strategy',
+    '/compare': '阶段对比 · Market Cycle Strategy',
+    '/drawdown-analysis': '回撤分析 · Market Cycle Strategy',
+    '/options': '期权工具 · Market Cycle Strategy',
+    '/indicators': '指标说明 · Market Cycle Strategy'
+  };
+  document.title = titleByRoute[route] || (route.startsWith('/stage/') ? '阶段详情 · Market Cycle Strategy' : route.startsWith('/options/') ? '期权工具 · Market Cycle Strategy' : route.startsWith('/indicators/') ? '指标详情 · Market Cycle Strategy' : '页面不存在 · Market Cycle Strategy');
+
   bindCommonEvents();
+  if (route === '/drawdown-analysis') void ensureDrawdownData();
   if (!preserveScroll) {
     app.focus({ preventScroll: true });
     window.scrollTo({ top: 0, behavior: 'instant' });
@@ -992,6 +1362,7 @@ document.addEventListener('keydown', event => {
 window.addEventListener('hashchange', async () => {
   marketDataControllers.forEach(controller => controller.abort());
   marketDataControllers.clear();
+  if (parseRoute() !== '/drawdown-analysis') abortDrawdownRequests();
   render();
 });
 

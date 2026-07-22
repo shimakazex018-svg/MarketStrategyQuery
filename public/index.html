@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#f5f7fb">
   <meta name="description" content="市场周期、仓位管理与期权策略静态原型">
   <title>Market Cycle Strategy</title>
-  <link rel="stylesheet" href="/styles.css?v=0.5.0">
+  <link rel="stylesheet" href="/styles.css?feature=drawdown-analysis">
 </head>
 <body>
   <div class="ambient ambient-one" aria-hidden="true"></div>
@@ -23,6 +23,7 @@
     <nav class="desktop-nav" aria-label="主导航">
       <a href="#/">市场周期</a>
       <a href="#/compare">阶段对比</a>
+      <a href="#/drawdown-analysis">回撤分析</a>
       <a href="#/options">期权工具</a>
       <a href="#/indicators">指标说明</a>
     </nav>
@@ -37,6 +38,7 @@
   <nav id="mobileNav" class="mobile-nav" aria-label="移动端导航" hidden>
     <a href="#/">市场周期</a>
     <a href="#/compare">阶段对比</a>
+    <a href="#/drawdown-analysis">回撤分析</a>
     <a href="#/options">期权工具</a>
     <a href="#/indicators">指标说明</a>
   </nav>
@@ -51,6 +53,7 @@
     <p>仓位区间相互独立，不要求上下限合计为100%。页面内容用于策略整理与场景推演。</p>
   </footer>
 
-  <script src="/app.js?v=0.5.0" defer></script>
+  <script src="/drawdown-analysis.js?feature=drawdown-analysis" defer></script>
+  <script src="/app.js?feature=drawdown-analysis" defer></script>
 </body>
 </html>
