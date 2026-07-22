@@ -36,17 +36,20 @@ function provider(overrides = {}) {
   };
 }
 
-test('production registry enables approved providers and records WorldPEratio owner risk acceptance', () => {
+test('production registry enables approved providers and preserves each conditional access boundary', () => {
   const registry = loadProviderRegistry(path.join(__dirname, '..'));
-  assert.deepEqual(registry.providers.map(item => item.providerId), ['sec-edgar', 'cftc', 'cboe', 'ibkr', 'twelve-data', 'alpha-vantage', 'worldperatio']);
-  assert.deepEqual(registry.providers.filter(item => item.enabled).map(item => item.providerId), ['sec-edgar', 'cftc', 'worldperatio']);
-  assert.deepEqual(registry.providers.filter(item => isProviderEffectivelyEnabled(item)).map(item => item.providerId), ['sec-edgar', 'cftc', 'worldperatio']);
+  assert.deepEqual(registry.providers.map(item => item.providerId), ['sec-edgar', 'cftc', 'cboe', 'ibkr', 'twelve-data', 'alpha-vantage', 'ishares-soxx', 'worldperatio']);
+  assert.deepEqual(registry.providers.filter(item => item.enabled).map(item => item.providerId), ['sec-edgar', 'cftc', 'ishares-soxx', 'worldperatio']);
+  assert.deepEqual(registry.providers.filter(item => isProviderEffectivelyEnabled(item)).map(item => item.providerId), ['sec-edgar', 'cftc', 'ishares-soxx', 'worldperatio']);
   assert.equal(registry.providers.find(item => item.providerId === 'ibkr').selectionStatus, 'not_selected_by_owner');
   const worldPERatio = registry.providers.find(item => item.providerId === 'worldperatio');
   assert.equal(worldPERatio.selectionStatus, 'selected');
   assert.equal(worldPERatio.complianceStatus, 'approved_with_conditions');
   assert.equal(worldPERatio.conditionsSatisfied, true);
   assert.equal(worldPERatio.riskAcceptance, 'owner_accepted_limited_internal_use');
+  const iShares = registry.providers.find(item => item.providerId === 'ishares-soxx');
+  assert.equal(iShares.technicalStatus, 'official_manual_download_and_local_import_available');
+  assert.match(iShares.notes, /local reload only/);
 });
 
 test('pending, rejected, unavailable and not-evaluated providers cannot be enabled', () => {

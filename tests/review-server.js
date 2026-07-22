@@ -8,6 +8,7 @@ const rootDir = path.join(__dirname, '..');
 const port = Number(process.env.PORT || 48215);
 const allowedStates = new Set(['loading', 'fresh', 'provisional', 'quality_warning', 'insufficient_coverage', 'stale', 'error', 'unavailable', 'manual']);
 const reviewState = allowedStates.has(process.env.REVIEW_STATE) ? process.env.REVIEW_STATE : 'fresh';
+const reviewSoxxAvailable = process.env.REVIEW_SOXX !== 'unavailable';
 const definitions = JSON.parse(fs.readFileSync(path.join(rootDir, 'public', 'data', 'indicators.json'), 'utf8'));
 
 function history(base, amplitude = 3) {
@@ -17,6 +18,18 @@ function history(base, amplitude = 3) {
     const date = new Date(end.valueOf() - (95 - index) * 5 * 86_400_000);
     const value = base + Math.sin(index / 6) * amplitude + Math.cos(index / 13) * amplitude * 0.45;
     points.push({ date: date.toISOString().slice(0, 10), value: Number(value.toFixed(2)) });
+  }
+  return points;
+}
+
+function longHistory(base, amplitude = 20) {
+  const points = [];
+  const end = new Date('2026-07-13T00:00:00Z');
+  for (let index = 0; index < 1800; index += 1) {
+    const date = new Date(end.valueOf() - (1799 - index) * 5 * 86_400_000);
+    const trend = index * 0.08;
+    const value = base + trend + Math.sin(index / 37) * amplitude + Math.cos(index / 83) * amplitude * 0.5;
+    points.push({ date: date.toISOString().slice(0, 10), value: Number(Math.max(1, value).toFixed(2)) });
   }
   return points;
 }
@@ -99,6 +112,15 @@ function peModel(definition) {
 }
 
 function modelFor(definition) {
+  if (['nasdaq100_pe', 'sp500_pe'].includes(definition.id)) {
+    const points = history(definition.id === 'nasdaq100_pe' ? 28 : 24, 2);
+    return baseModel(definition, { value: points.at(-1).value, asOf: points.at(-1).date, status: 'fresh', source: 'UI验收合成夹具（非真实行情）', updatedAt: '2026-07-14T00:10:00Z', lastSuccessAt: '2026-07-14T00:10:00Z', historyStart: points[0].date, history: points, historicalStatistics: { '1y': { average: 25, standardDeviation: 2 } } });
+  }
+  if (['vix', 'vxn', 'nasdaq100_index', 'sp500_index'].includes(definition.id)) {
+    const settings = { vix: [18, 5], vxn: [22, 6], nasdaq100_index: [8000, 900], sp500_index: [3200, 350] }[definition.id];
+    const points = definition.id.endsWith('_index') ? longHistory(...settings) : history(...settings);
+    return baseModel(definition, { value: points.at(-1).value, asOf: points.at(-1).date, status: 'fresh', source: 'UI验收合成夹具（非真实行情）', updatedAt: '2026-07-14T00:10:00Z', lastSuccessAt: '2026-07-14T00:10:00Z', historyStart: points[0].date, history: points, availableRanges: ['1M', '3M', '6M', '1Y', '3Y', '5Y', '10Y'] });
+  }
   if (definition.id === 'pe') return peModel(definition);
   if (definition.id === 'forward-pe') return baseModel(definition, {
     value: 24.8, asOf: '2026-07-11', status: 'manual', statusMessage: '用户本地人工录入，口径为Forward 12 Months。',
@@ -129,13 +151,28 @@ function modelFor(definition) {
   });
 }
 
+function soxxModel() {
+  const points = longHistory(90, 25);
+  return {
+    id: 'soxx_price', metricId: 'soxx_price', displayName: 'SOXX半导体ETF', value: points.at(-1).value,
+    unit: 'usd', asOf: points.at(-1).date, source: 'UI验收合成夹具（非真实行情）', sourceLabel: 'iShares / BlackRock',
+    provider: 'iShares / BlackRock', status: 'fresh', seriesType: 'nav', adjustmentStatus: 'provider_adjusted',
+    limitations: ['合成NAV夹具，仅用于视觉验收'], historyStart: points[0].date, historyEnd: points.at(-1).date,
+    history: points, isDemo: false, isStale: false
+  };
+}
+
 function models(range = '1Y') {
   return definitions.map(definition => ({ ...modelFor(definition), requestedRange: range, servedAt: new Date().toISOString() }));
 }
 
 const service = {
   getIndicators: range => models(range),
-  getIndicator: (id, range) => models(range).find(model => model.id === id) || null,
+  getIndicator: (id, range) => id === 'soxx_price' ? (reviewSoxxAvailable ? soxxModel() : null) : models(range).find(model => model.id === id) || null,
+  getIndicatorHistory: (id, range) => {
+    const model = id === 'soxx_price' ? (reviewSoxxAvailable ? soxxModel() : null) : models(range).find(item => item.id === id);
+    return model ? { metricId: id, range, history: model.history, historyStart: model.historyStart, historyEnd: model.historyEnd || model.history.at(-1)?.date || null, status: model.status, provider: model.provider || null, sourceLabel: model.sourceLabel || model.source, seriesType: model.seriesType || null, adjustmentStatus: model.adjustmentStatus || null, limitations: model.limitations || [] } : null;
+  },
   getStatus: () => ({ enabled: false, timezone: 'Asia/Shanghai', reviewFixture: true, indicators: models().map(({ id, status }) => ({ id, status })), servedAt: new Date().toISOString() }),
   getProviderDiagnosticStatus: id => id === 'worldperatio' ? {
     providerId: id, enabled: true, status: 'fresh', complianceStatus: 'approved_with_conditions', attemptsToday: 1

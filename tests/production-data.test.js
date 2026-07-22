@@ -8,7 +8,7 @@ const path = require('node:path');
 const test = require('node:test');
 const { FredProvider, parseFredCsv } = require('../server/data-sources/fred-provider');
 const { mergePeSnapshot, parseWorldPERatioPage } = require('../server/data-sources/worldperatio-production');
-const { PRODUCTION_METRIC_IDS, ProductionDataCoordinator } = require('../server/production-data/coordinator');
+const { ANALYSIS_METRIC_IDS, PRODUCTION_METRIC_IDS, ProductionDataCoordinator } = require('../server/production-data/coordinator');
 const { createHttpServer } = require('../server');
 const { MarketDataService } = require('../server/market-data/service');
 const { MarketDataScheduler } = require('../server/market-data/scheduler');
@@ -26,28 +26,31 @@ async function fixtureRoot() {
     await write(path.join(production, 'snapshots', `${key}-pe-history.json`), [{ sourceDataDate: '2099-01-02', value: 25, fetchedAt: '2099-01-03T00:00:00Z' }]);
   }
   await write(path.join(production, 'state', 'fred-state.json'), { provider: 'FRED', metrics: {} }); await write(path.join(production, 'state', 'worldperatio-state.json'), { provider: 'WorldPEratio', metrics: {} });
+  await write(path.join(production, 'etf', 'soxx.json'), { metricId: 'soxx_price', symbol: 'SOXX', name: 'iShares Semiconductor ETF', provider: 'iShares / BlackRock', seriesType: 'nav', adjustmentStatus: 'provider_adjusted', currency: 'USD', sourceUrl: 'https://www.ishares.com/us/products/239705/SOXX', fetchedAt: '2099-01-03T00:00:00Z', firstDate: '2099-01-01', lastDate: '2099-01-02', rowCount: 2, limitations: ['synthetic test fixture'], values: [{ date: '2099-01-01', value: 100 }, { date: '2099-01-02', value: 101 }] });
   return root;
 }
 
-test('production coordinator exposes exactly six metrics and keeps null observations out of history', async t => {
+test('production coordinator keeps six public metrics plus the isolated SOXX analysis metric', async t => {
   const root = await fixtureRoot(); t.after(() => fs.rm(root, { recursive: true, force: true }));
   const coordinator = await new ProductionDataCoordinator({ rootDir: root, definitions, now: () => new Date('2099-01-03T00:00:00Z') }).init();
-  assert.deepEqual([...coordinator.models.keys()], PRODUCTION_METRIC_IDS);
+  assert.deepEqual([...coordinator.models.keys()], [...PRODUCTION_METRIC_IDS, ...ANALYSIS_METRIC_IDS]);
   assert.equal(coordinator.models.get('vix').history.length, 2);
   assert.equal(coordinator.models.get('nasdaq100_pe').history.length, 1);
   assert.equal(coordinator.models.get('nasdaq100_pe').historicalStatistics['1y'].average, 20);
   assert.equal(coordinator.models.has('forward-pe'), false);
+  assert.equal(coordinator.models.get('soxx_price').seriesType, 'nav');
 });
 
 test('production API provides summary, detail and history without paths or internal stacks', async t => {
   const root = await fixtureRoot(); t.after(() => fs.rm(root, { recursive: true, force: true }));
   const coordinator = await new ProductionDataCoordinator({ rootDir: root, definitions, now: () => new Date('2099-01-03T00:00:00Z') }).init();
-  const service = { getStatus: () => ({ mode: 'production-six-metrics' }), getIndicators: () => [...coordinator.models.values()], getIndicator: id => coordinator.models.get(id) || null, refresh: async () => ({ ok: false }) };
+  const service = { getStatus: () => ({ mode: 'production-six-metrics' }), getIndicators: () => PRODUCTION_METRIC_IDS.map(id => coordinator.models.get(id)), getIndicator: id => coordinator.models.get(id) || null, refresh: async () => ({ ok: false }) };
   const server = createHttpServer(service); await new Promise(resolve => server.listen(0, '127.0.0.1', resolve)); t.after(() => new Promise(resolve => server.close(resolve)));
   const base = `http://127.0.0.1:${server.address().port}`;
   const summary = await fetch(`${base}/api/market-data/summary`).then(response => response.json()); assert.equal(summary.indicators.length, 6);
   const detail = await fetch(`${base}/api/market-data/metrics/vix`).then(response => response.json()); assert.equal(detail.id, 'vix');
   const history = await fetch(`${base}/api/market-data/metrics/vix/history`).then(response => response.json()); assert.equal(history.history.length, 2);
+  const soxx = await fetch(`${base}/api/market-data/metrics/soxx_price`).then(response => response.json()); assert.equal(soxx.seriesType, 'nav');
   assert.doesNotMatch(JSON.stringify({ summary, detail, history }), new RegExp(root.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   assert.doesNotMatch(JSON.stringify({ summary, detail, history }), /stack|sha256|contentHash/i);
 });
@@ -88,11 +91,11 @@ test('one provider failure marks only its metric stale', async t => {
   assert.equal(coordinator.models.get('vix').status, 'stale'); assert.equal(coordinator.models.get('vxn').status, 'fresh'); assert.equal(coordinator.models.get('nasdaq100_pe').status, 'fresh');
 });
 
-test('production scheduler runs all six once after 07:30 and startup performs the same guarded check', async () => {
+test('production scheduler runs six network metrics then one local-only SOXX reload after 07:30', async () => {
   const calls = []; const service = { productionMode: true, indicators: definitions, refresh: async id => { calls.push(id); }, config: {} };
   const scheduler = new MarketDataScheduler(service, { now: () => new Date('2099-01-03T00:00:00Z'), timezone: 'Asia/Shanghai' });
-  await scheduler.tick(); await scheduler.tick(); assert.deepEqual(calls, PRODUCTION_METRIC_IDS);
+  await scheduler.tick(); await scheduler.tick(); assert.deepEqual(calls, [...PRODUCTION_METRIC_IDS, ...ANALYSIS_METRIC_IDS]);
   const startupCalls = [];
   await MarketDataService.prototype.refreshExpiredOnStartup.call({ productionMode: true, config: { timezone: 'Asia/Shanghai' }, now: () => new Date('2099-01-03T00:00:00Z'), refresh: async id => { startupCalls.push(id); } });
-  assert.deepEqual(startupCalls, PRODUCTION_METRIC_IDS);
+  assert.deepEqual(startupCalls, [...PRODUCTION_METRIC_IDS, ...ANALYSIS_METRIC_IDS]);
 });

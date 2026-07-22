@@ -40,9 +40,12 @@ test('drawdown page registers route, navigation, controls, states and responsive
   assert.equal((html.match(/#\/drawdown-analysis/g) || []).length, 2);
   for (const contract of [
     '/drawdown-analysis', 'Nasdaq-100指数', 'S&P 500指数', '近1年', '近3年', '近5年', '近10年',
-    '近15年', '近20年', '全历史', '暂时无法读取该指数的历史数据。',
+    '近15年', '近20年', '全历史', '暂时无法读取该对象的历史数据。',
     '当前区间内有效数据不足，无法计算回撤。', '对比对象在当前区间内缺少足够数据。'
   ]) assert.match(app, new RegExp(contract.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  for (const contract of ['SOXX半导体ETF', 'iShares Semiconductor ETF（SOXX）', 'SOXX NAV', '不是PHLX Semiconductor Sector Index（SOX）']) {
+    assert.match(app, new RegExp(contract.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  }
   for (const selector of ['drawdown-control-grid', 'drawdown-summary-grid', 'drawdown-chart-stack', 'drawdown-event-list', 'annual-return-grid']) {
     assert.match(css, new RegExp(`\\.${selector}`));
   }
