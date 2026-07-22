@@ -4,7 +4,7 @@ const fs = require('fs/promises');
 const path = require('path');
 const { createCboeHistorySource } = require('../data-sources/cboe-history');
 const { SelfCalculatedCoordinator } = require('../self-calculated/coordinator');
-const { PRODUCTION_METRIC_IDS, ProductionDataCoordinator } = require('../production-data/coordinator');
+const { ANALYSIS_METRIC_IDS, PRODUCTION_METRIC_IDS, ProductionDataCoordinator } = require('../production-data/coordinator');
 const { isProviderEffectivelyEnabled, providerById } = require('./provider-compliance');
 const { availableRanges, filterHistory, validateModel } = require('./schema');
 const { isWeekend } = require('./scheduler');
@@ -130,11 +130,13 @@ class MarketDataService {
 
   getProviderLatest(providerId) {
     if (this.productionMode && ['fred', 'worldperatio'].includes(providerId)) return { providerId, metrics: this.indicators.filter(item => providerId === 'fred' ? !item.id.endsWith('_pe') : item.id.endsWith('_pe')).map(item => this.getIndicator(item.id)) };
+    if (this.productionMode && providerId === 'ishares-soxx') return { providerId, metrics: [this.getIndicator('soxx_price')] };
     return this.webPageProviders.get(providerId)?.getLatest() || null;
   }
 
   getProviderHistory(providerId) {
     if (this.productionMode && ['fred', 'worldperatio'].includes(providerId)) return { providerId, metrics: this.indicators.filter(item => providerId === 'fred' ? !item.id.endsWith('_pe') : item.id.endsWith('_pe')).map(item => ({ metricId: item.id, history: this.getIndicator(item.id)?.history || [] })) };
+    if (this.productionMode && providerId === 'ishares-soxx') return { providerId, metrics: [{ metricId: 'soxx_price', history: this.getIndicatorHistory('soxx_price', 'ALL')?.history || [] }] };
     return this.webPageProviders.get(providerId)?.getHistory() || null;
   }
 
@@ -225,7 +227,7 @@ class MarketDataService {
   }
 
   isApproved(id) {
-    if (this.productionMode) return PRODUCTION_METRIC_IDS.includes(id);
+    if (this.productionMode) return PRODUCTION_METRIC_IDS.includes(id) || ANALYSIS_METRIC_IDS.includes(id);
     const decision = ONLINE_DECISIONS[id];
     const provider = decision ? providerById(this.config.providerRegistry, decision.provider) : null;
     return Boolean(decision
@@ -247,7 +249,10 @@ class MarketDataService {
   async refreshExpiredOnStartup() {
     if (this.productionMode) {
       const parts = new Intl.DateTimeFormat('en-GB', { timeZone: this.config.timezone, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(this.now()).reduce((acc, part) => ({ ...acc, [part.type]: part.value }), {});
-      if (Number(parts.hour) > 7 || (Number(parts.hour) === 7 && Number(parts.minute) >= 30)) for (const id of PRODUCTION_METRIC_IDS) await this.refresh(id, { kind: 'startup', requestSource: 'server-start' });
+      if (Number(parts.hour) > 7 || (Number(parts.hour) === 7 && Number(parts.minute) >= 30)) {
+        for (const id of PRODUCTION_METRIC_IDS) await this.refresh(id, { kind: 'startup', requestSource: 'server-start' });
+        for (const id of ANALYSIS_METRIC_IDS) await this.refresh(id, { kind: 'startup', requestSource: 'local-import-check' });
+      }
       return;
     }
     if (isWeekend(this.now(), this.config.timezone)) return;
@@ -408,7 +413,7 @@ class MarketDataService {
     if (!model) return null;
     if (range !== 'ALL') {
       const ranged = this.getIndicator(id, range);
-      return { metricId: ranged.id, range, history: ranged.history, historyStart: ranged.historyStart, historyEnd: ranged.historyEnd };
+      return { metricId: ranged.id, range, history: ranged.history, historyStart: ranged.historyStart, historyEnd: ranged.historyEnd, status: ranged.status, provider: ranged.provider, sourceLabel: ranged.sourceLabel, seriesType: ranged.seriesType || null, adjustmentStatus: ranged.adjustmentStatus || null, limitations: ranged.limitations || [] };
     }
     const history = (model.history || []).map(point => ({ date: point.date, value: point.value }));
     return {
@@ -416,7 +421,13 @@ class MarketDataService {
       range,
       history,
       historyStart: history[0]?.date || null,
-      historyEnd: history.at(-1)?.date || null
+      historyEnd: history.at(-1)?.date || null,
+      status: model.status,
+      provider: model.provider,
+      sourceLabel: model.sourceLabel,
+      seriesType: model.seriesType || null,
+      adjustmentStatus: model.adjustmentStatus || null,
+      limitations: model.limitations || []
     };
   }
 

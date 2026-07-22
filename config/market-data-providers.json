@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-07-15",
+  "updatedAt": "2026-07-22",
   "providers": [
     {
       "providerId": "sec-edgar",
@@ -127,6 +127,27 @@
       "conditionsSatisfied": false,
       "enabled": false,
       "notes": "Deferred by owner decision. No audit, API-key use or request is authorized in this phase."
+    },
+    {
+      "providerId": "ishares-soxx",
+      "providerName": "iShares official SOXX fund data download",
+      "targetIndicators": ["soxx-price"],
+      "technicalStatus": "official_manual_download_and_local_import_available",
+      "complianceStatus": "approved_with_conditions",
+      "selectionStatus": "selected",
+      "accountRequirement": "No account or login is required for the visible product-page Data Download.",
+      "subscriptionRequirement": "None for personal non-commercial manual download; automated monitoring or copying is not authorized.",
+      "internalDisplayAllowed": true,
+      "localCacheAllowed": true,
+      "cacheRetention": "runtime-only normalized SOXX series; original download and normalized data remain outside Git",
+      "historicalStorageAllowed": true,
+      "attributionRequirement": "Identify iShares / BlackRock, preserve SOXX ETF and NAV wording, and do not describe the series as SOX.",
+      "writtenConfirmationRequired": false,
+      "termsCheckedAt": "2026-07-22",
+      "technicalCheckedAt": "2026-07-22",
+      "conditionsSatisfied": true,
+      "enabled": true,
+      "notes": "Limited to user-initiated public download and offline import for personal non-commercial use. The production scheduler performs local reload only and makes no iShares or BlackRock network request."
     },
     {
       "providerId": "worldperatio",

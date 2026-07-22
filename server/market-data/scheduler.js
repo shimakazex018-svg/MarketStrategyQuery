@@ -11,6 +11,7 @@ const MVP_SCHEDULES = Object.freeze({
   'nasdaq-cot-positioning': { hour: 7, minute: 30, weekdays: ['Sat'] }
 });
 const PRODUCTION_SCHEDULE = Object.freeze({ hour: 7, minute: 30 });
+const LOCAL_ANALYSIS_METRICS = Object.freeze(['soxx_price']);
 
 function zonedParts(date, timezone) {
   return new Intl.DateTimeFormat('en-GB', {
@@ -62,6 +63,7 @@ class MarketDataScheduler {
     if (!due || this.lastNormalRuns.get('production-six-metrics') === day) return;
     this.lastNormalRuns.set('production-six-metrics', day);
     for (const indicator of this.service.indicators) await this.service.refresh(indicator.id, { kind: 'scheduled', requestSource: 'daily-07:30' });
+    for (const id of LOCAL_ANALYSIS_METRICS) await this.service.refresh(id, { kind: 'scheduled', requestSource: 'local-import-check' });
   }
 
   async tickSelfCalculated(now, parts) {
@@ -92,4 +94,4 @@ class MarketDataScheduler {
   }
 }
 
-module.exports = { isWeekend, MarketDataScheduler, MVP_SCHEDULES, PRODUCTION_SCHEDULE, SCHEDULES, zonedParts };
+module.exports = { isWeekend, LOCAL_ANALYSIS_METRICS, MarketDataScheduler, MVP_SCHEDULES, PRODUCTION_SCHEDULE, SCHEDULES, zonedParts };
