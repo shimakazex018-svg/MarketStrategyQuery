@@ -132,7 +132,8 @@ Invoke-RestMethod http://127.0.0.1:48101/api/market-data/providers/worldperatio/
 3. `#/compare`：九阶段对比。
 4. `#/options/protective-put` 和另一策略；刷新、前进、后退恢复选择。
 5. `#/indicators`：六指标说明。
-6. 未知 Hash：前端 404。
+6. `#/drawdown-analysis`：默认Nasdaq-100、S&P 500对比、近10年、15%阈值；验证七个快捷范围、自定义日期、对象互斥、阈值、排序、空错态和前进/后退。
+7. 未知 Hash：前端 404。
 
 交互通过标准：
 
@@ -143,6 +144,7 @@ Invoke-RestMethod http://127.0.0.1:48101/api/market-data/providers/worldperatio/
 - 深浅主题均可读；状态不能只依赖颜色。
 - 单指标切换范围不改变其他卡片；不可用范围保持禁用。
 - 控制台无错误。
+- 回撤页核心计算必须使用`range=ALL`完整历史；切换范围不得重复请求，同日期冲突必须失败，null不得变成0，两个对比序列必须从首个共同日期归一化为100。
 
 ## 响应式与可访问性
 
@@ -153,6 +155,7 @@ Invoke-RestMethod http://127.0.0.1:48101/api/market-data/providers/worldperatio/
 - 长文本不溢出、不遮挡按钮、不被固定高度裁切。
 - 导航、标签、折叠、弹窗和周期阶段支持键盘操作。
 - 触摸目标不小于现有设计要求；375px 使用移动导航。
+- 回撤页在平板使用两列摘要，在手机使用事件卡片和至少两列年度收益卡；图表提示不得超出视口。
 - `prefers-reduced-motion: reduce` 下动画近乎即时。
 
 真实 iPad/iPhone 触摸、系统字体、125% 缩放、ZeroTier 路由和防火墙策略必须在目标设备人工验证，当前状态：待确认。
@@ -216,5 +219,7 @@ Invoke-RestMethod http://127.0.0.1:48101/api/market-data/providers/worldperatio/
 2026-07-15，`feature/v0.4-compliant-market-data-waterfall` 检查点A.1执行`npm.cmd run check`：53项测试通过、0失败；QQQ PE专项18项通过。专项测试包括30成分无极值、正/负/普通亏损、大权重/多个极值、MAD为0、样本不足、原始/稳健近零分母、极值权重超过10%、顺序和权重尺度不变性、非有限输入及显式日期校验。固定9阶段、8期权、6个现有首页指标、7范围和Provider合规门禁仍有效。没有UI变化、真实数据读取或全量计算，不重新生成截图。真实设备和ZeroTier跨设备验收仍待确认。
 
 2026-07-15，检查点B按`package.json`中的完整check命令逐项执行：69项测试通过、0失败；固定9阶段、8期权、6项新指标和7范围不变。独立端口48218正式进程返回`/api/health` HTTP 200，无本地输入时六卡均为`unavailable`且可离线启动。应用内浏览器已验证首页、两类阶段详情、期权工具、阶段对比、指标说明和PE详情；375×812、768×1024、1024×1366、1440×900无页面级横向溢出，深浅主题、指标弹窗Escape关闭及焦点返回正常，控制台0错误。真实设备、局域网与ZeroTier仍待用户环境验收。
+
+2026-07-22，回撤分析实现按`package.json`完整check内容执行：133项测试通过、0失败，其中新增19项回撤专项/API/页面契约测试。48101本地服务健康检查通过，两条指数完整历史均可用；应用内浏览器验证七个快捷范围、自定义日期、对象互斥、阈值、排序、空态、主题、移动导航、刷新和前进/后退。1440×900、768×1024、390×844均无页面级横向溢出，控制台0错误。真实iPad/iPhone硬件触摸仍待目标设备人工验收。
 
 v0.5 WorldPEratio 第一检查点使用项目认可的 Node.js 运行时按 `package.json` 的完整 check 步骤执行：95项测试通过、0失败。独立测试端口返回`/api/health` HTTP 200、版本`0.5.0-dev`、六指标；WorldPEratio status/latest 分别确认`enabled=false`、`pending_written_confirmation`、`attemptsToday=0`、`unavailable`和`currentPE=null`，GET诊断未触发第三方请求。

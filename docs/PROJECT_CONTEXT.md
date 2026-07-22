@@ -20,12 +20,14 @@
 ## 当前主要功能
 
 - 九种固定市场阶段的周期图、详情页和对比页。
+- 独立回撤分析页：使用Nasdaq-100与S&P 500真实日频指数历史，提供区间收益、当前/最大回撤、非重叠回撤事件、深度分布、年度收益和共同起点归一化对比。
 - QQQ、SOXX、SOXL、现金/SGOV 的独立允许仓位区间与资产规则。
 - 八种固定期权策略的单策略详情、损益公式、管理规则与风险边界。
 - 六张正式指标卡：Nasdaq-100 PE、S&P 500 PE、VIX、VXN、Nasdaq-100指数和S&P 500指数；支持七个时间范围、状态元数据和真实历史/快照结构。
 - 首页指标状态支持 `loading`、`fresh`、`stale`、`error`、`demo`、`unavailable`、`provisional`、`insufficient_coverage` 和 `manual`，并可独立显示 `quality_warning`。
 - 深浅主题、Hash Router、键盘/触摸交互和响应式布局。
 - Node.js 静态服务、健康检查和内部市场数据 API。
+- 回撤分析只通过内部history API一次读取两条完整历史；现有首页和指标详情仍使用有界范围与最多240点的图表响应。
 
 ## 当前稳定状态
 

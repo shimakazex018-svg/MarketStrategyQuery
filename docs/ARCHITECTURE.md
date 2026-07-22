@@ -4,7 +4,7 @@
 
 ```text
 浏览器
-  -> public/index.html + public/styles.css + public/app.js
+  -> public/index.html + public/styles.css + public/app.js + public/drawdown-analysis.js
   -> public/data/*.json
   -> 本站 /api/market-data/*
        -> market data service
@@ -52,12 +52,13 @@ docs/                           # 长期上下文与专项设计文档
 
 ## 前端模块
 
-- `public/app.js` 启动时并行加载阶段、期权、指标和周期图 JSON，随后按当前 Hash 渲染页面。
-- 路由固定为 `#/`、`#/stage/:id`、`#/compare`、`#/options`、`#/options/:id`、`#/indicators`；未知 Hash 显示前端 404。
+- `public/app.js` 启动时并行加载阶段、期权、指标和周期图 JSON，随后按当前 Hash 渲染页面；`public/drawdown-analysis.js`提供可由浏览器和Node测试共同调用的纯回撤计算函数。
+- 路由固定为 `#/`、`#/stage/:id`、`#/compare`、`#/drawdown-analysis`、`#/options`、`#/options/:id`、`#/indicators`；未知 Hash 显示前端 404。
 - 阶段详情按概览、仓位、执行动作、资产逻辑、识别条件、期权和风险组织；动作和资产逻辑同一时间各显示一个面板。
 - 期权工具同一时间完整展示一个策略；最大收益、最大亏损、盈亏平衡和主要风险保持可见。
 - 周期图由 `cycle-shape.json` 驱动 SVG；它是静态示意，不是 QQQ 真实历史。
 - 指标卡只请求本站内部 API；路由切换会取消未完成请求。历史路径在服务端限制点数，避免 SVG、内存和 DOM 无界增长。
+- 回撤分析页为两个指数分别缓存一次`range=ALL`完整历史，所有时间区间在前端过滤和计算；核心算法不使用图表抽样。SVG最多保留约620个显示点，并强制保留最大回撤峰谷、恢复点与最新点。
 - 主题使用根元素 `data-theme`；断点为 1100px、760px 和 440px；`prefers-reduced-motion` 下动画缩短。
 
 ## 产品 JSON 模型
@@ -101,6 +102,7 @@ docs/                           # 长期上下文与专项设计文档
 | `GET /api/market-data/status` | 许可、请求预算、缓存错误和指标状态 |
 | `GET /api/market-data/indicators?range=1Y` | 六指标统一响应 |
 | `GET /api/market-data/indicators/:id?range=1Y` | 单指标与指定历史范围 |
+| `GET /api/market-data/metrics/:id/history?range=ALL` | 回撤分析使用的完整已校验历史；不抽样、不触发外部请求 |
 | `POST /api/market-data/refresh/:id` | 受可信网络、冷却、锁和预算约束的维护刷新 |
 | `GET /api/market-data/providers/worldperatio/status` | WorldPEratio 合规、技术和请求预算诊断；只读且不触发第三方请求 |
 | `GET /api/market-data/providers/worldperatio/latest` | 读取最后标准化结果；不返回HTML、内容哈希或本地路径 |
@@ -108,6 +110,8 @@ docs/                           # 长期上下文与专项设计文档
 | `GET /api/market-data/providers/worldperatio/statistics` | 读取当前参考PE与1/5/10/20年均值、标准差和估值标签 |
 
 页面访问和 GET 指标接口不会触发第三方抓取。外部访问只可能来自获批来源的启动过期检查、调度或受限手动刷新。
+
+`range=ALL`只扩展现有history读取路径。首页和指标详情继续使用固定七范围与最多240点响应；回撤分析只读取`nasdaq100_index`和`sp500_index`，随后在浏览器内按日期、阈值和排序设置复用缓存，不建立平行数据服务。
 
 WorldPEratio 不加入上述通用启动或定时刷新。经项目所有者有限风险接受后，只能通过独立维护入口执行；每次先检查30天条款复查状态和robots，每日一次正常目标请求，只有超时或5xx允许延迟重试一次，并在复查到期、403/429、登录、验证码、Cloudflare、robots禁止、目标/DOM/日期/数值冲突时停止。
 
