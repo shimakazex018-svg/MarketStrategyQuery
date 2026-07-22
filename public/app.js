@@ -20,6 +20,7 @@ const state = {
     sort: 'date-desc',
     loading: new Set(),
     errors: {},
+    metadata: {},
     calculationCache: new Map(),
     validationMessage: ''
   },
@@ -51,7 +52,8 @@ let externalPEController = null;
 const drawdownControllers = new Map();
 const DRAWDOWN_METRICS = Object.freeze({
   nasdaq100_index: { label: 'Nasdaq-100指数', shortLabel: 'Nasdaq-100', source: 'FRED NASDAQ100' },
-  sp500_index: { label: 'S&P 500指数', shortLabel: 'S&P 500', source: 'FRED SP500' }
+  sp500_index: { label: 'S&P 500指数', shortLabel: 'S&P 500', source: 'FRED SP500' },
+  soxx_price: { label: 'SOXX半导体ETF', shortLabel: 'SOXX', source: 'iShares / BlackRock', optional: true }
 });
 const DRAWDOWN_PRESETS = Object.freeze([
   ['1Y', '近1年', 1], ['3Y', '近3年', 3], ['5Y', '近5年', 5], ['10Y', '近10年', 10],
@@ -65,8 +67,38 @@ const drawdownDatasetCache = DrawdownAnalysis.createDatasetCache(async (id, opti
   if (!response.ok) throw new Error(`Drawdown history API ${response.status}`);
   const payload = await response.json();
   if (!Array.isArray(payload.history)) throw new TypeError('Drawdown history response is invalid');
+  state.drawdown.metadata[id] = {
+    status: payload.status || null,
+    provider: payload.provider || null,
+    sourceLabel: payload.sourceLabel || null,
+    seriesType: payload.seriesType || null,
+    adjustmentStatus: payload.adjustmentStatus || null,
+    limitations: Array.isArray(payload.limitations) ? payload.limitations : []
+  };
   return payload.history;
 });
+
+function availableDrawdownMetrics() {
+  return Object.fromEntries(Object.entries(DRAWDOWN_METRICS).filter(([id, metric]) => !metric.optional || (drawdownDatasetCache.has(id) && drawdownDatasetCache.get(id).length >= 2)));
+}
+
+function drawdownSeriesTypeLabel(id) {
+  if (id !== 'soxx_price') return '指数点位';
+  return {
+    adjusted_market_price: 'SOXX adjusted market price',
+    market_price: 'SOXX market price',
+    nav: 'SOXX NAV'
+  }[state.drawdown.metadata[id]?.seriesType] || 'SOXX数据口径未确认';
+}
+
+function drawdownSeriesNotice(id) {
+  if (id !== 'soxx_price') return '回撤根据所选指数的日度收盘序列计算。';
+  const seriesType = state.drawdown.metadata[id]?.seriesType;
+  if (seriesType === 'adjusted_market_price') return 'SOXX回撤根据复权市场价格日线计算。';
+  if (seriesType === 'market_price') return 'SOXX回撤根据市场收盘价格日线计算，长期收益可能受到拆股和分红口径影响。';
+  if (seriesType === 'nav') return 'SOXX回撤根据基金NAV日线计算，不代表交易所市场成交价格。';
+  return 'SOXX数据口径尚未确认。';
+}
 
 function formatDateTime(value) {
   if (!value) return '—';
@@ -822,7 +854,7 @@ function drawdownChartMarkup(view) {
       <figure class="drawdown-chart drawdown-interactive-chart" data-chart-points="${escapeHtml(JSON.stringify(normalizedTooltipPoints))}">
         <figcaption><strong>归一化走势</strong><span>鼠标悬停或触摸图表查看主对象数据</span></figcaption>
         <div class="drawdown-chart-frame">
-          <svg viewBox="0 0 1000 230" preserveAspectRatio="none" role="img" aria-label="Nasdaq-100与S&P 500归一化走势对比">
+          <svg viewBox="0 0 1000 230" preserveAspectRatio="none" role="img" aria-label="${escapeHtml(DRAWDOWN_METRICS[state.drawdown.primaryId].label)}${state.drawdown.comparisonId ? `与${escapeHtml(DRAWDOWN_METRICS[state.drawdown.comparisonId].label)}` : ''}归一化走势对比">
             ${baseCoords.length ? `<line class="normalization-line" x1="${baseCoords[0].x}" x2="${baseCoords[1].x}" y1="${baseCoords[0].y}" y2="${baseCoords[1].y}"></line>` : ''}
             <path class="normalized-primary" d="${coordinatesPath(primaryCoords)}"></path>
             ${comparisonCoords.length ? `<path class="normalized-comparison" d="${coordinatesPath(comparisonCoords)}"></path>` : ''}
@@ -865,11 +897,11 @@ function annualReturnsMarkup(returns) {
 }
 
 function drawdownLoadingTemplate() {
-  return `<div class="page drawdown-page"><div class="breadcrumb"><a href="#/">首页</a><span>/</span><span>回撤分析</span></div><section class="hero drawdown-hero"><div class="hero-copy"><p class="eyebrow">DRAWDOWN ANALYSIS</p><h1>回撤分析</h1><p>分析指数在不同时间区间内的收益、回撤深度、持续时间和历史风险分布。</p></div><aside class="hero-panel drawdown-hero-summary" aria-label="正在加载分析摘要"><span class="drawdown-skeleton wide"></span><span class="drawdown-skeleton"></span><span class="drawdown-skeleton"></span><span class="drawdown-skeleton"></span></aside></section><section class="drawdown-loading-panel" role="status"><span class="drawdown-skeleton wide"></span><span class="drawdown-skeleton wide"></span><span class="drawdown-skeleton wide"></span><strong>正在读取本地历史数据…</strong></section></div>`;
+  return `<div class="page drawdown-page"><div class="breadcrumb"><a href="#/">首页</a><span>/</span><span>回撤分析</span></div><section class="hero drawdown-hero"><div class="hero-copy"><p class="eyebrow">DRAWDOWN ANALYSIS</p><h1>回撤分析</h1><p>分析指数与ETF在不同时间区间内的收益、回撤深度、持续时间和历史风险分布。</p></div><aside class="hero-panel drawdown-hero-summary" aria-label="正在加载分析摘要"><span class="drawdown-skeleton wide"></span><span class="drawdown-skeleton"></span><span class="drawdown-skeleton"></span><span class="drawdown-skeleton"></span></aside></section><section class="drawdown-loading-panel" role="status"><span class="drawdown-skeleton wide"></span><span class="drawdown-skeleton wide"></span><span class="drawdown-skeleton wide"></span><strong>正在读取本地历史数据…</strong></section></div>`;
 }
 
 function drawdownErrorTemplate() {
-  return `<div class="page drawdown-page"><div class="breadcrumb"><a href="#/">首页</a><span>/</span><span>回撤分析</span></div><header class="page-title"><div><p class="eyebrow">DRAWDOWN ANALYSIS</p><h1>回撤分析</h1><p>分析指数在不同时间区间内的收益、回撤深度、持续时间和历史风险分布。</p></div></header><section class="drawdown-state-card" role="alert"><strong>暂时无法读取该指数的历史数据。</strong><span>页面不会请求外部来源；你可以重新读取本站本地API。</span><button class="button primary" type="button" data-drawdown-retry>重新读取本地API</button></section></div>`;
+  return `<div class="page drawdown-page"><div class="breadcrumb"><a href="#/">首页</a><span>/</span><span>回撤分析</span></div><header class="page-title"><div><p class="eyebrow">DRAWDOWN ANALYSIS</p><h1>回撤分析</h1><p>分析指数与ETF在不同时间区间内的收益、回撤深度、持续时间和历史风险分布。</p></div></header><section class="drawdown-state-card" role="alert"><strong>暂时无法读取该对象的历史数据。</strong><span>页面不会请求外部来源；你可以重新读取本站本地API。</span><button class="button primary" type="button" data-drawdown-retry>重新读取本地API</button></section></div>`;
 }
 
 function drawdownAnalysisTemplate() {
@@ -880,9 +912,10 @@ function drawdownAnalysisTemplate() {
   const view = drawdownAnalysisView();
   const primary = DRAWDOWN_METRICS[primaryId];
   const comparison = state.drawdown.comparisonId ? DRAWDOWN_METRICS[state.drawdown.comparisonId] : null;
+  const availableMetrics = availableDrawdownMetrics();
   const range = view?.range || drawdownRangeFor(drawdownDatasetCache.get(primaryId));
   const dateInputs = `<label><span>起始日期</span><input type="date" data-drawdown-date="start" min="${range.firstDate}" max="${range.lastDate}" value="${state.drawdown.preset === 'CUSTOM' ? state.drawdown.customStart : range.startDate}"></label><label><span>结束日期</span><input type="date" data-drawdown-date="end" min="${range.firstDate}" max="${range.lastDate}" value="${state.drawdown.preset === 'CUSTOM' ? state.drawdown.customEnd : range.endDate}"></label>`;
-  const controls = `<section class="drawdown-control-panel" aria-labelledby="drawdownControlsTitle"><div class="section-heading compact"><div><h2 id="drawdownControlsTitle">分析设置</h2><p>完整历史仅从本站API读取一次；切换区间只在浏览器内重新计算。</p></div></div><div class="drawdown-control-grid"><label><span>主分析对象</span><select data-drawdown-control="primary">${Object.entries(DRAWDOWN_METRICS).map(([id, metric]) => `<option value="${id}"${id === primaryId ? ' selected' : ''}>${metric.label}</option>`).join('')}</select></label><label><span>对比对象</span><select data-drawdown-control="comparison"><option value="">不对比</option>${Object.entries(DRAWDOWN_METRICS).map(([id, metric]) => `<option value="${id}"${id === state.drawdown.comparisonId ? ' selected' : ''}${id === primaryId ? ' disabled' : ''}>${metric.label}</option>`).join('')}</select></label>${dateInputs}<label><span>回撤阈值</span><select data-drawdown-control="threshold">${[5, 10, 15, 20].map(value => `<option value="${value / 100}"${value / 100 === state.drawdown.threshold ? ' selected' : ''}>${value}%</option>`).join('')}</select></label><label><span>表格排序</span><select data-drawdown-control="sort"><option value="date-desc"${state.drawdown.sort === 'date-desc' ? ' selected' : ''}>时间倒序</option><option value="date-asc"${state.drawdown.sort === 'date-asc' ? ' selected' : ''}>时间顺序</option><option value="depth"${state.drawdown.sort === 'depth' ? ' selected' : ''}>回撤最深</option><option value="duration"${state.drawdown.sort === 'duration' ? ' selected' : ''}>持续时间最长</option></select></label></div><div class="drawdown-range-buttons" role="group" aria-label="快捷时间范围">${DRAWDOWN_PRESETS.map(([key, label]) => `<button class="range-tab${key === state.drawdown.preset ? ' active' : ''}" type="button" data-drawdown-preset="${key}" aria-pressed="${key === state.drawdown.preset}">${label}</button>`).join('')}${state.drawdown.preset === 'CUSTOM' ? '<span class="custom-range-badge">自定义</span>' : ''}</div>${state.drawdown.validationMessage || view?.error ? `<p class="drawdown-control-error" role="alert">${escapeHtml(state.drawdown.validationMessage || view.error)}</p>` : ''}${range.limited ? '<p class="drawdown-range-note">所选时间范围早于当前可用历史，已使用实际可用起始日期。</p>' : ''}</section>`;
+  const controls = `<section class="drawdown-control-panel" aria-labelledby="drawdownControlsTitle"><div class="section-heading compact"><div><h2 id="drawdownControlsTitle">分析设置</h2><p>完整历史仅从本站API读取一次；切换区间只在浏览器内重新计算。</p></div></div><div class="drawdown-control-grid"><label><span>主分析对象</span><select data-drawdown-control="primary">${Object.entries(availableMetrics).map(([id, metric]) => `<option value="${id}"${id === primaryId ? ' selected' : ''}>${metric.label}</option>`).join('')}</select></label><label><span>对比对象</span><select data-drawdown-control="comparison"><option value="">不对比</option>${Object.entries(availableMetrics).map(([id, metric]) => `<option value="${id}"${id === state.drawdown.comparisonId ? ' selected' : ''}${id === primaryId ? ' disabled' : ''}>${metric.label}</option>`).join('')}</select></label>${dateInputs}<label><span>回撤阈值</span><select data-drawdown-control="threshold">${[5, 10, 15, 20].map(value => `<option value="${value / 100}"${value / 100 === state.drawdown.threshold ? ' selected' : ''}>${value}%</option>`).join('')}</select></label><label><span>表格排序</span><select data-drawdown-control="sort"><option value="date-desc"${state.drawdown.sort === 'date-desc' ? ' selected' : ''}>时间倒序</option><option value="date-asc"${state.drawdown.sort === 'date-asc' ? ' selected' : ''}>时间顺序</option><option value="depth"${state.drawdown.sort === 'depth' ? ' selected' : ''}>回撤最深</option><option value="duration"${state.drawdown.sort === 'duration' ? ' selected' : ''}>持续时间最长</option></select></label></div><div class="drawdown-range-buttons" role="group" aria-label="快捷时间范围">${DRAWDOWN_PRESETS.map(([key, label]) => `<button class="range-tab${key === state.drawdown.preset ? ' active' : ''}" type="button" data-drawdown-preset="${key}" aria-pressed="${key === state.drawdown.preset}">${label}</button>`).join('')}${state.drawdown.preset === 'CUSTOM' ? '<span class="custom-range-badge">自定义</span>' : ''}</div>${state.drawdown.validationMessage || view?.error ? `<p class="drawdown-control-error" role="alert">${escapeHtml(state.drawdown.validationMessage || view.error)}</p>` : ''}${range.limited ? '<p class="drawdown-range-note">所选时间范围早于当前可用历史，已使用实际可用起始日期。</p>' : ''}</section>`;
 
   if (view?.error) return `<div class="page drawdown-page"><div class="breadcrumb"><a href="#/">首页</a><span>/</span><span>回撤分析</span></div><header class="page-title"><div><p class="eyebrow">DRAWDOWN ANALYSIS</p><h1>回撤分析</h1><p>分析指数在不同时间区间内的收益、回撤深度、持续时间和历史风险分布。</p></div></header>${controls}</div>`;
   if (!view?.summary) return `<div class="page drawdown-page"><div class="breadcrumb"><a href="#/">首页</a><span>/</span><span>回撤分析</span></div><header class="page-title"><div><p class="eyebrow">DRAWDOWN ANALYSIS</p><h1>回撤分析</h1><p>分析指数在不同时间区间内的收益、回撤深度、持续时间和历史风险分布。</p></div></header>${controls}<section class="drawdown-state-card"><strong>当前区间内有效数据不足，无法计算回撤。</strong><span>请扩大时间范围，或检查本地历史数据是否可用。</span></section></div>`;
@@ -902,7 +935,8 @@ function drawdownAnalysisTemplate() {
   const summaryMarkup = `<section class="drawdown-summary-grid" aria-label="回撤分析摘要">${summaryItems.map(([label, value, tone]) => `<article class="${tone}"><span>${label}</span><strong>${value}</strong></article>`).join('')}</section>`;
   const recoveryStatus = maximumEpisode?.status === 'ongoing' ? '进行中' : maximumEpisode ? `已于 ${maximumEpisode.recoveryDate} 恢复` : '当前位于历史新高';
   const comparisonNotice = comparisonInsufficient ? '<div class="notice drawdown-warning"><strong>对比数据不足</strong><span>对比对象在当前区间内缺少足够数据。主对象分析不受影响。</span></div>' : '';
-  return `<div class="page drawdown-page"><div class="breadcrumb"><a href="#/">首页</a><span>/</span><span>回撤分析</span></div><section class="hero drawdown-hero"><div class="hero-copy"><p class="eyebrow">DRAWDOWN ANALYSIS</p><h1>回撤分析</h1><p>分析指数在不同时间区间内的收益、回撤深度、持续时间和历史风险分布。</p></div><aside class="hero-panel drawdown-hero-summary"><p class="hero-panel-label">当前分析摘要</p><h2>${primary.shortLabel}</h2><dl><div><dt>选择区间</dt><dd>${escapeHtml(range.label)}</dd></div><div><dt>当前回撤</dt><dd>${formatPercent(summary.currentDrawdown, 2)}</dd></div><div><dt>区间最大回撤</dt><dd>${formatPercent(summary.maximumDrawdown, 2)}</dd></div><div><dt>恢复状态</dt><dd>${escapeHtml(recoveryStatus)}</dd></div></dl></aside></section>${controls}${summaryMarkup}${comparisonNotice}${drawdownChartMarkup(view)}${drawdownEventsMarkup(summary.episodes)}${drawdownDistributionMarkup(view.distribution)}${annualReturnsMarkup(view.annualReturns)}<section class="drawdown-data-note"><p>回撤根据所选指数的日度收盘序列计算。历史缺失日期不插值，非交易日不补造。回撤分析仅用于个人市场观察和研究，不构成投资建议。</p><dl><div><dt>主对象来源</dt><dd>${primary.source}</dd></div>${comparison ? `<div><dt>对比来源</dt><dd>${comparison.source}</dd></div>` : ''}<div><dt>有效区间</dt><dd>${summary.firstDate} 至 ${summary.lastDate} · ${summary.pointCount}点</dd></div></dl></section></div>`;
+  const soxxNotice = primaryId === 'soxx_price' || state.drawdown.comparisonId === 'soxx_price' ? '<p><strong>iShares Semiconductor ETF（SOXX）</strong>跟踪NYSE Semiconductor Index。本页分析的是SOXX ETF本身，不是PHLX Semiconductor Sector Index（SOX）。</p>' : '';
+  return `<div class="page drawdown-page"><div class="breadcrumb"><a href="#/">首页</a><span>/</span><span>回撤分析</span></div><section class="hero drawdown-hero"><div class="hero-copy"><p class="eyebrow">DRAWDOWN ANALYSIS</p><h1>回撤分析</h1><p>分析指数与ETF在不同时间区间内的收益、回撤深度、持续时间和历史风险分布。</p></div><aside class="hero-panel drawdown-hero-summary"><p class="hero-panel-label">当前分析摘要</p><h2>${primary.shortLabel}</h2><dl><div><dt>选择区间</dt><dd>${escapeHtml(range.label)}</dd></div><div><dt>当前回撤</dt><dd>${formatPercent(summary.currentDrawdown, 2)}</dd></div><div><dt>区间最大回撤</dt><dd>${formatPercent(summary.maximumDrawdown, 2)}</dd></div><div><dt>恢复状态</dt><dd>${escapeHtml(recoveryStatus)}</dd></div></dl></aside></section>${controls}${summaryMarkup}${comparisonNotice}${drawdownChartMarkup(view)}${drawdownEventsMarkup(summary.episodes)}${drawdownDistributionMarkup(view.distribution)}${annualReturnsMarkup(view.annualReturns)}<section class="drawdown-data-note"><p>${drawdownSeriesNotice(primaryId)} 历史缺失日期不插值，非交易日不补造。回撤分析仅用于个人市场观察和研究，不构成投资建议。</p>${soxxNotice}<dl><div><dt>主对象来源</dt><dd>${escapeHtml(state.drawdown.metadata[primaryId]?.sourceLabel || primary.source)}</dd></div><div><dt>主对象口径</dt><dd>${escapeHtml(drawdownSeriesTypeLabel(primaryId))}</dd></div>${comparison ? `<div><dt>对比来源</dt><dd>${escapeHtml(state.drawdown.metadata[state.drawdown.comparisonId]?.sourceLabel || comparison.source)}</dd></div><div><dt>对比口径</dt><dd>${escapeHtml(drawdownSeriesTypeLabel(state.drawdown.comparisonId))}</dd></div>` : ''}<div><dt>有效区间</dt><dd>${summary.firstDate} 至 ${summary.lastDate} · ${summary.pointCount}点</dd></div></dl></section></div>`;
 }
 
 function notFoundTemplate() {
@@ -1002,7 +1036,7 @@ async function loadDrawdownDataset(id, { force = false } = {}) {
 }
 
 async function ensureDrawdownData() {
-  const ids = [state.drawdown.primaryId, state.drawdown.comparisonId].filter(Boolean);
+  const ids = [state.drawdown.primaryId, state.drawdown.comparisonId, 'soxx_price'].filter(Boolean);
   const missing = [...new Set(ids)].filter(id => !drawdownDatasetCache.has(id) && !state.drawdown.loading.has(id) && !state.drawdown.errors[id]);
   if (!missing.length) return;
   await Promise.all(missing.map(id => loadDrawdownDataset(id)));
