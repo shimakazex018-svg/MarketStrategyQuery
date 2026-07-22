@@ -285,7 +285,7 @@ WorldPEratio 登记为 `approved_with_conditions`、`selected`、`conditionsSati
 ## DEC-021：v0.5正式范围固定为六项已成功数据
 
 ### Decision
-v0.5首页和正式市场数据服务只接入Nasdaq-100 PE、S&P 500 PE、VIX、VXN、Nasdaq-100指数和S&P 500指数。真实数据保存在`runtime-data/market-data/production/`，由离线导入器和现有市场数据服务中的FRED、WorldPEratio Provider维护。Forward PE、QQQ/SPY/SOXX价格和机构仓位代理不显示、不调度、不以其他指标代替。
+v0.5首页和公开摘要固定为Nasdaq-100 PE、S&P 500 PE、VIX、VXN、Nasdaq-100指数和S&P 500指数。真实数据保存在`runtime-data/market-data/production/`，由离线导入器和现有市场数据服务中的FRED、WorldPEratio Provider维护。Forward PE、QQQ/SPY价格和机构仓位代理不显示、不调度、不以其他指标代替；SOXX仅作为DEC-023定义的隐藏回撤分析对象。
 
 ### Reason
 六项来源、字段和本地成功缓存已经验证；其余指标仍受访问、定义或输入条件阻塞。固定正式范围可以避免伪造、口径替代和继续扩大数据源风险。
@@ -299,13 +299,27 @@ v0.5首页和正式市场数据服务只接入Nasdaq-100 PE、S&P 500 PE、VIX�
 ## DEC-022：回撤分析使用完整历史计算与有界SVG显示
 
 ### Decision
-`#/drawdown-analysis`只读取现有`nasdaq100_index`和`sp500_index`内部history API。history路径允许`range=ALL`返回完整已校验日频序列；回撤、事件、持续交易日、分布和年度收益全部使用完整序列计算，原生SVG显示层再按宽度抽样并保留关键日期。
+`#/drawdown-analysis`读取`nasdaq100_index`、`sp500_index`和可用的`soxx_price`内部history API。history路径允许`range=ALL`返回完整已校验日频序列；回撤、事件、持续交易日、分布和年度收益全部使用完整序列计算，原生SVG显示层再按宽度抽样并保留关键日期。
 
 ### Reason
 现有最多240点的详情图抽样会漏掉真实峰值、谷底和恢复日，不能作为回撤算法输入；两条约万点以内的日频序列一次读取并在浏览器缓存，资源成本仍可控。
 
 ### Impact
 首页六卡、七个既有范围、Provider、每日07:30更新和运行数据结构不变。页面不得直接读取`runtime-data/`、请求外部来源或用抽样点计算回撤。未来只有数据规模明显扩大时才评审Worker或服务端预聚合。
+
+### Status
+有效
+
+## DEC-023：SOXX仅以官方基金NAV本地导入方式进入回撤分析
+
+### Decision
+SOXX标的严格定义为iShares Semiconductor ETF，不是SOX、SOXL或SOXS。当前官方可用序列为iShares工作簿的日频NAV，保存为`seriesType=nav`、`adjustmentStatus=provider_adjusted`；已知2024年3-for-1拆分只做连续性验证，不再次调整。真实文件和标准化序列只保存在`runtime-data/`。
+
+### Reason
+iShares产品页提供无需登录的公开数据下载，历史工作表字段明确为NAV；官方拆分公告与拆分日前后连续序列支持“提供方已调整”结论。BlackRock条款允许个人非商业下载，但禁止未经授权的自动监控或复制，因此不能建立官网定时抓取。
+
+### Impact
+`EtfPriceProvider`和07:30任务只重载本地文件，不联网。SOXX有至少两个有效点时才出现在回撤页选择器；API和页面必须明确显示NAV口径及“SOXX不是SOX”。首页六卡、现有四项FRED与两个PE流程不变。
 
 ### Status
 有效

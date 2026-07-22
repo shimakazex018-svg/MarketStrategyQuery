@@ -58,7 +58,7 @@ docs/                           # 长期上下文与专项设计文档
 - 期权工具同一时间完整展示一个策略；最大收益、最大亏损、盈亏平衡和主要风险保持可见。
 - 周期图由 `cycle-shape.json` 驱动 SVG；它是静态示意，不是 QQQ 真实历史。
 - 指标卡只请求本站内部 API；路由切换会取消未完成请求。历史路径在服务端限制点数，避免 SVG、内存和 DOM 无界增长。
-- 回撤分析页为两个指数分别缓存一次`range=ALL`完整历史，所有时间区间在前端过滤和计算；核心算法不使用图表抽样。SVG最多保留约620个显示点，并强制保留最大回撤峰谷、恢复点与最新点。
+- 回撤分析页为两个指数及可用SOXX ETF分别缓存一次`range=ALL`完整历史，所有时间区间在前端过滤和计算；SOXX缺失或无效时从选择器省略。核心算法不使用图表抽样。SVG最多保留约620个显示点，并强制保留最大回撤峰谷、恢复点与最新点。
 - 主题使用根元素 `data-theme`；断点为 1100px、760px 和 440px；`prefers-reduced-motion` 下动画缩短。
 
 ## 产品 JSON 模型
@@ -74,6 +74,7 @@ docs/                           # 长期上下文与专项设计文档
 
 - `server.js`：创建市场数据服务和调度器；处理健康检查、内部 API 和安全静态文件响应。
 - `server/data-sources/cboe-history.js`：Cboe VIX/VXN CSV 适配器；许可开关未确认时不会启用。
+- `server/data-sources/etf-price-provider.js`：只读取本地正式SOXX文件，校验准确标的、日频顺序、空值、重复、异常跳点、已知拆分连续性、序列类型和复权状态；不会发网络请求。
 - `server/data-sources/web-pages/`：WorldPEratio 专用的固定主机 HTTP fetcher、robots 解析、字段提取校验和禁用的浏览器边界；不读取用户 Cookie/Profile，不长期保存 HTML。
 - `worldperatio.js`：独立 Provider 状态与 `runtime-data/market-data/web-pages/worldperatio/` 原子 JSON 缓存；合规登记未通过时不发请求、不调度。
 - `pe-history-statistics.js`：`PE-HISTORY-TRIM10-v1` 纯计算原型，与 QQQ 成分横截面 WMAD4 严格分离。
@@ -87,6 +88,7 @@ docs/                           # 长期上下文与专项设计文档
 - `logger.js`：有界日志轮转，防止磁盘持续增长。
 - `http-api.js`：内部 API 路由、范围校验和可信网段手动刷新限制。
 - `server/imports/`：最大2 MiB、10,000行的CSV解析，校验ticker、日期、权重、价格、来源和人工Forward PE，并生成SHA-256导入manifest。
+- `tools/market-data/import-soxx-history.js`：从`runtime-data/`内的官方SpreadsheetML或用户CSV离线、幂等、原子导入SOXX；必须显式声明`seriesType`和`adjustmentStatus`。
 - `server/derived-indicators/sec-facts.js`：可配置GAAP/IFRS字段优先级、修订去重、季度TTM和显式拆股口径调整。
 - `qqq-pe.js`：输出保留全部正负盈利的原始加权E/P，以及基于weighted median/MAD、1.4826尺度和4倍边界的稳健E/P；极值只Winsorize、不删成分、不改权重。排除亏损与旧聚合市值法只保留为诊断。
 - `realized-volatility.js` / `volatility-percentile.js`：基于复权收盘价计算RV10/20/60与1/3/5/10年实际可用分位。
@@ -111,7 +113,7 @@ docs/                           # 长期上下文与专项设计文档
 
 页面访问和 GET 指标接口不会触发第三方抓取。外部访问只可能来自获批来源的启动过期检查、调度或受限手动刷新。
 
-`range=ALL`只扩展现有history读取路径。首页和指标详情继续使用固定七范围与最多240点响应；回撤分析只读取`nasdaq100_index`和`sp500_index`，随后在浏览器内按日期、阈值和排序设置复用缓存，不建立平行数据服务。
+`range=ALL`只扩展现有history读取路径。首页和指标详情继续使用固定七范围与最多240点响应；回撤分析读取`nasdaq100_index`、`sp500_index`和可选`soxx_price`，随后在浏览器内按日期、阈值和排序设置复用缓存，不建立平行数据服务。
 
 WorldPEratio 不加入上述通用启动或定时刷新。经项目所有者有限风险接受后，只能通过独立维护入口执行；每次先检查30天条款复查状态和robots，每日一次正常目标请求，只有超时或5xx允许延迟重试一次，并在复查到期、403/429、登录、验证码、Cloudflare、robots禁止、目标/DOM/日期/数值冲突时停止。
 
@@ -148,6 +150,8 @@ WorldPEratio 不加入上述通用启动或定时刷新。经项目所有者有�
 正式指标ID固定为`nasdaq100_pe`、`sp500_pe`、`vix`、`vxn`、`nasdaq100_index`、`sp500_index`。PE的1/5/10/20年统计只进入`historicalStatistics`，不得混入本站逐日快照；快照不足2点时不绘制折线。FRED缺失观察保留为`null`且不连成0。
 
 四项FRED序列和两个WorldPEratio页面由现有市场数据服务统一协调。每天Asia/Shanghai 07:30检查；同一来源当天成功后不重复请求，只有超时或5xx允许再尝试一次。单项更新失败不清空缓存，也不影响其他指标或静态页面。
+
+SOXX是隐藏的分析指标，不属于六项首页摘要。正式序列位于`runtime-data/market-data/production/etf/soxx.json`；07:30任务只重新读取该本地文件，不访问iShares/BlackRock。当前官方工作簿口径为`nav + provider_adjusted`，不做二次拆分调整，也不把SOXX描述成SOX指数。
 
 ## 历史自计算数据流（保留兼容，不进入v0.5首页）
 

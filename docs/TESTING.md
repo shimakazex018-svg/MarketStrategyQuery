@@ -145,6 +145,8 @@ Invoke-RestMethod http://127.0.0.1:48101/api/market-data/providers/worldperatio/
 - 单指标切换范围不改变其他卡片；不可用范围保持禁用。
 - 控制台无错误。
 - 回撤页核心计算必须使用`range=ALL`完整历史；切换范围不得重复请求，同日期冲突必须失败，null不得变成0，两个对比序列必须从首个共同日期归一化为100。
+- SOXX专项必须覆盖准确标的、SOX/SOXL/SOXS拒绝、NAV/market/adjusted口径、排序/重复/冲突/null、基金成立日前数据、2024拆分连续性、幂等原子导入、Provider失败隔离、API元数据、可选UI和首页仍为六卡。
+- 官方SOXX文件只允许人工下载到`runtime-data/`后执行：`node tools/market-data/import-soxx-history.js runtime-data/market-data/soxx-audit/official-data-download.xlsx --series-type nav --adjustment-status provider_adjusted --source official-ishares --source-url https://www.ishares.com/us/products/239705/SOXX`。第二次执行必须报告`changed=false`。
 
 ## 响应式与可访问性
 
@@ -215,6 +217,8 @@ Invoke-RestMethod http://127.0.0.1:48101/api/market-data/providers/worldperatio/
 - 缺失资源返回 404：Hash Router 下是预期行为。
 
 ## 最近确认的基线
+
+2026-07-22，SOXX ETF回撤接入完整检查：144项测试通过、0失败，数据检查确认9阶段、8期权、6首页指标和7范围，全部语法检查与`git diff --check`通过。官方文件离线导入首次`changed=true`、重复执行`changed=false`；合成视觉夹具覆盖SOXX主对象、双向对比、10年、全历史、ongoing、不可用、1440×900、768×1024和390×844，控制台0错误且无页面级横向溢出。
 
 2026-07-15，`feature/v0.4-compliant-market-data-waterfall` 检查点A.1执行`npm.cmd run check`：53项测试通过、0失败；QQQ PE专项18项通过。专项测试包括30成分无极值、正/负/普通亏损、大权重/多个极值、MAD为0、样本不足、原始/稳健近零分母、极值权重超过10%、顺序和权重尺度不变性、非有限输入及显式日期校验。固定9阶段、8期权、6个现有首页指标、7范围和Provider合规门禁仍有效。没有UI变化、真实数据读取或全量计算，不重新生成截图。真实设备和ZeroTier跨设备验收仍待确认。
 

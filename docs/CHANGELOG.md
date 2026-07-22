@@ -1,5 +1,12 @@
 # 变更日志
 
+## 2026-07-22 - SOXX ETF回撤分析
+
+- 完成iShares官方产品页、公开数据下载、BlackRock使用条款、Nasdaq候选页和官方3-for-1拆分公告审计；采用日频NAV，标记为提供方已调整，不做二次拆分处理。
+- 新增有界SOXX SpreadsheetML/CSV离线导入器、本地只读ETF Provider、隐藏分析指标、完整history API元数据和07:30本地重载；不建立iShares/BlackRock网络调度。
+- 回撤页加入可选SOXX主/对比对象，明确NAV/市场价/复权市场价口径及SOXX不等于SOX；首页六项指标和既有数据流保持不变。
+- 新增准确标的、字段口径、拆分、质量校验、幂等原子写入、失败隔离、API与UI契约测试；全部夹具为合成数据，真实数据继续留在Git忽略的runtime-data。
+
 ## 2026-07-22 - 独立回撤分析页
 
 - 新增`#/drawdown-analysis`顶级路由与桌面/移动导航入口，沿用现有Hero、主题、卡片、按钮和响应式设计系统。
