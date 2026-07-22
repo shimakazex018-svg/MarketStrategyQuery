@@ -403,6 +403,23 @@ class MarketDataService {
     return { ...model, history, ...(robustHistory ? { robustHistory } : {}), requestedRange: range, servedAt: isoNow(this.now()) };
   }
 
+  getIndicatorHistory(id, range = '1Y') {
+    const model = this.models.get(id);
+    if (!model) return null;
+    if (range !== 'ALL') {
+      const ranged = this.getIndicator(id, range);
+      return { metricId: ranged.id, range, history: ranged.history, historyStart: ranged.historyStart, historyEnd: ranged.historyEnd };
+    }
+    const history = (model.history || []).map(point => ({ date: point.date, value: point.value }));
+    return {
+      metricId: model.id,
+      range,
+      history,
+      historyStart: history[0]?.date || null,
+      historyEnd: history.at(-1)?.date || null
+    };
+  }
+
   getIndicators(range = '1Y') {
     return this.indicators.map(indicator => this.getIndicator(indicator.id, range));
   }

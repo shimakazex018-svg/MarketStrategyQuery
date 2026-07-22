@@ -71,9 +71,18 @@ async function handleMarketDataApi(req, res, requestUrl, service) {
 
   const historyMatch = new RegExp(`^${prefix}/metrics/([a-z0-9_-]+)/history$`).exec(requestUrl.pathname);
   if (req.method === 'GET' && historyMatch) {
-    const range = normalizedRange(requestUrl);
-    if (!range) sendJson(res, 400, { error: 'invalid-range', allowed: RANGE_KEYS });
-    else { const metric = service.getIndicator(historyMatch[1], range); if (!metric) sendJson(res, 404, { error: 'metric-not-found' }); else sendJson(res, 200, { metricId: metric.id, range, history: metric.history, historyStart: metric.historyStart, historyEnd: metric.historyEnd }); }
+    const requestedRange = (requestUrl.searchParams.get('range') || '1Y').toUpperCase();
+    const range = requestedRange === 'ALL' ? 'ALL' : normalizedRange(requestUrl);
+    if (!range) sendJson(res, 400, { error: 'invalid-range', allowed: [...RANGE_KEYS, 'ALL'] });
+    else {
+      const result = service.getIndicatorHistory?.(historyMatch[1], range)
+        || (() => {
+          const metric = service.getIndicator(historyMatch[1], range);
+          return metric && { metricId: metric.id, range, history: metric.history, historyStart: metric.historyStart, historyEnd: metric.historyEnd };
+        })();
+      if (!result) sendJson(res, 404, { error: 'metric-not-found' });
+      else sendJson(res, 200, result);
+    }
     return true;
   }
 
