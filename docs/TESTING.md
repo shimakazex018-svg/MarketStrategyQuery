@@ -74,6 +74,20 @@ npm.cmd start
 
 不要把临时测试端口写回代码或启动脚本。
 
+## Windows 无感启动
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\windows\register-market-autostart.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\windows\status-market.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\windows\start-market-hidden.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\windows\stop-market.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\windows\restart-market.ps1
+```
+
+- 任务名固定为`MarketCycleStrategy-Autostart`，触发器仅为当前用户登录后的延迟启动；不得配置分钟级、小时级或07:30 Windows启动任务。
+- 任务Action必须是`powershell.exe -NoProfile -NonInteractive -WindowStyle Hidden`的长运行宿主，不得直接调用`.cmd`或`npm.cmd`。同一任务采用`IgnoreNew`，失败后最多重试3次、间隔1分钟。
+- 验收应确认重复启动不增加监听进程、停止/重启只影响48101、48102继续可用、15分钟内无周期性cmd/powershell弹窗、PID/日志未被Git跟踪；Windows重启或重新登录仍需人工确认一次。
+
 ## Smoke Check
 
 ```powershell
@@ -218,6 +232,8 @@ Invoke-RestMethod http://127.0.0.1:48101/api/market-data/providers/worldperatio/
 - 缺失资源返回 404：Hash Router 下是预期行为。
 
 ## 最近确认的基线
+
+2026-07-26，Windows无感启动专项：PowerShell语法与2项启动生命周期合成测试通过；任务、隐藏启动、重复启动、受控停止/重启、48101 health、首页/回撤路由、六项摘要、SOXX history和48102隔离检查通过。15分钟观察中健康和监听PID稳定、未出现新的`cmd.exe`，任务持续运行；Windows重新登录触发仍需目标桌面会话确认。
 
 2026-07-26，回撤图同步日期游标按完整check内容验证：149项测试通过、0失败，数据检查确认9阶段、8期权、6首页指标和7范围，全部语法检查与`git diff --check`通过。合成评审页覆盖桌面、平板和手机视口的SVG虚线、选中点、同步日期、Tooltip翻转、键盘移动和Escape关闭；真实iPad/iPhone硬件触摸仍待目标设备人工验收。
 

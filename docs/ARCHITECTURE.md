@@ -17,6 +17,8 @@ Node.js 原生 HTTP 服务
   -> public/ 静态文件
 ```
 
+Windows 登录后由`MarketCycleStrategy-Autostart`启动隐藏PowerShell宿主；宿主只派生当前项目的Node进程、等待其退出并将退出码交给任务计划程序。PID文件、监听端口、Node路径和`server.js`命令行必须交叉匹配，未知进程永不被停止。
+
 项目没有前端框架、打包器、第三方运行依赖、数据库、登录系统或后台任务队列。当前固定数据规模较小，不需要分页、虚拟列表或集中式缓存。
 
 ## 主要目录

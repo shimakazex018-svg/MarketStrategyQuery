@@ -2,6 +2,17 @@
 
 本文件记录跨任务长期有效的选择。市场数据专项细节另见 `MARKET_DATA_DECISIONS.md`。
 
+## DEC-000：Windows 48101 无感常驻
+
+### Decision
+采用Windows任务计划程序的登录触发、隐藏PowerShell宿主和任务级有限失败重试；不引入NSSM、PM2、Windows服务或周期性CMD健康检查。
+
+### Impact
+任务只负责常驻服务启动；Asia/Shanghai 07:30仍由应用内部调度执行。服务控制只能在PID元数据、端口监听、Node路径和`server.js`命令行一致时停止进程；日志/PID只写入`runtime-data/`。
+
+### Status
+有效
+
 ## DEC-001：保持原生技术栈
 
 ### Decision

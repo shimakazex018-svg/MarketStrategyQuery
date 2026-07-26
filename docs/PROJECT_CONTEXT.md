@@ -12,6 +12,7 @@
 - 环境要求：Node.js 18 或更高版本。
 - 启动命令：`npm.cmd start` 或 `npm.cmd run start`。
 - Windows 脚本：`powershell -ExecutionPolicy Bypass -File .\scripts\start-market-site.ps1`。
+- Windows无感常驻：`MarketCycleStrategy-Autostart`在当前用户登录后延迟启动隐藏PowerShell宿主；日常状态、启动、停止和重启入口位于`scripts/windows/`。
 - 默认监听：`0.0.0.0:48101`；可由 `HOST`、`PORT` 环境变量覆盖。
 - 本机默认地址：`http://127.0.0.1:48101`。
 - 局域网/ZeroTier：使用服务器对应网卡 IP 加端口 48101；实际跨设备连通性待确认。
@@ -60,6 +61,8 @@
 | `runtime-data/derived/` | 派生结果 | 忽略 | 算法结果、版本和覆盖率 |
 | `runtime-data/market-data/web-pages/worldperatio/` | 运行数据 | 忽略 | 保存标准化latest、请求状态、去重快照历史和last-good备份；不保存HTML，内容不得提交 |
 | `runtime-data/market-data/production/` | 正式运行数据 | 忽略 | 保存四项FRED序列、两个PE当前值、PE快照历史、SOXX ETF本地导入序列及每日请求状态；由离线导入或正式Provider原子更新 |
+| `runtime-data/process/` | 服务运行状态 | 忽略 | 仅保存48101经端口与进程校验后的PID元数据和最后退出记录 |
+| `runtime-data/logs/market-cycle/` | 服务日志 | 忽略 | 48101启动、标准输出和错误日志；单文件10 MiB、最近5个轮转副本 |
 | `tools/market-data-lab/core-data-acquisition/` | 隔离实验工具 | 跟踪 | 分来源一次性采集、规范化、冻结校验与本地报告；最新缺失项入口仅包含Invesco、Twelve Data和CFTC，不进入正式启动路径 |
 | `runtime-data/market-data-lab/core-data-acquisition/` | 实验运行数据 | 忽略 | raw、normalized、snapshots、reports、state和logs；不得提交 |
 
