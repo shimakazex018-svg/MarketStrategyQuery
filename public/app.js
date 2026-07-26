@@ -22,7 +22,9 @@ const state = {
     errors: {},
     metadata: {},
     calculationCache: new Map(),
-    validationMessage: ''
+    validationMessage: '',
+    selectedChartDate: null,
+    chartCursorVisible: false
   },
   route: ''
 };
@@ -50,6 +52,8 @@ let indicatorDialogTrigger = null;
 const marketDataControllers = new Map();
 let externalPEController = null;
 const drawdownControllers = new Map();
+let activeDrawdownChartView = null;
+let drawdownChartInteraction = null;
 const DRAWDOWN_METRICS = Object.freeze({
   nasdaq100_index: { label: 'Nasdaq-100指数', shortLabel: 'Nasdaq-100', source: 'FRED NASDAQ100' },
   sp500_index: { label: 'S&P 500指数', shortLabel: 'S&P 500', source: 'FRED SP500' },
@@ -803,6 +807,10 @@ function coordinatesPath(points) {
   return points.map((point, index) => `${index ? 'L' : 'M'}${point.x.toFixed(2)},${point.y.toFixed(2)}`).join(' ');
 }
 
+function chartPointCoordinate(point, key, options) {
+  return chartCoordinates([point], key, options)[0] || null;
+}
+
 function drawdownChartMarkup(view) {
   const { summary, aligned, range } = view;
   const maximumEpisode = summary.maximumEpisode;
@@ -818,8 +826,6 @@ function drawdownChartMarkup(view) {
   const ongoingX = ongoing ? dateX(ongoing.peakDate) : null;
   const maximumPeakX = maximumEpisode ? dateX(maximumEpisode.peakDate) : null;
   const maximumTroughX = maximumEpisode ? dateX(maximumEpisode.troughDate) : null;
-  const drawdownTooltipPoints = drawdownCoords.map(point => ({ date: point.date, value: formatPercent(point.drawdown, 2) }));
-
   const primaryNormalized = sampleChartPoints(aligned.primary, 620, [aligned.startDate, summary.lastDate]);
   const comparisonNormalized = sampleChartPoints(aligned.comparison, 620, [aligned.startDate]);
   const allNormalized = [...primaryNormalized, ...comparisonNormalized];
@@ -830,12 +836,11 @@ function drawdownChartMarkup(view) {
   const primaryCoords = chartCoordinates(primaryNormalized, 'normalizedValue', normalizedOptions);
   const comparisonCoords = chartCoordinates(comparisonNormalized, 'normalizedValue', normalizedOptions);
   const baseCoords = chartCoordinates([{ date: range.startDate, normalizedValue: 100 }, { date: range.endDate, normalizedValue: 100 }], 'normalizedValue', normalizedOptions);
-  const normalizedTooltipPoints = primaryCoords.map(point => ({ date: point.date, value: `${point.normalizedValue.toFixed(2)}` }));
-
   return `<section class="drawdown-chart-card" aria-labelledby="drawdownChartTitle">
     <div class="section-heading compact"><div><h2 id="drawdownChartTitle">回撤与归一化走势</h2><p>上图使用负百分比显示每日回撤；下图从首个共同交易日以100为起点。</p></div></div>
+    <p class="sr-only" aria-live="polite" data-drawdown-chart-live></p>
     <div class="drawdown-chart-stack">
-      <figure class="drawdown-chart drawdown-interactive-chart" data-chart-points="${escapeHtml(JSON.stringify(drawdownTooltipPoints))}">
+      <figure class="drawdown-chart drawdown-interactive-chart" data-chart-type="drawdown">
         <figcaption><strong>每日回撤</strong><span>0%位于顶部 · 最深 ${formatPercent(summary.maximumDrawdown, 2)}</span></figcaption>
         <div class="drawdown-chart-frame">
           <svg viewBox="0 0 1000 230" preserveAspectRatio="none" role="img" aria-label="${escapeHtml(DRAWDOWN_METRICS[state.drawdown.primaryId].label)}每日回撤面积图">
@@ -844,20 +849,27 @@ function drawdownChartMarkup(view) {
             <line class="zero-line" x1="18" x2="982" y1="${baselineY}" y2="${baselineY}"></line>
             <path class="drawdown-area" d="${areaPath}"></path>
             <path class="drawdown-line" d="${coordinatesPath(drawdownCoords)}"></path>
+            <line class="drawdown-chart-crosshair" x1="18" x2="18" y1="18" y2="212" hidden style="display:none"></line>
+            <circle class="drawdown-chart-marker primary" cx="18" cy="18" r="5" hidden style="display:none"></circle>
             ${maximumCoord ? `<circle class="maximum-marker" cx="${maximumCoord.x.toFixed(2)}" cy="${maximumCoord.y.toFixed(2)}" r="6"></circle><text class="maximum-label" x="${Math.min(maximumCoord.x + 10, 932).toFixed(2)}" y="${Math.max(maximumCoord.y - 10, 36).toFixed(2)}">${formatPercent(summary.maximumDrawdown, 1)}</text>` : ''}
+            <rect class="drawdown-chart-pointer-capture" x="18" y="18" width="964" height="194" fill="transparent" tabindex="0" role="application" aria-label="每日回撤图。使用左右方向键按交易日移动日期游标，Escape关闭提示。"></rect>
           </svg>
           <output class="drawdown-chart-tooltip" hidden></output>
         </div>
         <div class="drawdown-chart-axis"><span>0%</span><span>${formatPercent(drawdownMin, 0)}</span></div>
         <div class="drawdown-chart-dates"><span>${escapeHtml(range.startDate)}</span><span>${escapeHtml(range.endDate)}</span></div>
       </figure>
-      <figure class="drawdown-chart drawdown-interactive-chart" data-chart-points="${escapeHtml(JSON.stringify(normalizedTooltipPoints))}">
+      <figure class="drawdown-chart drawdown-interactive-chart" data-chart-type="normalized">
         <figcaption><strong>归一化走势</strong><span>鼠标悬停或触摸图表查看主对象数据</span></figcaption>
         <div class="drawdown-chart-frame">
           <svg viewBox="0 0 1000 230" preserveAspectRatio="none" role="img" aria-label="${escapeHtml(DRAWDOWN_METRICS[state.drawdown.primaryId].label)}${state.drawdown.comparisonId ? `与${escapeHtml(DRAWDOWN_METRICS[state.drawdown.comparisonId].label)}` : ''}归一化走势对比">
             ${baseCoords.length ? `<line class="normalization-line" x1="${baseCoords[0].x}" x2="${baseCoords[1].x}" y1="${baseCoords[0].y}" y2="${baseCoords[1].y}"></line>` : ''}
             <path class="normalized-primary" d="${coordinatesPath(primaryCoords)}"></path>
             ${comparisonCoords.length ? `<path class="normalized-comparison" d="${coordinatesPath(comparisonCoords)}"></path>` : ''}
+            <line class="drawdown-chart-crosshair" x1="18" x2="18" y1="18" y2="212" hidden style="display:none"></line>
+            <circle class="drawdown-chart-marker primary" cx="18" cy="18" r="5" hidden style="display:none"></circle>
+            <circle class="drawdown-chart-marker comparison" cx="18" cy="18" r="5" hidden style="display:none"></circle>
+            <rect class="drawdown-chart-pointer-capture" x="18" y="18" width="964" height="194" fill="transparent" tabindex="0" role="application" aria-label="归一化走势图。使用左右方向键按交易日移动日期游标，Escape关闭提示。"></rect>
           </svg>
           <output class="drawdown-chart-tooltip" hidden></output>
         </div>
@@ -866,6 +878,209 @@ function drawdownChartMarkup(view) {
       </figure>
     </div>
   </section>`;
+}
+
+function clearDrawdownChartInteraction({ clearDate = false } = {}) {
+  drawdownChartInteraction?.destroy();
+  drawdownChartInteraction = null;
+  if (clearDate) state.drawdown.selectedChartDate = null;
+  state.drawdown.chartCursorVisible = false;
+}
+
+function drawdownEpisodeForDate(episodes, date) {
+  return episodes.find(episode => date >= episode.peakDate && (!episode.recoveryDate || date <= episode.recoveryDate)) || null;
+}
+
+function createDrawdownChartInteraction(view) {
+  const interactionApi = globalThis.DrawdownChartInteractions;
+  if (!interactionApi || !view?.summary || !view?.range) return null;
+  const liveRegion = document.querySelector('[data-drawdown-chart-live]');
+  const primaryMetric = DRAWDOWN_METRICS[state.drawdown.primaryId];
+  const comparisonMetric = state.drawdown.comparisonId ? DRAWDOWN_METRICS[state.drawdown.comparisonId] : null;
+  const drawdownOptions = { minValue: Math.min(view.summary.maximumDrawdown, -0.01) * 1.08, maxValue: 0, startDate: view.range.startDate, endDate: view.range.endDate };
+  const sampledPrimary = sampleChartPoints(view.aligned.primary, 620, [view.aligned.startDate, view.summary.lastDate]);
+  const sampledComparison = sampleChartPoints(view.aligned.comparison, 620, [view.aligned.startDate]);
+  const normalizedValues = [...sampledPrimary, ...sampledComparison];
+  const normalizedLow = normalizedValues.length ? Math.min(...normalizedValues.map(point => point.normalizedValue)) : 90;
+  const normalizedHigh = normalizedValues.length ? Math.max(...normalizedValues.map(point => point.normalizedValue)) : 110;
+  const normalizedPad = Math.max((normalizedHigh - normalizedLow) * 0.08, 1);
+  const normalizedOptions = { minValue: normalizedLow - normalizedPad, maxValue: normalizedHigh + normalizedPad, startDate: view.range.startDate, endDate: view.range.endDate };
+  const chartDefinitions = {
+    drawdown: { points: view.summary.drawdowns, comparison: [], key: 'drawdown', options: drawdownOptions },
+    normalized: { points: view.aligned.primary, comparison: view.aligned.comparison, key: 'normalizedValue', options: normalizedOptions }
+  };
+  const registrations = [];
+  let animationFrame = 0;
+  let pendingPointer = null;
+
+  const chartElements = [...document.querySelectorAll('.drawdown-interactive-chart')].map(figure => {
+    const type = figure.dataset.chartType;
+    const definition = chartDefinitions[type];
+    const frame = figure.querySelector('.drawdown-chart-frame');
+    const crosshair = figure.querySelector('.drawdown-chart-crosshair');
+    const primaryMarker = figure.querySelector('.drawdown-chart-marker.primary');
+    const comparisonMarker = figure.querySelector('.drawdown-chart-marker.comparison');
+    const tooltip = figure.querySelector('.drawdown-chart-tooltip');
+    const capture = figure.querySelector('.drawdown-chart-pointer-capture');
+    return definition && frame && crosshair && primaryMarker && tooltip && capture ? { type, definition, frame, crosshair, primaryMarker, comparisonMarker, tooltip, capture } : null;
+  }).filter(Boolean);
+  if (!chartElements.length) return null;
+
+  const listen = (target, event, handler, options) => {
+    target.addEventListener(event, handler, options);
+    registrations.push(() => target.removeEventListener(event, handler, options));
+  };
+  const hide = () => {
+    state.drawdown.chartCursorVisible = false;
+    chartElements.forEach(chart => {
+      chart.crosshair.setAttribute('hidden', '');
+      chart.crosshair.style.display = 'none';
+      chart.crosshair.classList.remove('is-visible');
+      chart.primaryMarker.setAttribute('hidden', '');
+      chart.primaryMarker.style.display = 'none';
+      chart.primaryMarker.classList.remove('is-visible');
+      if (chart.comparisonMarker) {
+        chart.comparisonMarker.setAttribute('hidden', '');
+        chart.comparisonMarker.style.display = 'none';
+        chart.comparisonMarker.classList.remove('is-visible');
+      }
+      chart.tooltip.hidden = true;
+    });
+  };
+  const tooltipPlacement = (tooltip, x) => {
+    const percent = Math.max(4, Math.min(96, x / 1000 * 100));
+    tooltip.style.left = `${percent}%`;
+    tooltip.classList.toggle('align-left', percent > 72);
+  };
+  const updateChart = (chart, selectedDate) => {
+    const primaryPoint = interactionApi.findNearestDataPointByDate(chart.definition.points, selectedDate);
+    if (!primaryPoint) return null;
+    const primaryCoord = chartPointCoordinate(primaryPoint, chart.definition.key, chart.definition.options);
+    if (!primaryCoord) return null;
+    chart.crosshair.setAttribute('x1', primaryCoord.x.toFixed(2));
+    chart.crosshair.setAttribute('x2', primaryCoord.x.toFixed(2));
+    chart.primaryMarker.setAttribute('cx', primaryCoord.x.toFixed(2));
+    chart.primaryMarker.setAttribute('cy', primaryCoord.y.toFixed(2));
+    chart.crosshair.removeAttribute('hidden');
+    chart.crosshair.style.display = 'inline';
+    chart.crosshair.classList.add('is-visible');
+    chart.primaryMarker.removeAttribute('hidden');
+    chart.primaryMarker.style.display = 'inline';
+    chart.primaryMarker.classList.add('is-visible');
+    if (chart.type === 'drawdown') {
+      const episode = drawdownEpisodeForDate(view.summary.episodes, primaryPoint.date);
+      chart.tooltip.innerHTML = `<strong>${primaryPoint.date}</strong><span>${escapeHtml(primaryMetric.label)} · 回撤 ${formatPercent(primaryPoint.drawdown, 2)}</span><span>${episode ? `事件：${episode.status === 'ongoing' ? '回撤中' : '已恢复'}（${episode.peakDate} → ${episode.troughDate}）` : '状态：正常'}</span>`;
+    } else {
+      const comparisonPoint = interactionApi.findNearestDataPointByDate(chart.definition.comparison, primaryPoint.date);
+      if (chart.comparisonMarker && comparisonPoint) {
+        const comparisonCoord = chartPointCoordinate(comparisonPoint, 'normalizedValue', chart.definition.options);
+        chart.comparisonMarker.setAttribute('cx', comparisonCoord.x.toFixed(2));
+        chart.comparisonMarker.setAttribute('cy', comparisonCoord.y.toFixed(2));
+        chart.comparisonMarker.removeAttribute('hidden');
+        chart.comparisonMarker.style.display = 'inline';
+        chart.comparisonMarker.classList.add('is-visible');
+      } else if (chart.comparisonMarker) {
+        chart.comparisonMarker.setAttribute('hidden', '');
+        chart.comparisonMarker.style.display = 'none';
+        chart.comparisonMarker.classList.remove('is-visible');
+      }
+      const primaryChange = primaryPoint.normalizedValue / 100 - 1;
+      const comparisonText = comparisonPoint && comparisonMetric
+        ? `<span>${escapeHtml(comparisonMetric.label)} · ${comparisonPoint.normalizedValue.toFixed(2)}（${formatPercent(comparisonPoint.normalizedValue / 100 - 1, 2)}）${comparisonPoint.date === primaryPoint.date ? '' : ` · 实际日期 ${comparisonPoint.date}`}</span>`
+        : '';
+      chart.tooltip.innerHTML = `<strong>${primaryPoint.date}</strong><span>${escapeHtml(primaryMetric.label)} · ${primaryPoint.normalizedValue.toFixed(2)}（${formatPercent(primaryChange, 2)}）</span>${comparisonText}`;
+    }
+    tooltipPlacement(chart.tooltip, primaryCoord.x);
+    chart.tooltip.hidden = false;
+    return primaryPoint;
+  };
+  const selectDate = (date, { announce = false } = {}) => {
+    if (!date) return;
+    state.drawdown.selectedChartDate = date;
+    state.drawdown.chartCursorVisible = true;
+    const selected = chartElements.map(chart => updateChart(chart, date)).filter(Boolean);
+    if (announce && selected[0]) {
+      const normalized = selected.find(point => point.normalizedValue !== undefined);
+      liveRegion.textContent = `${selected[0].date}，${primaryMetric.label} ${selected[0].drawdown !== undefined ? `回撤 ${formatPercent(selected[0].drawdown, 2)}` : `归一化值 ${selected[0].normalizedValue.toFixed(2)}`}${normalized && selected[0] !== normalized ? `，归一化值 ${normalized.normalizedValue.toFixed(2)}` : ''}`;
+    }
+  };
+  const queuePointer = (chart, event) => {
+    pendingPointer = { chart, clientX: event.clientX };
+    if (animationFrame) return;
+    animationFrame = requestAnimationFrame(() => {
+      animationFrame = 0;
+      const next = pendingPointer;
+      pendingPointer = null;
+      const rect = next.chart.frame.getBoundingClientRect();
+      const point = interactionApi.findNearestDataPointByX(next.chart.definition.points, next.clientX, rect, next.chart.definition.options.startDate, next.chart.definition.options.endDate);
+      if (point) selectDate(point.date);
+    });
+  };
+  const indexForDate = (points, date) => points.findIndex(point => point.date === interactionApi.findNearestDataPointByDate(points, date)?.date);
+
+  chartElements.forEach(chart => {
+    let touchStart = null;
+    const pointerEnter = event => { if (event.pointerType !== 'touch') queuePointer(chart, event); };
+    const pointerMove = event => {
+      if (event.pointerType === 'touch' && touchStart) {
+        const dx = event.clientX - touchStart.x;
+        const dy = event.clientY - touchStart.y;
+        if (!touchStart.tracking && Math.abs(dy) > Math.abs(dx) && Math.abs(dy) > 6) return;
+        if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 6) {
+          touchStart.tracking = true;
+          chart.capture.setPointerCapture?.(event.pointerId);
+        }
+        if (touchStart.tracking) event.preventDefault();
+      }
+      queuePointer(chart, event);
+    };
+    const pointerDown = event => {
+      const rect = chart.frame.getBoundingClientRect();
+      const point = interactionApi.findNearestDataPointByX(chart.definition.points, event.clientX, rect, chart.definition.options.startDate, chart.definition.options.endDate);
+      touchStart = event.pointerType === 'touch' ? { x: event.clientX, y: event.clientY, date: point?.date || null, priorDate: state.drawdown.selectedChartDate, priorVisible: state.drawdown.chartCursorVisible, tracking: false } : null;
+      if (point) selectDate(point.date);
+    };
+    const pointerUp = event => {
+      if (event.pointerType === 'touch' && touchStart && !touchStart.tracking && touchStart.priorVisible && touchStart.priorDate === touchStart.date) hide();
+      touchStart = null;
+    };
+    const keyDown = event => {
+      const points = interactionApi.validPoints(chart.definition.points);
+      if (!points.length) return;
+      if (event.key === 'Escape') { event.preventDefault(); hide(); return; }
+      const current = state.drawdown.selectedChartDate || points.at(-1).date;
+      const index = Math.max(0, indexForDate(points, current));
+      let next = null;
+      if (event.key === 'ArrowLeft') next = points[Math.max(0, index - 1)];
+      if (event.key === 'ArrowRight') next = points[Math.min(points.length - 1, index + 1)];
+      if (event.key === 'Home') next = points[0];
+      if (event.key === 'End') next = points.at(-1);
+      if (!next) return;
+      event.preventDefault();
+      selectDate(next.date, { announce: true });
+    };
+    const focus = () => selectDate(state.drawdown.selectedChartDate || interactionApi.validPoints(chart.definition.points).at(-1)?.date, { announce: true });
+    listen(chart.frame, 'pointerenter', pointerEnter);
+    listen(chart.frame, 'pointermove', pointerMove, { passive: false });
+    listen(chart.frame, 'pointerdown', pointerDown);
+    listen(chart.frame, 'pointerup', pointerUp);
+    listen(chart.frame, 'pointercancel', () => { touchStart = null; hide(); });
+    listen(chart.frame, 'pointerleave', event => { if (event.pointerType !== 'touch') hide(); });
+    listen(chart.capture, 'keydown', keyDown);
+    listen(chart.capture, 'focus', focus);
+  });
+  listen(document, 'pointerdown', event => { if (!event.target.closest('.drawdown-interactive-chart')) hide(); });
+  listen(window, 'blur', hide);
+  listen(window, 'resize', () => {
+    if (state.drawdown.chartCursorVisible && state.drawdown.selectedChartDate) selectDate(state.drawdown.selectedChartDate);
+  });
+  return {
+    destroy() {
+      if (animationFrame) cancelAnimationFrame(animationFrame);
+      animationFrame = 0;
+      registrations.splice(0).forEach(remove => remove());
+    }
+  };
 }
 
 function drawdownEventsMarkup(episodes) {
@@ -910,6 +1125,7 @@ function drawdownAnalysisTemplate() {
     return state.drawdown.errors[primaryId] ? drawdownErrorTemplate() : drawdownLoadingTemplate();
   }
   const view = drawdownAnalysisView();
+  activeDrawdownChartView = view;
   const primary = DRAWDOWN_METRICS[primaryId];
   const comparison = state.drawdown.comparisonId ? DRAWDOWN_METRICS[state.drawdown.comparisonId] : null;
   const availableMetrics = availableDrawdownMetrics();
@@ -1060,6 +1276,7 @@ function setActiveNav(route) {
 
 function bindCommonEvents() {
   document.querySelector('[data-drawdown-control="primary"]')?.addEventListener('change', event => {
+    clearDrawdownChartInteraction({ clearDate: true });
     state.drawdown.primaryId = event.target.value;
     if (state.drawdown.comparisonId === state.drawdown.primaryId) {
       state.drawdown.comparisonId = state.drawdown.primaryId === 'nasdaq100_index' ? 'sp500_index' : 'nasdaq100_index';
@@ -1068,6 +1285,7 @@ function bindCommonEvents() {
     render({ preserveScroll: true });
   });
   document.querySelector('[data-drawdown-control="comparison"]')?.addEventListener('change', event => {
+    clearDrawdownChartInteraction({ clearDate: true });
     state.drawdown.comparisonId = event.target.value === state.drawdown.primaryId ? '' : event.target.value;
     render({ preserveScroll: true });
   });
@@ -1081,6 +1299,7 @@ function bindCommonEvents() {
   });
   document.querySelectorAll('[data-drawdown-preset]').forEach(button => {
     button.addEventListener('click', () => {
+      clearDrawdownChartInteraction({ clearDate: true });
       state.drawdown.preset = button.dataset.drawdownPreset;
       state.drawdown.validationMessage = '';
       render({ preserveScroll: true });
@@ -1088,6 +1307,7 @@ function bindCommonEvents() {
   });
   document.querySelectorAll('[data-drawdown-date]').forEach(input => {
     input.addEventListener('change', () => {
+      clearDrawdownChartInteraction({ clearDate: true });
       const startInput = document.querySelector('[data-drawdown-date="start"]');
       const endInput = document.querySelector('[data-drawdown-date="end"]');
       state.drawdown.preset = 'CUSTOM';
@@ -1098,30 +1318,16 @@ function bindCommonEvents() {
     });
   });
   document.querySelector('[data-drawdown-retry]')?.addEventListener('click', async () => {
+    clearDrawdownChartInteraction({ clearDate: true });
     const ids = [state.drawdown.primaryId, state.drawdown.comparisonId].filter(Boolean);
     ids.forEach(id => { delete state.drawdown.errors[id]; });
     render({ preserveScroll: true });
     await Promise.all([...new Set(ids)].map(id => loadDrawdownDataset(id, { force: true })));
     if (parseRoute() === '/drawdown-analysis') render({ preserveScroll: true });
   });
-  document.querySelectorAll('.drawdown-interactive-chart').forEach(figure => {
-    const frame = figure.querySelector('.drawdown-chart-frame');
-    const tooltip = figure.querySelector('.drawdown-chart-tooltip');
-    let points = [];
-    try { points = JSON.parse(figure.dataset.chartPoints || '[]'); } catch { points = []; }
-    if (!frame || !tooltip || points.length < 2) return;
-    const showPoint = event => {
-      const rect = frame.getBoundingClientRect();
-      const relativeX = Math.max(0, Math.min(rect.width, event.clientX - rect.left));
-      const index = Math.round(relativeX / Math.max(rect.width, 1) * (points.length - 1));
-      tooltip.textContent = `${points[index].date} · ${points[index].value}`;
-      tooltip.style.left = `${Math.max(8, Math.min(92, relativeX / Math.max(rect.width, 1) * 100))}%`;
-      tooltip.hidden = false;
-    };
-    frame.addEventListener('pointermove', showPoint);
-    frame.addEventListener('pointerdown', showPoint);
-    frame.addEventListener('pointerleave', event => { if (event.pointerType !== 'touch') tooltip.hidden = true; });
-  });
+  if (state.route === '/drawdown-analysis' && activeDrawdownChartView?.summary) {
+    drawdownChartInteraction = createDrawdownChartInteraction(activeDrawdownChartView);
+  }
 
   document.querySelectorAll('[data-stage-id]').forEach(element => {
     const activate = () => {
@@ -1326,6 +1532,8 @@ function parseRoute() {
 
 function render({ preserveScroll = false } = {}) {
   const route = parseRoute();
+  clearDrawdownChartInteraction({ clearDate: route !== '/drawdown-analysis' });
+  if (route !== '/drawdown-analysis') activeDrawdownChartView = null;
   state.route = route;
   document.body.classList.remove('dialog-open');
   indicatorDialogTrigger = null;
