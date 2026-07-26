@@ -50,3 +50,20 @@ test('drawdown page registers route, navigation, controls, states and responsive
     assert.match(css, new RegExp(`\\.${selector}`));
   }
 });
+
+test('drawdown charts expose synchronized pointer, touch and keyboard interaction contracts', async () => {
+  const root = path.join(__dirname, '..');
+  const [html, app, css] = await Promise.all([
+    fs.readFile(path.join(root, 'public', 'index.html'), 'utf8'),
+    fs.readFile(path.join(root, 'public', 'app.js'), 'utf8'),
+    fs.readFile(path.join(root, 'public', 'styles.css'), 'utf8')
+  ]);
+  for (const contract of [
+    '/drawdown-chart-interactions.js', 'drawdown-chart-crosshair', 'drawdown-chart-marker',
+    'drawdown-chart-pointer-capture', 'requestAnimationFrame', 'pointermove', 'ArrowLeft',
+    'ArrowRight', 'Escape', 'setPointerCapture', 'selectedChartDate', 'clearDrawdownChartInteraction'
+  ]) assert.match(app + html, new RegExp(contract.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  for (const contract of ['touch-action: pan-y', 'cursor: crosshair', 'drawdown-chart-crosshair']) {
+    assert.match(css, new RegExp(contract.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  }
+});
