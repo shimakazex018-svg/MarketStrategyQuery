@@ -132,7 +132,7 @@ Invoke-RestMethod http://127.0.0.1:48101/api/market-data/providers/worldperatio/
 3. `#/compare`：九阶段对比。
 4. `#/options/protective-put` 和另一策略；刷新、前进、后退恢复选择。
 5. `#/indicators`：六指标说明。
-6. `#/drawdown-analysis`：默认Nasdaq-100、S&P 500对比、近10年、15%阈值；验证七个快捷范围、自定义日期、对象互斥、阈值、排序、空错态和前进/后退。
+6. `#/drawdown-analysis`：默认Nasdaq-100、S&P 500对比、近10年、15%阈值；验证七个快捷范围、自定义日期、对象互斥、阈值、排序、空错态、前进/后退，以及两张图真实交易日日期游标同步、右侧Tooltip翻转、Escape关闭和键盘导航。
 7. 未知 Hash：前端 404。
 
 交互通过标准：
@@ -145,6 +145,7 @@ Invoke-RestMethod http://127.0.0.1:48101/api/market-data/providers/worldperatio/
 - 单指标切换范围不改变其他卡片；不可用范围保持禁用。
 - 控制台无错误。
 - 回撤页核心计算必须使用`range=ALL`完整历史；切换范围不得重复请求，同日期冲突必须失败，null不得变成0，两个对比序列必须从首个共同日期归一化为100。
+- 回撤图日期游标必须从完整有效点二分吸附，不能由显示抽样或插值生成日期；pointermove使用动画帧节流，触摸仅在明确横向跟踪时阻止默认滚动，重新渲染、离开路由、失焦和取消时必须清理监听器与待执行帧。
 - SOXX专项必须覆盖准确标的、SOX/SOXL/SOXS拒绝、NAV/market/adjusted口径、排序/重复/冲突/null、基金成立日前数据、2024拆分连续性、幂等原子导入、Provider失败隔离、API元数据、可选UI和首页仍为六卡。
 - 官方SOXX文件只允许人工下载到`runtime-data/`后执行：`node tools/market-data/import-soxx-history.js runtime-data/market-data/soxx-audit/official-data-download.xlsx --series-type nav --adjustment-status provider_adjusted --source official-ishares --source-url https://www.ishares.com/us/products/239705/SOXX`。第二次执行必须报告`changed=false`。
 
@@ -157,7 +158,7 @@ Invoke-RestMethod http://127.0.0.1:48101/api/market-data/providers/worldperatio/
 - 长文本不溢出、不遮挡按钮、不被固定高度裁切。
 - 导航、标签、折叠、弹窗和周期阶段支持键盘操作。
 - 触摸目标不小于现有设计要求；375px 使用移动导航。
-- 回撤页在平板使用两列摘要，在手机使用事件卡片和至少两列年度收益卡；图表提示不得超出视口。
+- 回撤页在平板使用两列摘要，在手机使用事件卡片和至少两列年度收益卡；图表提示不得超出视口。真实iPad/iPhone验证时应确认单指纵向滚动仍有效，横向拖动才进入日期跟踪。
 - `prefers-reduced-motion: reduce` 下动画近乎即时。
 
 真实 iPad/iPhone 触摸、系统字体、125% 缩放、ZeroTier 路由和防火墙策略必须在目标设备人工验证，当前状态：待确认。
@@ -217,6 +218,8 @@ Invoke-RestMethod http://127.0.0.1:48101/api/market-data/providers/worldperatio/
 - 缺失资源返回 404：Hash Router 下是预期行为。
 
 ## 最近确认的基线
+
+2026-07-26，回撤图同步日期游标按完整check内容验证：149项测试通过、0失败，数据检查确认9阶段、8期权、6首页指标和7范围，全部语法检查与`git diff --check`通过。合成评审页覆盖桌面、平板和手机视口的SVG虚线、选中点、同步日期、Tooltip翻转、键盘移动和Escape关闭；真实iPad/iPhone硬件触摸仍待目标设备人工验收。
 
 2026-07-22，SOXX ETF回撤接入完整检查：144项测试通过、0失败，数据检查确认9阶段、8期权、6首页指标和7范围，全部语法检查与`git diff --check`通过。官方文件离线导入首次`changed=true`、重复执行`changed=false`；合成视觉夹具覆盖SOXX主对象、双向对比、10年、全历史、ongoing、不可用、1440×900、768×1024和390×844，控制台0错误且无页面级横向溢出。
 

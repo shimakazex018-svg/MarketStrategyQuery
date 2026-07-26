@@ -4,7 +4,7 @@
 
 ```text
 浏览器
-  -> public/index.html + public/styles.css + public/app.js + public/drawdown-analysis.js
+  -> public/index.html + public/styles.css + public/app.js + public/drawdown-analysis.js + public/drawdown-chart-interactions.js
   -> public/data/*.json
   -> 本站 /api/market-data/*
        -> market data service
@@ -52,13 +52,13 @@ docs/                           # 长期上下文与专项设计文档
 
 ## 前端模块
 
-- `public/app.js` 启动时并行加载阶段、期权、指标和周期图 JSON，随后按当前 Hash 渲染页面；`public/drawdown-analysis.js`提供可由浏览器和Node测试共同调用的纯回撤计算函数。
+- `public/app.js` 启动时并行加载阶段、期权、指标和周期图 JSON，随后按当前 Hash 渲染页面；`public/drawdown-analysis.js`提供可由浏览器和Node测试共同调用的纯回撤计算函数；`public/drawdown-chart-interactions.js`提供日期二分吸附、SVG坐标换算和日期到X坐标映射的纯函数。
 - 路由固定为 `#/`、`#/stage/:id`、`#/compare`、`#/drawdown-analysis`、`#/options`、`#/options/:id`、`#/indicators`；未知 Hash 显示前端 404。
 - 阶段详情按概览、仓位、执行动作、资产逻辑、识别条件、期权和风险组织；动作和资产逻辑同一时间各显示一个面板。
 - 期权工具同一时间完整展示一个策略；最大收益、最大亏损、盈亏平衡和主要风险保持可见。
 - 周期图由 `cycle-shape.json` 驱动 SVG；它是静态示意，不是 QQQ 真实历史。
 - 指标卡只请求本站内部 API；路由切换会取消未完成请求。历史路径在服务端限制点数，避免 SVG、内存和 DOM 无界增长。
-- 回撤分析页为两个指数及可用SOXX ETF分别缓存一次`range=ALL`完整历史，所有时间区间在前端过滤和计算；SOXX缺失或无效时从选择器省略。核心算法不使用图表抽样。SVG最多保留约620个显示点，并强制保留最大回撤峰谷、恢复点与最新点。
+- 回撤分析页为两个指数及可用SOXX ETF分别缓存一次`range=ALL`完整历史，所有时间区间在前端过滤和计算；SOXX缺失或无效时从选择器省略。核心算法不使用图表抽样。SVG最多保留约620个显示点，并强制保留最大回撤峰谷、恢复点与最新点；日期游标改用完整有效序列二分吸附，只重绘虚线、选中点与Tooltip，不改显示路径或算法结果。
 - 主题使用根元素 `data-theme`；断点为 1100px、760px 和 440px；`prefers-reduced-motion` 下动画缩短。
 
 ## 产品 JSON 模型
