@@ -14,11 +14,12 @@ function safeRecord(input = {}) {
     trigger: ['scheduled', 'startup_catchup', 'manual_import', 'local_reload', 'service_start'].includes(input.trigger) ? input.trigger : 'scheduled',
     startedAt: input.startedAt || null,
     completedAt: input.completedAt || null,
-    result: ['success', 'failed', 'skipped', 'cached', 'partial'].includes(input.result) ? input.result : 'failed',
+    result: ['success', 'success_with_exclusions', 'failed', 'skipped', 'cached', 'partial'].includes(input.result) ? input.result : 'failed',
     externalRequestCount: Math.max(0, Number(input.externalRequestCount) || 0),
     cacheAction: ['updated', 'unchanged', 'stale_fallback', 'none'].includes(input.cacheAction) ? input.cacheAction : 'none',
     sourceDataDate: /^\d{4}-\d{2}-\d{2}$/.test(input.sourceDataDate || '') ? input.sourceDataDate : null,
-    errorCategory: input.errorCategory ? String(input.errorCategory).replace(/[^a-z0-9_-]/gi, '_').slice(0, 64) : null
+    errorCategory: input.errorCategory ? String(input.errorCategory).replace(/[^a-z0-9_-]/gi, '_').slice(0, 64) : null,
+    excludedConflictDateCount: Math.max(0, Number(input.excludedConflictDateCount) || 0)
   };
 }
 

@@ -6,6 +6,7 @@ const {
   NAAIM_METRIC_ID, assertLocalNaaimInput, inspectNaaimWorkbook,
   normalizeNaaimRows, validateStoredNaaim, CONFLICT_POLICY
 } = require('../../server/data-sources/naaim-exposure-provider');
+const { AcquisitionAudit } = require('../../server/market-data/acquisition-audit');
 
 const ROOT = path.resolve(__dirname, '../..');
 const IMPORT_ROOT = path.join('runtime-data', 'imports', 'naaim');
@@ -93,6 +94,13 @@ async function importNaaimExposure({ file, rootDir = ROOT, now = new Date(), req
     rowCount: model.rowCount, validation: model.validation, excludedConflictDateCount: conflictDates.length
   };
   await writeAtomic(statePath, state);
+  await new AcquisitionAudit(path.join(rootDir, 'runtime-data'), { now: () => new Date(now) }).append({
+    providerId: 'naaim', metricId: NAAIM_METRIC_ID, trigger: 'manual_import',
+    startedAt: importedAt, completedAt: importedAt,
+    result: changed ? 'success_with_exclusions' : 'skipped', externalRequestCount: 0,
+    cacheAction: changed ? 'updated' : 'unchanged', sourceDataDate: model.sourceDataDate,
+    excludedConflictDateCount: conflictDates.length
+  });
   return {
     ok: true, changed, metricId: NAAIM_METRIC_ID, workbookSheets: audit.sheetNames,
     selectedSheet: audit.selectedSheet, firstDate: model.firstDate, lastDate: model.lastDate,
