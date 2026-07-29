@@ -138,7 +138,7 @@ class MarketDataScheduler {
   nextNaaimScheduledAt() {
     const base = this.now(); const formatter = new Intl.DateTimeFormat('en-CA', { timeZone: this.timezone, year: 'numeric', month: '2-digit', day: '2-digit' });
     const parts = formatter.formatToParts(base).reduce((acc, part) => ({ ...acc, [part.type]: part.value }), {}); let candidate = new Date(`${parts.year}-${parts.month}-${parts.day}T07:30:00+08:00`);
-    while (candidate <= base || ![5, 6].includes(candidate.getUTCDay())) candidate.setUTCDate(candidate.getUTCDate() + 1);
+    while (candidate <= base || !['Fri', 'Sat'].includes(zonedParts(candidate, this.timezone).weekday)) candidate.setUTCDate(candidate.getUTCDate() + 1);
     return candidate.toISOString();
   }
 
