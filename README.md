@@ -76,3 +76,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\open-firewall.ps1
 策略内容使用JSON配置，便于后续Codex修改，不需要开发后台编辑器。
 
 长期维护与验收说明见 `docs/ARCHITECTURE.md`、`docs/TESTING.md` 和 `docs/HANDOFF.md`。
+
+## Latest Visual Review
+
+最新可提交的网页内容区快照、隐私检查结果和审阅说明见 [previews/current/manifest.md](previews/current/manifest.md)。UI 改动完成后执行 `npm.cmd run visual:current` 刷新；该工具只访问本机 `127.0.0.1:48101`。

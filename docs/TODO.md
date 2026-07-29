@@ -4,6 +4,10 @@
 
 ## High Priority
 
+- [x] 建立持续视觉快照流程
+  - 说明：`previews/current/`固定保存当前WebP、contact sheet和manifest；本机开发工具只访问48101并执行隐私、尺寸、溢出、控制台和外部请求门禁。
+  - 状态：完成；正式版本归档才创建`previews/releases/<VERSION>/`。
+
 - [x] 完成数据源与采集状态设置页
   - 说明：新增只读 `#/settings`、内部状态 API、有限采集审计记录与响应式展示；明确无实时行情、FRED/WorldPEratio日频检查和SOXX本地NAV导入。
   - 边界：不改变Provider、来源URL、采集频率、07:30调度、Windows启动或首页；设置页不触发外部请求。

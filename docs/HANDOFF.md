@@ -6,6 +6,7 @@
 - 新增 `#/settings`：顶部齿轮入口、只读数据源与采集状态页、60秒仅内部 API 的状态轮询；无实时行情源。
 - `GET /api/settings/data-acquisition` 聚合 FRED（4项）、WorldPEratio（2项）和 iShares 本地导入 SOXX NAV（1项）的现有运行状态，绝不触发刷新或外部请求。
 - API 只返回中性凭据使用布尔状态，不返回Cookie或Token名称、内容或其他敏感凭据。
+- UI改动完成并通过检查后运行`npm.cmd run visual:current`，覆盖`previews/current/`最新快照；截图只包含网页内容区并经过DOM、manifest、文件名和视觉隐私检查。
 - 调度仍是 Asia/Shanghai 每日07:30；Windows 无感启动仅负责服务启动，不是采集任务。
 - `runtime-data/system/data-acquisition-audit.json` 从本功能上线后开始记录，原子写入、损坏隔离，最多200条或90天；不含原始数据、HTML、路径、Cookie、Token或内容哈希。
 

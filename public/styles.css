@@ -997,6 +997,7 @@ figure[data-chart-type="normalized"] .drawdown-chart-marker.primary { fill: var(
 .settings-table tr:last-child td { border-bottom: 0; }
 .settings-table td small { display: block; margin-top: 3px; }
 .settings-table a { color: var(--accent-strong); text-decoration: underline; text-underline-offset: 2px; }
+.settings-runs-toggle { justify-self: start; }
 
 @media (max-width: 1100px) {
   .hero { grid-template-columns: 1fr; min-height: auto; }

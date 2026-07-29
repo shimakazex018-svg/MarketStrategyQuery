@@ -138,6 +138,10 @@ Invoke-RestMethod http://127.0.0.1:48101/api/market-data/providers/worldperatio/
 - `#/settings` 只请求 `/api/settings/data-acquisition`；首次加载、刷新状态和60秒轮询不得调用刷新接口或第三方来源，离开路由必须清除轮询。
 - 手动刷新只允许可信本地网络，并受 30 分钟冷却、并发锁和每日预算限制。
 
+## 持续视觉快照
+
+UI、布局或交互改动通过完整检查后执行 `npm.cmd run visual:current`。该命令只访问`http://127.0.0.1:48101`，检查health、DOM隐私、控制台、页面溢出和外部请求，生成并覆盖`previews/current/`中的WebP与manifest。普通开发不创建历史目录；仅正式版本可复制到`previews/releases/<VERSION>/`。
+
 ## 页面回归
 
 至少检查：
