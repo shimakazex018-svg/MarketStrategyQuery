@@ -17,6 +17,8 @@ test('dashboard owns the six indicator explanations and removes the legacy navig
   assert.match(app, /history\.replaceState\(null, '', `\$\{location\.pathname\}\$\{location\.search\}#\/`\)/);
   assert.doesNotMatch(app, /else if \(route === '\/indicators'\)/);
   assert.doesNotMatch(app, /else if \(route\.startsWith\('\/indicators\/'\)\)/);
+  assert.doesNotMatch(app, /function indicatorsTemplate\(/);
+  assert.doesNotMatch(app, /function metricDetailTemplate\(/);
 });
 
 test('each dashboard card uses a real accessible dialog button without hash navigation', async () => {

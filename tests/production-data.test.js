@@ -80,8 +80,8 @@ test('frontend publishes only six current metrics and disables legacy indicator 
   const root = path.join(__dirname, '..'); const indicators = JSON.parse(await fs.readFile(path.join(root, 'public', 'data', 'indicators.json'), 'utf8')); const app = await fs.readFile(path.join(root, 'public', 'app.js'), 'utf8');
   assert.deepEqual(indicators.map(item => item.id), PRODUCTION_METRIC_IDS);
   for (const hidden of ['Forward PE', 'QQQ RV20', '自建风险偏好', '机构仓位']) assert.equal(indicators.some(item => item.name.includes(hidden)), false);
-  assert.match(app, /该指标当前版本未启用/); assert.match(app, /不足2点不绘制折线/); assert.match(app, /当前PE与历史统计区间/);
-  assert.match(app, /interactive-history-chart/); assert.match(app, /pointermove/); assert.match(app, /history-chart-axis/);
+  assert.match(app, /function indicatorInfoMeta\(/); assert.match(app, /metric-info-button/); assert.match(app, /数据来源与口径/);
+  assert.match(app, /interactive-history-chart/); assert.match(app, /pointermove/); assert.match(app, /indicator-dialog-portal/);
 });
 
 test('one provider failure marks only its metric stale', async t => {

@@ -625,22 +625,6 @@ function optionsTemplate(selectedId) {
     </div>`;
 }
 
-function indicatorsTemplate() {
-  return `
-    <div class="page">
-      <div class="breadcrumb"><a href="#/">首页</a><span>/</span><span>指标说明</span></div>
-      <header class="page-title"><div><p class="eyebrow">Indicator Reference</p><h1>六类辅助指标</h1><p>指标用于描述估值、实现波动率、风险偏好和期货市场机构仓位。数据状态逐项独立，且不构成网页自动判断。</p></div></header>
-      <section class="indicator-list">
-        ${state.indicators.map(indicator => {
-          const market = state.marketData[indicator.id] || initialMarketModel(indicator);
-          const status = DATA_STATUS[market.status] || DATA_STATUS.error;
-          const value = market.value === null || market.value === undefined ? '—' : `${market.value}${market.unit || indicator.unit || ''}`;
-          return `<article class="indicator-row reveal"><div><h2>${escapeHtml(indicator.name)}</h2><span class="metric-status" data-status="${status.tone}">${status.label} · ${escapeHtml(value)}</span><p>${escapeHtml(market.source || '—')} · ${escapeHtml(market.asOf || '无数据日期')}</p></div><div><strong>指标意义</strong><p>${escapeHtml(indicator.meaning)}</p></div><div><strong>使用限制</strong><p>${escapeHtml(indicator.limits)}</p></div></article>`;
-        }).join('')}
-      </section>
-    </div>`;
-}
-
 function externalPeRangeCard(label, stats, currentPE) {
   const mean = Number(stats?.mean);
   const stdDev = Number(stats?.stdDev);
@@ -698,22 +682,6 @@ function externalPeTemplate() {
     <div class="external-pe-ranges">${ranges.map(([label, key]) => externalPeRangeCard(label, stats.historicalStats?.[key], stats.currentPE)).join('')}</div>
     ${externalPeSeriesMarkup(external)}
   </section>`;
-}
-
-function metricDetailTemplate(id) {
-  const indicator = state.indicators.find(item => item.id === id);
-  if (!indicator) return `<div class="page"><div class="notice"><strong>该指标当前版本未启用</strong><span>当前正式范围仅包含首页展示的六项指标。</span></div></div>`;
-  const market = state.marketData[id] || initialMarketModel(indicator); const status = DATA_STATUS[market.status] || DATA_STATUS.error;
-  const history = Array.isArray(market.history) ? market.history : []; const values = history.map(point => Number(point.value)).filter(Number.isFinite); const chart = values.length > 1 ? seriesToPath(values, 720, 220, 14) : null;
-  const high = values.length ? Math.max(...values) : null; const low = values.length ? Math.min(...values) : null; const isPe = id.endsWith('_pe');
-  const statistics = market.historicalStatistics || {}; const ranges = [['1年', '1y'], ['5年', '5y'], ['10年', '10y'], ['20年', '20y']];
-  const statsMarkup = isPe ? `<section class="external-pe-ranges">${ranges.map(([label, key]) => externalPeRangeCard(label, { mean: statistics[key]?.average, stdDev: statistics[key]?.standardDeviation }, market.value)).join('')}</section>` : '';
-  const rangeKey = state.ranges[id] || '1Y';
-  const rangeTabs = `<div class="range-tabs detail-range-tabs" role="group" aria-label="历史时间范围">${RANGE_KEYS.map((key, index) => `<button class="range-tab${key === rangeKey ? ' active' : ''}" data-indicator-id="${id}" data-range="${key}" type="button" aria-pressed="${key === rangeKey}">${RANGE_LABELS[index]}</button>`).join('')}</div>`;
-  const chartPoints = history.map(point => ({ date: point.date, value: Number(point.value) })).filter(point => point.date && Number.isFinite(point.value));
-  const lastPoint = chart?.points?.at(-1);
-  const chartMarkup = chart ? `<figure class="external-pe-series interactive-history-chart" data-chart-points="${escapeHtml(JSON.stringify(chartPoints))}"><figcaption>${isPe ? '真实快照曲线' : '真实日频历史曲线'}</figcaption><div class="history-chart-frame"><svg viewBox="0 0 720 220" preserveAspectRatio="none" role="img" aria-label="${escapeHtml(indicator.name)}真实历史曲线"><line class="baseline" x1="14" x2="706" y1="206" y2="206"></line><path class="line" d="${chart.line}"></path><circle class="current-marker" cx="${lastPoint?.[0]}" cy="${lastPoint?.[1]}" r="5"></circle></svg><output class="history-chart-tooltip" hidden></output></div><div class="history-chart-axis history-chart-axis-y"><span>${high}</span><span>${low}</span></div><div class="history-chart-axis history-chart-axis-x"><span>${escapeHtml(history[0]?.date)}</span><span>${escapeHtml(history.at(-1)?.date)}</span></div><p>${history.length}点 · 低点 ${low} · 高点 ${high}</p></figure>` : `<div class="external-pe-series-empty"><strong>${history.length ? '当前PE与历史统计区间' : '暂无数据'}</strong><span>${isPe ? `当前有${history.length}个真实快照；不足2点不绘制折线。` : '历史不足2点时不绘制折线。'}</span></div>`;
-  return `<div class="page"><div class="breadcrumb"><a href="#/">首页</a><span>/</span><a href="#/indicators">指标说明</a><span>/</span><span>${escapeHtml(indicator.name)}</span></div><header class="page-title"><div><p class="eyebrow">Market Data</p><h1>${escapeHtml(indicator.name)}</h1><p>${escapeHtml(indicator.definition)}</p></div><span class="metric-status" data-status="${status.tone}">${status.label}</span></header><section class="external-pe-section"><div class="external-pe-summary"><article><span>当前值</span><strong>${hasFiniteValue(market.value) ? escapeHtml(market.value) : '—'}${isPe ? 'x' : ''}</strong></article><dl><div><dt>数据日期</dt><dd>${escapeHtml(market.asOf || '—')}</dd></div><div><dt>数据来源</dt><dd>${escapeHtml(market.source || '—')}</dd></div><div><dt>更新时间</dt><dd>${escapeHtml(formatDateTime(market.updatedAt))}</dd></div><div><dt>${isPe ? '估值标签' : '相对前值'}</dt><dd>${escapeHtml(isPe ? market.valuationLabel || '—' : hasFiniteValue(market.change) ? market.change : '—')}</dd></div></dl></div><h2>${isPe ? '当前PE与历史统计区间' : '历史曲线'}</h2>${statsMarkup}${rangeTabs}${chartMarkup}<div class="notice"><strong>数据说明</strong><span>本站数据仅用于个人市场观察和研究，不构成投资建议。数据可能存在延迟、修订或来源口径差异。</span></div>${isPe ? '<div class="notice"><strong>PE口径</strong><span>Nasdaq-100和S&P 500 PE来自第三方公开参考数据，不代表指数编制机构官方估值。PE历史曲线从本站首次成功采集日期开始积累。</span></div>' : '<div class="notice"><strong>FRED口径</strong><span>数据通过FRED获取，原始来源以指标详情页标注为准。</span></div>'}</section></div>`;
 }
 
 function naaimObservationTemplate() {
