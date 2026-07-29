@@ -526,7 +526,7 @@ class MarketDataService {
         lastAttemptAt: entries.map(item => item.lastAttemptAt).filter(Boolean).sort().at(-1) || null, lastSuccessAt: entries.map(item => item.lastSuccessAt).filter(Boolean).sort().at(-1) || null,
         nextScheduledAt: provider.updateMode === 'scheduled_daily' ? nextScheduledAt : null, attemptsToday: Math.max(0, ...entries.map(item => Number(diagnostic?.metrics?.[item.metricId]?.attempts) || 0)),
         dailyRequestBudget: provider.networkAccessEnabled ? 2 * entries.length : 0, lastErrorCategory: entries.map(item => diagnostic?.metrics?.[item.metricId]?.lastError?.type).find(Boolean) || diagnostics.ishares?.lastError || null,
-        datasets: entries, note: provider.note };
+        datasets: entries, excludedConflictDateCount: Math.max(0, ...entries.map(item => Number(item.excludedConflictDateCount) || 0)), note: provider.note };
     });
     const recentRuns = (await this.audit.read()).slice(-20).reverse();
     const allFresh = datasets.every(item => ['fresh', 'manual'].includes(item.status));
