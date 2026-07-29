@@ -52,6 +52,7 @@ class NaaimOfficialUpdater {
   constructor({ rootDir, fetchImpl = global.fetch, now = () => new Date(), timezone = 'Asia/Shanghai' }) {
     this.rootDir = rootDir; this.fetchImpl = fetchImpl; this.now = now; this.timezone = timezone;
     this.statePath = path.join(rootDir, 'runtime-data', 'market-data', 'production', 'naaim', 'updater-state.json');
+    this.lockPath = path.join(rootDir, 'runtime-data', 'market-data', 'production', 'naaim', 'updater.lock');
   }
   async getState() { return readState(this.statePath); }
   async due({ startup = false } = {}) {
@@ -59,20 +60,23 @@ class NaaimOfficialUpdater {
     const hourMinute = new Intl.DateTimeFormat('en-GB', { timeZone: this.timezone, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(now);
     if (!['Fri', 'Sat'].includes(weekday) || hourMinute < '07:30') return false;
     const state = await this.getState(); const week = isoWeek(now, this.timezone); const day = new Intl.DateTimeFormat('en-CA', { timeZone: this.timezone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
-    if (state.week === week && state.lastAttemptDay === day) return false;
-    if (state.week === week && state.updatedThisWeek) return false;
+    if (state.week === week && (state.lastAttemptDay === day || state.updatedThisWeek || Number(state.pageCheckCount || 0) >= 2)) return false;
     return true;
   }
   async update({ trigger = 'scheduled_weekly', startup = false } = {}) {
-    const startedAt = this.now().toISOString(); const state = await this.getState(); const week = isoWeek(this.now(), this.timezone);
+    let lock; try { await fs.mkdir(path.dirname(this.lockPath), { recursive: true }); lock = await fs.open(this.lockPath, 'wx'); } catch (error) { if (error.code === 'EEXIST') return { ok: false, result: 'already_running', externalRequestCount: 0 }; throw error; }
+    const startedAt = this.now().toISOString(); const stored = await this.getState(); const week = isoWeek(this.now(), this.timezone);
+    const state = stored.week === week ? stored : { week, pageCheckCount: 0, workbookDownloadCount: 0, updatedThisWeek: false, lastAttemptDay: null };
     const persist = async patch => { const next = { ...state, ...patch, week, updatedAt: this.now().toISOString() }; await writeAtomic(this.statePath, next); return next; };
     const day = new Intl.DateTimeFormat('en-CA', { timeZone: this.timezone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(this.now());
     let externalRequestCount = 0; let temporary = null;
     try {
+      if (Number(state.pageCheckCount || 0) >= 2) return { ok: true, changed: false, result: 'weekly_limit_reached', externalRequestCount: 0 };
       const page = await boundedFetch(this.fetchImpl, OFFICIAL_PAGE, { headers: { Accept: 'text/html' }, redirect: 'error' }); externalRequestCount += 1;
       const html = await page.text();
-      if (!page.ok) { const result = categoryFor(page, html); await persist({ lastAttemptAt: startedAt, lastAttemptDay: day, result, accessState: result, externalRequestCount }); return { ok: false, result, externalRequestCount }; }
+      if (!page.ok) { const result = categoryFor(page, html); await persist({ lastAttemptAt: startedAt, lastAttemptDay: day, pageCheckCount: Number(state.pageCheckCount || 0) + 1, result, accessState: result, externalRequestCount }); return { ok: false, result, externalRequestCount }; }
       const workbookUrl = discoverOfficialWorkbookLink(html, OFFICIAL_PAGE);
+      if (Number(state.workbookDownloadCount || 0) >= 1) { await persist({ lastAttemptAt: startedAt, lastAttemptDay: day, pageCheckCount: Number(state.pageCheckCount || 0) + 1, result: 'weekly_download_limit_reached', externalRequestCount }); return { ok: true, changed: false, result: 'weekly_download_limit_reached', externalRequestCount }; }
       const download = await boundedFetch(this.fetchImpl, workbookUrl, { headers: { Accept: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }, redirect: 'error' }); externalRequestCount += 1;
       const body = Buffer.from(await download.arrayBuffer());
       if (!download.ok || body.length < 4 || body.length > MAX_DOWNLOAD_BYTES || body.subarray(0, 4).toString('binary') !== 'PK\x03\x04') throw Object.assign(new TypeError('NAAIM workbook download is invalid'), { category: categoryFor(download, body.subarray(0, 300).toString('utf8')) });
@@ -83,15 +87,15 @@ class NaaimOfficialUpdater {
       const sourceDataDate = candidate.model.sourceDataDate;
       if (current?.sourceDataDate >= sourceDataDate) {
         const result = current.sourceDataDate === sourceDataDate && JSON.stringify(current.values) !== JSON.stringify(candidate.model.values) ? 'source_revision_detected' : 'no_change';
-        await persist({ lastAttemptAt: startedAt, lastAttemptDay: day, lastDownloadedAt: this.now().toISOString(), latestWorkbookId: compactWorkbookId(workbookUrl), sourceDataDate: current.sourceDataDate, result, accessState: 'public_official_workbook', externalRequestCount });
+        await persist({ lastAttemptAt: startedAt, lastAttemptDay: day, pageCheckCount: Number(state.pageCheckCount || 0) + 1, workbookDownloadCount: Number(state.workbookDownloadCount || 0) + 1, lastDownloadedAt: this.now().toISOString(), latestWorkbookId: compactWorkbookId(workbookUrl), sourceDataDate: current.sourceDataDate, result, accessState: 'public_official_workbook', externalRequestCount });
         return { ok: true, changed: false, result, sourceDataDate: current.sourceDataDate, externalRequestCount };
       }
       const imported = await importNaaimExposure({ file: relative, rootDir: this.rootDir, now: this.now(), requireProductionCoverage: true, trigger, externalRequestCount, writeAudit: false });
-      await persist({ lastAttemptAt: startedAt, lastAttemptDay: day, lastSuccessAt: this.now().toISOString(), lastDownloadedAt: this.now().toISOString(), latestWorkbookId: compactWorkbookId(workbookUrl), sourceDataDate, result: 'success', accessState: 'public_official_workbook', externalRequestCount, updatedThisWeek: true });
+      await persist({ lastAttemptAt: startedAt, lastAttemptDay: day, pageCheckCount: Number(state.pageCheckCount || 0) + 1, workbookDownloadCount: Number(state.workbookDownloadCount || 0) + 1, lastSuccessAt: this.now().toISOString(), lastDownloadedAt: this.now().toISOString(), latestWorkbookId: compactWorkbookId(workbookUrl), sourceDataDate, result: 'success', accessState: 'public_official_workbook', externalRequestCount, updatedThisWeek: true });
       return { ok: true, changed: imported.changed, result: 'success', sourceDataDate, externalRequestCount };
     } catch (error) {
-      const result = error.category || 'source_unavailable'; await persist({ lastAttemptAt: startedAt, lastAttemptDay: day, result, accessState: result, externalRequestCount }); return { ok: false, result, externalRequestCount };
-    } finally { if (temporary) await fs.rm(temporary, { force: true }); }
+      const result = error.category || 'source_unavailable'; await persist({ lastAttemptAt: startedAt, lastAttemptDay: day, pageCheckCount: Number(state.pageCheckCount || 0) + (externalRequestCount ? 1 : 0), result, accessState: result, externalRequestCount }); return { ok: false, result, externalRequestCount };
+    } finally { if (temporary) await fs.rm(temporary, { force: true }); await lock?.close(); await fs.rm(this.lockPath, { force: true }); }
   }
 }
 
