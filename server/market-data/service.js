@@ -534,7 +534,7 @@ class MarketDataService {
       summary: { enabledProviderCount: providers.length, enabledDatasetCount: datasets.length, dailyNetworkDatasetCount: datasets.filter(item => item.networkFetchEnabled).length, localImportDatasetCount: datasets.filter(item => !item.networkFetchEnabled).length, realtimeProviderCount: 0, schedulerStatus: scheduler?.running ? 'running' : allFresh ? 'normal' : 'partial' },
       realtime: { enabled: false, message: '当前网站没有实时行情源。FRED和WorldPEratio按日检查，SOXX使用本地导入的官方NAV数据。' },
       providers, datasets, recentRuns,
-      storage: { runtimeDataIgnored: true, gitTracksRealMarketData: false, rawHtmlStored: false, cookiesOrTokensUsed: false, externalApiExposed: false, message: '真实市场数据、运行缓存和采集记录仅保存在服务器本地runtime-data目录，不进入Git仓库。' }
+      storage: { runtimeDataIgnored: true, gitTracksRealMarketData: false, rawHtmlStored: false, credentialsUsed: false, externalApiExposed: false, message: '真实市场数据、运行缓存和采集记录仅保存在服务器本地runtime-data目录，不进入Git仓库。' }
     };
   }
 }

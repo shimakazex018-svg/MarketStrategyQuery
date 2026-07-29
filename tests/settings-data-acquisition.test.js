@@ -23,7 +23,7 @@ test('acquisition audit is bounded, sanitizes metadata, and isolates corrupt fil
 
 test('settings status endpoint is read-only and never invokes refresh', async t => {
   let refreshCalls = 0; let statusCalls = 0;
-  const payload = { summary: { enabledProviderCount: 3, enabledDatasetCount: 7, realtimeProviderCount: 0 }, providers: [{ providerId: 'fred' }], datasets: [{ metricId: 'vix' }], recentRuns: [], storage: { runtimeDataIgnored: true, gitTracksRealMarketData: false, rawHtmlStored: false, cookiesOrTokensUsed: false, externalApiExposed: false } };
+  const payload = { summary: { enabledProviderCount: 3, enabledDatasetCount: 7, realtimeProviderCount: 0 }, providers: [{ providerId: 'fred' }], datasets: [{ metricId: 'vix' }], recentRuns: [], storage: { runtimeDataIgnored: true, gitTracksRealMarketData: false, rawHtmlStored: false, credentialsUsed: false, externalApiExposed: false } };
   const service = { getDataAcquisitionStatus: async () => { statusCalls += 1; return payload; }, refresh: async () => { refreshCalls += 1; } };
   const server = createHttpServer(service); await new Promise(resolve => server.listen(0, '127.0.0.1', resolve)); t.after(() => new Promise(resolve => server.close(resolve)));
   const response = await fetch(`http://127.0.0.1:${server.address().port}/api/settings/data-acquisition`);
@@ -33,4 +33,11 @@ test('settings status endpoint is read-only and never invokes refresh', async t 
 test('settings frontend contracts retain a named settings route and internal-only refresh', async () => {
   const root = path.join(__dirname, '..'); const app = await fs.readFile(path.join(root, 'public', 'app.js'), 'utf8'); const html = await fs.readFile(path.join(root, 'public', 'index.html'), 'utf8');
   assert.match(html, /href="#\/settings"[^>]*aria-label="设置"/); assert.match(app, /route === '\/settings'/); assert.match(app, /\/api\/settings\/data-acquisition/); assert.match(app, /setInterval\(\(\) => void loadSettingsStatus\(\), 60_000\)/); assert.match(app, /clearSettingsPolling/);
+});
+
+test('settings API contract uses neutral credential metadata names', async () => {
+  const source = await fs.readFile(path.join(__dirname, '..', 'server', 'market-data', 'service.js'), 'utf8');
+  const settingsBlock = source.slice(source.indexOf('storage: {'), source.indexOf('\n    };', source.indexOf('storage: {')));
+  assert.match(settingsBlock, /credentialsUsed: false/);
+  assert.doesNotMatch(settingsBlock, /cookiesOrTokensUsed|cookie|token|contentHash|absolutePath/i);
 });
