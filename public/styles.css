@@ -141,6 +141,7 @@ button { color: inherit; }
   transition: transform .2s ease, border-color .2s ease, background .2s ease;
 }
 .icon-button:hover { transform: translateY(-1px); border-color: var(--line-strong); background: var(--surface); }
+.settings-button.active { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-strong); }
 .mobile-only { display: none; }
 .mobile-nav {
   position: fixed;
@@ -972,6 +973,31 @@ figure[data-chart-type="normalized"] .drawdown-chart-marker.primary { fill: var(
 .drawdown-skeleton { display: block; width: 58%; height: 18px; border-radius: 8px; background: linear-gradient(90deg, var(--surface-muted), var(--line), var(--surface-muted)); background-size: 220% 100%; animation: metric-loading 1.2s linear infinite; }
 .drawdown-skeleton.wide { width: 100%; height: 42px; }
 
+.settings-page { display: grid; gap: 30px; }
+.settings-hero { min-height: 0; }
+.settings-realtime, .settings-storage { margin: 0; padding: 16px 18px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--accent-soft); color: var(--text); }
+.settings-section { display: grid; gap: 16px; }
+.settings-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.settings-summary article, .settings-card { min-width: 0; padding: 18px; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--surface); box-shadow: 0 8px 28px rgba(24,43,74,.04); }
+.settings-summary span, .settings-summary strong { display: block; }
+.settings-summary span, .settings-facts dt, .settings-table th, .settings-table small { color: var(--text-soft); font-size: 11px; }
+.settings-summary strong { margin-top: 7px; font-size: 25px; letter-spacing: -.04em; overflow-wrap: anywhere; }
+.settings-provider-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.settings-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 18px 0; }
+.settings-facts div { min-width: 0; padding: 10px; border-radius: 10px; background: var(--surface-muted); }
+.settings-facts dt { margin-bottom: 4px; }
+.settings-facts dd { margin: 0; overflow-wrap: anywhere; font-size: 13px; font-weight: 700; }
+.settings-note { color: var(--text-soft); font-size: 13px; }
+.provider-card details { border-top: 1px solid var(--line); padding-top: 12px; color: var(--text-soft); font-size: 13px; }
+.provider-card summary { color: var(--text); cursor: pointer; font-weight: 750; }
+.settings-table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 14px; }
+.settings-table { width: 100%; min-width: 980px; border-collapse: collapse; font-size: 13px; }
+.settings-table th, .settings-table td { padding: 13px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; white-space: nowrap; }
+.settings-table th { background: var(--surface-muted); }
+.settings-table tr:last-child td { border-bottom: 0; }
+.settings-table td small { display: block; margin-top: 3px; }
+.settings-table a { color: var(--accent-strong); text-decoration: underline; text-underline-offset: 2px; }
+
 @media (max-width: 1100px) {
   .hero { grid-template-columns: 1fr; min-height: auto; }
   .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -984,6 +1010,7 @@ figure[data-chart-type="normalized"] .drawdown-chart-marker.primary { fill: var(
   .drawdown-control-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .drawdown-summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .annual-return-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .settings-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (max-width: 760px) {
@@ -1034,6 +1061,7 @@ figure[data-chart-type="normalized"] .drawdown-chart-marker.primary { fill: var(
   .drawdown-chart figcaption { align-items: flex-start; flex-direction: column; gap: 4px; }
   .drawdown-event-table-wrap { overflow-x: auto; }
   .annual-return-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .settings-provider-grid { grid-template-columns: 1fr; }
   .site-footer { width: calc(100% - 28px); flex-direction: column; }
   .site-footer p { text-align: left; }
 }
@@ -1063,6 +1091,16 @@ figure[data-chart-type="normalized"] .drawdown-chart-marker.primary { fill: var(
   .drawdown-event-list dt { color: var(--text-soft); font-size: 10px; }
   .drawdown-event-list dd { margin: 3px 0 0; overflow-wrap: anywhere; font-size: 12px; font-weight: 700; }
   .annual-return-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .settings-summary, .settings-facts { grid-template-columns: 1fr; }
+  .settings-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .settings-table { min-width: 0; }
+  .settings-table thead { display: none; }
+  .settings-table, .settings-table tbody, .settings-table tr, .settings-table td { display: block; width: 100%; }
+  .settings-table tr { padding: 12px; border-bottom: 1px solid var(--line); }
+  .settings-table tr:last-child { border-bottom: 0; }
+  .settings-table td { display: flex; justify-content: space-between; gap: 10px; padding: 6px 0; border: 0; white-space: normal; text-align: right; overflow-wrap: anywhere; }
+  .settings-table td::before { flex: 0 0 88px; color: var(--text-soft); text-align: left; font-size: 11px; content: attr(data-label); }
+  .settings-section:nth-of-type(4) .settings-table td:nth-child(1)::before { content: '指标'; }.settings-section:nth-of-type(4) .settings-table td:nth-child(2)::before { content: '来源网站'; }.settings-section:nth-of-type(4) .settings-table td:nth-child(3)::before { content: '来源数据集'; }.settings-section:nth-of-type(4) .settings-table td:nth-child(4)::before { content: '获取方式'; }.settings-section:nth-of-type(4) .settings-table td:nth-child(5)::before { content: '更新模式'; }.settings-section:nth-of-type(4) .settings-table td:nth-child(6)::before { content: '实时'; }.settings-section:nth-of-type(4) .settings-table td:nth-child(7)::before { content: '当前状态'; }.settings-section:nth-of-type(4) .settings-table td:nth-child(8)::before { content: '源数据日期'; }.settings-section:nth-of-type(4) .settings-table td:nth-child(9)::before { content: '上次成功'; }.settings-section:nth-of-type(4) .settings-table td:nth-child(10)::before { content: '下次检查'; }
   .drawdown-data-note dl { display: grid; grid-template-columns: 1fr; }
 }
 

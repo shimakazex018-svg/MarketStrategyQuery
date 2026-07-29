@@ -48,6 +48,11 @@ const app = document.getElementById('app');
 const themeToggle = document.getElementById('themeToggle');
 const menuToggle = document.getElementById('menuToggle');
 const mobileNav = document.getElementById('mobileNav');
+const settingsLink = document.getElementById('settingsLink');
+let settingsController = null;
+let settingsPollTimer = null;
+let settingsStatus = null;
+let settingsError = false;
 let indicatorDialogTrigger = null;
 const marketDataControllers = new Map();
 let externalPEController = null;
@@ -1272,9 +1277,39 @@ function setActiveNav(route) {
     if (active) link.setAttribute('aria-current', 'page');
     else link.removeAttribute('aria-current');
   });
+  const settingsActive = route === '/settings';
+  settingsLink.classList.toggle('active', settingsActive);
+  if (settingsActive) settingsLink.setAttribute('aria-current', 'page');
+  else settingsLink.removeAttribute('aria-current');
 }
 
+function settingsStatusLabel(status) {
+  return ({ fresh: '正常', stale: '数据可能延迟', running: '正在更新', unavailable: '暂不可用', error: '更新失败', manual: '本地导入', partial: '部分成功' })[status] || '状态不可用';
+}
+
+function settingsTemplate() {
+  if (settingsError) return `<section class="page settings-page"><div class="page-title"><div><p class="eyebrow">SETTINGS · DATA ACQUISITION</p><h1>数据源与采集状态</h1><p>暂时无法读取采集状态。</p></div><button class="button" data-settings-refresh>刷新状态</button></div></section>`;
+  const data = settingsStatus;
+  if (!data) return `<section class="page settings-page"><div class="notice"><strong>正在读取采集状态</strong><span>仅访问本站内部状态接口。</span></div></section>`;
+  const s = data.summary || {}; const scheduler = data.scheduler || {};
+  const summary = [['已启用数据源', s.enabledProviderCount], ['已启用数据集', s.enabledDatasetCount], ['每日联网数据集', s.dailyNetworkDatasetCount], ['本地导入数据集', s.localImportDatasetCount], ['实时数据源', s.realtimeProviderCount], ['当前调度状态', s.schedulerStatus]];
+  const providerCards = (data.providers || []).map(provider => `<article class="settings-card provider-card"><div class="card-heading-row"><div><p class="eyebrow">${escapeHtml(provider.domain)}</p><h3>${escapeHtml(provider.displayName)}</h3></div><span class="metric-status" data-status="${escapeHtml(provider.status)}">${settingsStatusLabel(provider.status)}</span></div><dl class="settings-facts"><div><dt>获取方式</dt><dd>${escapeHtml(provider.sourceType)}</dd></div><div><dt>联网采集</dt><dd>${provider.networkAccessEnabled ? '已启用' : '未启用'}</dd></div><div><dt>更新模式</dt><dd>${escapeHtml(provider.updateMode)}</dd></div><div><dt>数据集</dt><dd>${provider.datasets?.length || 0}</dd></div><div><dt>上次成功</dt><dd>${formatDateTime(provider.lastSuccessAt)}</dd></div><div><dt>下次计划</dt><dd>${formatDateTime(provider.nextScheduledAt)}</dd></div></dl><p class="settings-note">${escapeHtml(provider.note || '')}</p><details><summary>来源详情</summary><p>来源网站：${escapeHtml(provider.domain)}。${escapeHtml(provider.note || '')}</p></details></article>`).join('');
+  const datasetRows = (data.datasets || []).map(item => `<tr><td><strong>${escapeHtml(item.label)}</strong><small>${escapeHtml(item.metricId)}</small></td><td>${escapeHtml(item.providerId)}</td><td>${item.sourceUrl ? `<a href="${escapeHtml(item.sourceUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(item.sourcePageLabel)}</a>` : escapeHtml(item.sourcePageLabel)}</td><td>${escapeHtml(item.accessMethod)}</td><td>${escapeHtml(item.updateMode)}</td><td>${item.isRealtime ? '是' : '否'}</td><td><span class="metric-status" data-status="${escapeHtml(item.status)}">${settingsStatusLabel(item.status)}</span></td><td>${formatDateTime(item.sourceDataDate)}</td><td>${formatDateTime(item.lastSuccessAt)}</td><td>${formatDateTime(item.nextScheduledAt)}</td></tr>`).join('');
+  const runRows = (data.recentRuns || []).map(run => `<tr><td>${formatDateTime(run.startedAt)}</td><td>${escapeHtml(run.trigger)}</td><td>${escapeHtml(run.providerId)}</td><td>${escapeHtml(run.metricId)}</td><td>${escapeHtml(run.result)}</td><td>${run.externalRequestCount}</td><td>${formatDateTime(run.sourceDataDate)}</td><td>${escapeHtml(run.errorCategory || '—')}</td></tr>`).join('') || '<tr><td colspan="8">尚无本轮功能上线后的采集审计记录。</td></tr>';
+  return `<section class="page settings-page"><div class="hero settings-hero"><div><p class="eyebrow">SETTINGS · DATA ACQUISITION</p><h1>数据源与采集状态</h1><p>查看网站当前使用的数据网站、采集方式、更新时间和运行状态。</p><p class="breadcrumb">首页 / 设置</p></div><div class="hero-panel"><span>数据模式：日频</span><strong>实时行情：未启用</strong><small>调度时区：${escapeHtml(scheduler.timezone || '—')} · 每日检查：${escapeHtml(scheduler.time || '—')}</small><button class="button" data-settings-refresh>刷新状态</button></div></div><p class="settings-realtime">${escapeHtml(data.realtime?.message || '')}</p><section><div class="section-heading"><div><p class="eyebrow">OVERVIEW</p><h2>采集概览</h2></div></div><div class="settings-summary">${summary.map(([label, value]) => `<article><span>${label}</span><strong>${escapeHtml(String(value ?? '—'))}</strong></article>`).join('')}</div></section><section class="settings-section"><div class="section-heading"><div><p class="eyebrow">SCHEDULE</p><h2>计划任务</h2></div></div><dl class="settings-facts settings-schedule"><div><dt>是否启用</dt><dd>${scheduler.enabled ? '已启用' : '未启用'}</dd></div><div><dt>时区 / 时间</dt><dd>${escapeHtml(scheduler.timezone || '—')} / ${escapeHtml(scheduler.time || '—')}</dd></div><div><dt>下次计划运行</dt><dd>${formatDateTime(scheduler.nextScheduledAt)}</dd></div><div><dt>上次周期结果</dt><dd>${escapeHtml(scheduler.lastCycleResult || '—')}</dd></div><div><dt>启动漏采检查</dt><dd>${scheduler.startupCatchupEnabled ? '已启用' : '未启用'}</dd></div><div><dt>当前运行</dt><dd>${scheduler.running ? `正在处理 ${scheduler.currentProviderId || 'Provider'}` : '否'}</dd></div></dl><p class="settings-note">Windows 无感启动仅负责启动网站服务；数据计划任务为网站内部每日07:30检查，两者互不混同。</p></section><section class="settings-section"><div class="section-heading"><div><p class="eyebrow">PROVIDERS</p><h2>数据源列表</h2></div></div><div class="settings-provider-grid">${providerCards}</div></section><section class="settings-section"><div class="section-heading"><div><p class="eyebrow">DATASETS</p><h2>数据集明细</h2></div></div><div class="settings-table-wrap"><table class="settings-table"><thead><tr><th>指标</th><th>来源网站</th><th>来源数据集或页面</th><th>获取方式</th><th>更新模式</th><th>实时</th><th>当前状态</th><th>源数据日期</th><th>上次成功</th><th>下次检查</th></tr></thead><tbody>${datasetRows}</tbody></table></div></section><section class="settings-section"><div class="section-heading"><div><p class="eyebrow">RECENT RUNS</p><h2>最近采集记录</h2></div></div><div class="settings-table-wrap"><table class="settings-table"><thead><tr><th>开始时间</th><th>触发方式</th><th>Provider</th><th>数据集</th><th>结果</th><th>外部请求</th><th>源数据日期</th><th>错误分类</th></tr></thead><tbody>${runRows}</tbody></table></div></section><section class="settings-section settings-storage"><p>${escapeHtml(data.storage?.message || '')}</p><dl class="settings-facts"><div><dt>runtime-data 被Git忽略</dt><dd>${data.storage?.runtimeDataIgnored ? '是' : '否'}</dd></div><div><dt>Git跟踪真实市场数据</dt><dd>${data.storage?.gitTracksRealMarketData ? '是' : '否'}</dd></div><div><dt>保存原始HTML</dt><dd>${data.storage?.rawHtmlStored ? '是' : '否'}</dd></div><div><dt>使用Cookie或Token</dt><dd>${data.storage?.cookiesOrTokensUsed ? '是' : '否'}</dd></div></dl></section></section>`;
+}
+
+async function loadSettingsStatus() {
+  settingsController?.abort(); settingsController = new AbortController();
+  try { const response = await fetch('/api/settings/data-acquisition', { headers: { Accept: 'application/json' }, signal: settingsController.signal }); if (!response.ok) throw new Error(`settings ${response.status}`); settingsStatus = await response.json(); settingsError = false; }
+  catch (error) { if (error.name !== 'AbortError') settingsError = true; }
+  if (parseRoute() === '/settings') render({ preserveScroll: true });
+}
+
+function clearSettingsPolling() { if (settingsPollTimer) clearInterval(settingsPollTimer); settingsPollTimer = null; settingsController?.abort(); settingsController = null; }
+
 function bindCommonEvents() {
+  document.querySelector('[data-settings-refresh]')?.addEventListener('click', () => void loadSettingsStatus());
   document.querySelector('[data-drawdown-control="primary"]')?.addEventListener('change', event => {
     clearDrawdownChartInteraction({ clearDate: true });
     state.drawdown.primaryId = event.target.value;
@@ -1544,6 +1579,7 @@ function render({ preserveScroll = false } = {}) {
   else if (route === '/drawdown-analysis') app.innerHTML = drawdownAnalysisTemplate();
   else if (route === '/options' || route.startsWith('/options/')) app.innerHTML = optionsTemplate(route.split('/')[2]);
   else if (route === '/indicators') app.innerHTML = indicatorsTemplate();
+  else if (route === '/settings') app.innerHTML = settingsTemplate();
   else if (route.startsWith('/indicators/')) app.innerHTML = metricDetailTemplate(route.split('/')[2]);
   else if (route.startsWith('/stage/')) app.innerHTML = stageTemplate(state.stages.find(stage => stage.id === route.split('/')[2]));
   else app.innerHTML = notFoundTemplate();
@@ -1553,12 +1589,15 @@ function render({ preserveScroll = false } = {}) {
     '/compare': '阶段对比 · Market Cycle Strategy',
     '/drawdown-analysis': '回撤分析 · Market Cycle Strategy',
     '/options': '期权工具 · Market Cycle Strategy',
-    '/indicators': '指标说明 · Market Cycle Strategy'
+    '/indicators': '指标说明 · Market Cycle Strategy',
+    '/settings': '设置 · Market Cycle Strategy'
   };
   document.title = titleByRoute[route] || (route.startsWith('/stage/') ? '阶段详情 · Market Cycle Strategy' : route.startsWith('/options/') ? '期权工具 · Market Cycle Strategy' : route.startsWith('/indicators/') ? '指标详情 · Market Cycle Strategy' : '页面不存在 · Market Cycle Strategy');
 
   bindCommonEvents();
   if (route === '/drawdown-analysis') void ensureDrawdownData();
+  if (route === '/settings' && !settingsPollTimer) { void loadSettingsStatus(); settingsPollTimer = setInterval(() => void loadSettingsStatus(), 60_000); }
+  if (route !== '/settings') clearSettingsPolling();
   if (!preserveScroll) {
     app.focus({ preventScroll: true });
     window.scrollTo({ top: 0, behavior: 'instant' });
@@ -1605,6 +1644,7 @@ window.addEventListener('hashchange', async () => {
   marketDataControllers.forEach(controller => controller.abort());
   marketDataControllers.clear();
   if (parseRoute() !== '/drawdown-analysis') abortDrawdownRequests();
+  if (parseRoute() !== '/settings') clearSettingsPolling();
   render();
 });
 
