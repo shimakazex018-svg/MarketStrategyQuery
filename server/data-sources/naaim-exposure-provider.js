@@ -222,7 +222,12 @@ function validateStoredNaaim(model) {
   if (model.firstDate !== normalized.diagnostics.firstDate || model.lastDate !== normalized.diagnostics.lastDate || model.rowCount !== normalized.diagnostics.rowCount) {
     throw new TypeError('Stored NAAIM metadata does not match its history');
   }
-  return { ...model, values: normalized.values, validation: normalized.diagnostics, derived: normalized.derived };
+  const conflictAudit = model.validation?.excludedConflictDates ? {
+    conflictPolicy: model.validation.conflictPolicy, conflictCount: model.validation.conflictCount,
+    conflictDates: model.validation.conflictDates, excludedConflictDates: model.validation.excludedConflictDates,
+    excludedConflictRowCount: model.validation.excludedConflictRowCount
+  } : {};
+  return { ...model, values: normalized.values, validation: { ...normalized.diagnostics, ...conflictAudit }, derived: normalized.derived };
 }
 
 class NaaimExposureProvider {
