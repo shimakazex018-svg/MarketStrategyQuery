@@ -2,6 +2,12 @@
 
 ## 当前状态
 
+- The six homepage auxiliary-indicator explanations are now opened in-place from the dashboard information buttons. No `#/indicators` page or navigation entry remains; legacy hashes replace back to `#/`.
+- Dialog opening does not change the hash, navigate, reload data, or contact providers. It uses a body-level portal, scroll-position preservation, focus isolation/trap, and a reduced-motion fallback.
+- Before the next handoff, run `npm.cmd run check`, `npm.cmd run visual:current`, verify the six dialogs on 48101, and retain the existing ignored `tools/market-data-lab/` experiments untouched.
+
+## 当前状态
+
 - NAAIM Exposure Index is a local-import-only weekly analysis metric. Its canonical series excludes early conflicting source dates and never contacts NAAIM or MacroMicro at startup, page view, or 07:30 local reload.
 
 ### NAAIM Exposure Index checkpoint A

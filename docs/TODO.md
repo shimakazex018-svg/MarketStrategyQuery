@@ -4,6 +4,10 @@
 
 ## High Priority
 
+- [x] 将六类辅助指标说明合并到首页卡片原位 Dialog
+  - 说明：删除独立导航和 `#/indicators` 内容页；旧路由 replace 返回首页，说明内容只从六项指标元数据读取。
+  - 状态：完成；不改变市场数据、Provider、调度或计算逻辑。
+
 - [x] 建立持续视觉快照流程
   - 说明：`previews/current/`固定保存当前WebP、contact sheet和manifest；本机开发工具只访问48101并执行隐私、尺寸、溢出、控制台和外部请求门禁。
   - 状态：完成；正式版本归档才创建`previews/releases/<VERSION>/`。

@@ -367,8 +367,8 @@ button { color: inherit; }
 .metric-info-button {
   display: grid;
   place-items: center;
-  width: 32px;
-  height: 32px;
+  width: 40px;
+  height: 40px;
   padding: 0;
   border: 1px solid var(--line-strong);
   border-radius: 50%;
@@ -381,38 +381,48 @@ button { color: inherit; }
 .metric-info-button:hover, .metric-info-button:focus-visible { border-color: var(--accent); background: var(--accent-soft); }
 .metric-subtitle { margin: 4px 0 0; color: var(--text-soft); font-size: 12px; }
 
-body.dialog-open { overflow: hidden; }
+body.dialog-open { position: fixed; width: 100%; overflow: hidden; }
+#indicator-dialog-portal { position: relative; z-index: 100; }
 .dialog-backdrop {
   position: fixed;
   z-index: 100;
   inset: 0;
-  display: grid;
-  place-items: center;
-  padding: 20px;
+  display: block;
   background: rgba(4, 11, 22, .58);
   backdrop-filter: blur(5px);
 }
 .dialog-backdrop[hidden] { display: none; }
 .indicator-dialog {
+  position: fixed;
+  top: 50%;
+  left: 50%;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
-  width: min(680px, 100%);
-  max-height: min(760px, calc(100vh - 40px));
+  width: min(620px, calc(100vw - 48px));
+  max-height: min(75vh, 760px);
   overflow: hidden;
   border: 1px solid var(--line-strong);
   border-radius: 22px;
   background: var(--surface);
   box-shadow: 0 32px 100px rgba(0,0,0,.34);
+  translate: -50% -50%;
+  transform: none;
+  transform-origin: center;
 }
 .indicator-dialog > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; padding: 20px 22px; border-bottom: 1px solid var(--line); }
 .indicator-dialog header span { color: var(--accent-strong); font-size: 11px; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; }
 .indicator-dialog h2 { margin: 3px 0 0; font-size: 30px; }
+.dialog-summary { margin: 8px 0 0; color: var(--text-soft); font-size: 13px; }
 .dialog-close { flex: 0 0 auto; width: 44px; height: 44px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-muted); cursor: pointer; font-size: 25px; line-height: 1; }
 .indicator-dialog-body { overflow-y: auto; overscroll-behavior: contain; padding: 20px 22px 24px; }
 .indicator-dialog-body > section { padding: 14px 0; border-bottom: 1px solid var(--line); }
 .indicator-dialog-body h3, .indicator-dialog-body p { margin: 0; }
 .indicator-dialog-body h3 { font-size: 14px; }
 .indicator-dialog-body section p { margin-top: 5px; color: var(--text-soft); }
+.dialog-data-summary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 12px 0; }
+.dialog-data-summary div { min-width: 0; }
+.dialog-data-summary dt { color: var(--text-soft); font-size: 11px; }
+.dialog-data-summary dd { margin: 3px 0 0; overflow-wrap: anywhere; font-size: 13px; }
 .dialog-demo-value { display: inline-flex; padding: 7px 10px; border-radius: 999px; background: var(--accent-soft); color: var(--accent-strong); font-size: 13px; font-weight: 750; }
 .indicator-dialog-body .notice { margin-top: 16px; }
 .metric-value { text-align: right; }
@@ -1039,9 +1049,12 @@ figure[data-chart-type="normalized"] .drawdown-chart-marker.primary { fill: var(
   .external-pe-summary, .external-pe-ranges { grid-template-columns: 1fr; }
   .external-pe-summary dl { grid-template-columns: 1fr; }
   .metric-card { min-height: 500px; }
-  .metric-info-button { width: 44px; height: 44px; }
-  .dialog-backdrop { align-items: end; padding: 0; }
-  .indicator-dialog { width: 100%; max-height: min(86vh, 760px); border-radius: 22px 22px 0 0; }
+  .metric-info-button { width: 40px; height: 40px; }
+  .indicator-dialog { width: calc(100vw - 24px); max-height: 78vh; border-radius: 22px; }
+  .indicator-dialog > header { padding: 17px 16px; }
+  .indicator-dialog h2 { font-size: 24px; }
+  .indicator-dialog-body { padding: 16px; }
+  .dialog-data-summary { grid-template-columns: 1fr; }
   .page-title { align-items: flex-start; flex-direction: column; }
   .stage-meta { grid-template-columns: 1fr; }
   .stage-section-nav { position: static; margin-inline: -2px; }

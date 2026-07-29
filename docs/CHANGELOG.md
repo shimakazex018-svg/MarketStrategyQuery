@@ -1,5 +1,11 @@
 # 变更日志
 
+## 2026-07-29 - Dashboard indicator dialogs
+
+- Removed the standalone six-indicator navigation entry and legacy `#/indicators` rendering. Legacy hashes now use `history.replaceState` to return to the homepage without creating a dead history entry.
+- Moved each explanation to an accessible top-level Dialog opened from its dashboard-card information button. The Dialog reads already-loaded internal state only, preserves scroll position, traps focus, supports Escape/backdrop/close-button dismissal, and uses a reduced-motion fallback.
+- Added shared-element geometry animation from the selected information button to the Dialog and back, plus desktop, iPad, and iPhone visual-review targets.
+
 ## 2026-07-29 - NAAIM Exposure Index local integration
 
 - Added local-only NAAIM weekly provider, API metadata, homepage institutional-exposure card, detail route, settings-source visibility, and 07:30 local reload with zero external requests.

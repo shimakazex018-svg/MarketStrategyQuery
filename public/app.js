@@ -55,7 +55,16 @@ let settingsController = null;
 let settingsPollTimer = null;
 let settingsStatus = null;
 let settingsError = false;
-let indicatorDialogTrigger = null;
+const indicatorDialogState = {
+  phase: 'closed',
+  trigger: null,
+  queued: null,
+  portal: null,
+  keydownHandler: null,
+  scrollY: 0,
+  animations: [],
+  inertNodes: []
+};
 const marketDataControllers = new Map();
 let externalPEController = null;
 const drawdownControllers = new Map();
@@ -403,7 +412,7 @@ function metricCard(indicator, index) {
     <article class="metric-card metric-card--${statusMeta.tone} reveal" data-market-status="${escapeHtml(market.status)}" style="transition-delay:${index * 45}ms">
       <div class="metric-top">
         <div>
-          <div class="metric-title-row"><h3 class="metric-name">${escapeHtml(indicator.name)}</h3><button class="metric-info-button" type="button" data-indicator-info="${escapeHtml(indicator.id)}" aria-label="查看${escapeHtml(indicator.name)}指标说明">i</button></div>
+          <div class="metric-title-row"><h3 class="metric-name">${escapeHtml(indicator.name)}</h3><button class="metric-info-button" type="button" data-indicator-info="${escapeHtml(indicator.id)}" aria-label="查看${escapeHtml(indicator.name)}指标说明" aria-haspopup="dialog" aria-expanded="false" aria-controls="indicatorDialog">i</button></div>
           <p class="metric-subtitle">${escapeHtml(indicator.subtitle)}</p>
         </div>
         <div class="metric-value">
@@ -424,7 +433,6 @@ function metricCard(indicator, index) {
         ${market.status === 'stale' ? `<div class="metric-stale-note"><dt>上次成功</dt><dd>${escapeHtml(formatDateTime(market.lastSuccessAt))}</dd></div>` : ''}
       </dl>
       <p class="metric-explain">${escapeHtml(indicator.explain)}</p>
-      <a class="metric-detail-link" href="#/indicators/${escapeHtml(indicator.id)}">查看指标详情与真实历史</a>
       <p class="metric-subtitle">${rangeSummary}</p>
     </article>`;
 }
@@ -473,24 +481,10 @@ function homeTemplate() {
       <section class="section">
         <div class="section-heading reveal">
           <div><h2>辅助指标仪表盘</h2><p>页面只读取本站内部API。正式来源未通过许可门槛时明确显示不可用或演示数据，不用伪造值补齐。</p></div>
-          <a class="button ghost" href="#/indicators">查看指标说明</a>
         </div>
         <div class="metric-grid">${state.indicators.map(metricCard).join('')}</div>
         ${naaimObservationTemplate()}
         <p class="cycle-disclaimer">数据仅用于本人投资研究。初步估算表示部分成分数据缺失或日期并非完全一致；覆盖不足时不输出正式数值。所有指标均不能单独用于判断市场阶段或形成自动仓位建议。</p>
-        <div id="indicatorDialog" class="dialog-backdrop" hidden>
-          <section class="indicator-dialog" role="dialog" aria-modal="true" aria-labelledby="indicatorDialogTitle" tabindex="-1">
-            <header><div><span>Indicator Guide</span><h2 id="indicatorDialogTitle"></h2></div><button class="dialog-close" type="button" data-close-indicator-dialog aria-label="关闭指标说明">×</button></header>
-            <div class="indicator-dialog-body">
-              <p id="indicatorDialogValue" class="dialog-demo-value"></p>
-              <section><h3>定义</h3><p id="indicatorDialogDefinition"></p></section>
-              <section><h3>指标高低通常意味着什么</h3><p id="indicatorDialogInterpretation"></p></section>
-              <section><h3>与市场周期的关系</h3><p id="indicatorDialogRelation"></p></section>
-              <section class="dialog-limitations"><h3>使用限制</h3><p id="indicatorDialogLimitations"></p></section>
-              <p class="notice"><strong id="indicatorDialogNoticeTitle">数据说明</strong><span id="indicatorDialogNoticeText"></span></p>
-            </div>
-          </section>
-        </div>
       </section>
 
       <section class="section reveal">
@@ -1294,7 +1288,7 @@ function abortDrawdownRequests() {
 function setActiveNav(route) {
   document.querySelectorAll('.desktop-nav a, .mobile-nav a').forEach(link => {
     const href = link.getAttribute('href').slice(1);
-    const active = route === href || (href === '/' && route.startsWith('/stage/')) || (href === '/options' && route.startsWith('/options/')) || (href === '/indicators' && route.startsWith('/indicators/'));
+    const active = route === href || (href === '/' && route.startsWith('/stage/')) || (href === '/options' && route.startsWith('/options/'));
     link.classList.toggle('active', active);
     if (active) link.setAttribute('aria-current', 'page');
     else link.removeAttribute('aria-current');
@@ -1349,6 +1343,178 @@ function bindSettingsRunToggle() {
   control.textContent = state.settingsRunsExpanded ? '收起' : '展开全部';
   control.addEventListener('click', () => { state.settingsRunsExpanded = !state.settingsRunsExpanded; bindSettingsRunToggle(); });
   tables[1].parentElement?.after(control);
+}
+
+function indicatorInfoMeta(indicator, market) {
+  return {
+    metricId: indicator.id,
+    label: indicator.name,
+    meaning: indicator.meaning || indicator.definition || indicator.explain,
+    interpretation: indicator.interpretation || indicator.explain,
+    sourceDescription: market.source || indicator.source || '本站内部数据服务',
+    dataDefinition: indicator.definition || indicator.meaning || indicator.explain,
+    updateFrequency: market.frequency || '每日计划检查',
+    limitations: indicator.limitations || indicator.limits || '数据可能延迟、修订或受来源口径影响，不构成投资建议。',
+    marketRelation: indicator.marketRelation || '需要结合价格结构、波动率和市场广度共同观察。'
+  };
+}
+
+function dialogFocusable(dialog) {
+  return [...dialog.querySelectorAll('button:not([disabled]), [href], select, [tabindex]:not([tabindex="-1"])')]
+    .filter(node => !node.hidden && node.getClientRects().length);
+}
+
+function lockDialogBackground() {
+  indicatorDialogState.scrollY = window.scrollY;
+  const scrollbarWidth = Math.max(0, window.innerWidth - document.documentElement.clientWidth);
+  document.body.classList.add('dialog-open');
+  document.body.style.top = `-${indicatorDialogState.scrollY}px`;
+  document.body.style.paddingRight = scrollbarWidth ? `${scrollbarWidth}px` : '';
+  indicatorDialogState.inertNodes = [...document.body.children]
+    .filter(node => node !== indicatorDialogState.portal)
+    .map(node => ({ node, inert: node.inert }));
+  indicatorDialogState.inertNodes.forEach(({ node }) => { node.inert = true; });
+}
+
+function unlockDialogBackground() {
+  indicatorDialogState.inertNodes.forEach(({ node, inert }) => { node.inert = inert; });
+  indicatorDialogState.inertNodes = [];
+  document.body.classList.remove('dialog-open');
+  document.body.style.top = '';
+  document.body.style.paddingRight = '';
+  window.scrollTo({ top: indicatorDialogState.scrollY, behavior: 'instant' });
+}
+
+function reducedMotion() {
+  return window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+}
+
+function cancelDialogAnimations() {
+  indicatorDialogState.animations.forEach(animation => animation.cancel());
+  indicatorDialogState.animations = [];
+}
+
+function dialogTransform(triggerRect, dialogRect) {
+  const scaleX = Math.max(.06, triggerRect.width / dialogRect.width);
+  const scaleY = Math.max(.06, triggerRect.height / dialogRect.height);
+  const x = triggerRect.left + triggerRect.width / 2 - (dialogRect.left + dialogRect.width / 2);
+  const y = triggerRect.top + triggerRect.height / 2 - (dialogRect.top + dialogRect.height / 2);
+  return { x, y, scaleX, scaleY };
+}
+
+function animateIndicatorDialog(dialog, backdrop, trigger, opening) {
+  const triggerRect = trigger?.getBoundingClientRect();
+  const dialogRect = dialog.getBoundingClientRect();
+  const duration = reducedMotion() ? 140 : opening ? 330 : 270;
+  const finish = opening ? 'forwards' : 'forwards';
+  if (!triggerRect || !dialogRect || typeof dialog.animate !== 'function') return Promise.resolve();
+  const transform = dialogTransform(triggerRect, dialogRect);
+  dialog.style.willChange = 'transform, opacity, border-radius, filter';
+  const from = `translate(${transform.x}px, ${transform.y}px) scale(${transform.scaleX}, ${transform.scaleY})`;
+  const to = 'translate(0, 0) scale(1)';
+  const dialogFrames = opening
+    ? [{ transform: reducedMotion() ? to : from, opacity: reducedMotion() ? .25 : .2, borderRadius: reducedMotion() ? '22px' : '50%', filter: reducedMotion() ? 'none' : 'blur(2px)' }, { transform: to, opacity: 1, borderRadius: '22px', filter: 'blur(0)' }]
+    : [{ transform: to, opacity: 1, borderRadius: '22px', filter: 'blur(0)' }, { transform: reducedMotion() ? to : from, opacity: reducedMotion() ? 0 : .18, borderRadius: reducedMotion() ? '22px' : '50%', filter: reducedMotion() ? 'none' : 'blur(2px)' }];
+  const dialogAnimation = dialog.animate(dialogFrames, { duration, easing: 'cubic-bezier(.22, 1, .36, 1)', fill: finish });
+  const backdropAnimation = backdrop.animate(opening ? [{ opacity: 0 }, { opacity: 1 }] : [{ opacity: 1 }, { opacity: 0 }], { duration: reducedMotion() ? 120 : duration, easing: 'ease-out', fill: finish });
+  const content = dialog.querySelector('.indicator-dialog-content');
+  const contentAnimation = content?.animate(opening ? [{ opacity: 0, transform: 'translateY(6px)' }, { opacity: 1, transform: 'translateY(0)' }] : [{ opacity: 1 }, { opacity: 0 }], { duration: reducedMotion() ? 100 : 180, delay: opening && !reducedMotion() ? 100 : 0, easing: 'ease-out', fill: finish });
+  indicatorDialogState.animations = [dialogAnimation, backdropAnimation, contentAnimation].filter(Boolean);
+  return Promise.all(indicatorDialogState.animations.map(animation => animation.finished.catch(() => undefined))).then(() => {
+    indicatorDialogState.animations = [];
+    dialog.style.transform = '';
+    dialog.style.opacity = '';
+    dialog.style.borderRadius = '';
+    dialog.style.filter = '';
+    dialog.style.willChange = '';
+    backdrop.style.opacity = '';
+  });
+}
+
+function createIndicatorDialog(trigger) {
+  const indicator = state.indicators.find(item => item.id === trigger.dataset.indicatorInfo);
+  if (!indicator) return null;
+  const market = state.marketData[indicator.id] || initialMarketModel(indicator);
+  const status = DATA_STATUS[market.status] || DATA_STATUS.error;
+  const meta = indicatorInfoMeta(indicator, market);
+  const value = hasFiniteValue(market.value) ? `${Number(market.value).toFixed(2).replace(/\.00$/, '')}${market.unit === 'index_points' ? '' : market.unit || indicator.unit || ''}` : '暂无可用值';
+  const portal = document.createElement('div');
+  portal.id = 'indicator-dialog-portal';
+  portal.innerHTML = `<div class="dialog-backdrop" data-indicator-dialog-backdrop><section id="indicatorDialog" class="indicator-dialog" role="dialog" aria-modal="true" aria-labelledby="indicatorDialogTitle" aria-describedby="indicatorDialogSummary" tabindex="-1"><header><div><span>辅助指标说明</span><h2 id="indicatorDialogTitle">${escapeHtml(meta.label)}</h2><p id="indicatorDialogSummary" class="dialog-summary">当前值 ${escapeHtml(value)} · ${escapeHtml(status.label)} · 数据日期 ${escapeHtml(market.asOf || '—')}</p></div><button class="dialog-close" type="button" data-close-indicator-dialog aria-label="关闭${escapeHtml(meta.label)}指标说明">×</button></header><div class="indicator-dialog-body indicator-dialog-content"><section><h3>指标意义</h3><p>${escapeHtml(meta.meaning)}</p></section><section><h3>如何理解</h3><p>${escapeHtml(meta.interpretation)}</p><p>${escapeHtml(meta.marketRelation)}</p></section><section><h3>数据来源与口径</h3><dl class="dialog-data-summary"><div><dt>Provider</dt><dd>${escapeHtml(market.provider || meta.sourceDescription)}</dd></div><div><dt>来源网站</dt><dd>${escapeHtml(meta.sourceDescription)}</dd></div><div><dt>数据频率</dt><dd>${escapeHtml(meta.updateFrequency)}</dd></div><div><dt>最新数据日期</dt><dd>${escapeHtml(market.asOf || '—')}</dd></div></dl><p>${escapeHtml(meta.dataDefinition)}</p></section><section class="dialog-limitations"><h3>使用限制</h3><p>${escapeHtml(meta.limitations)}</p></section><p class="notice"><strong>${escapeHtml(status.label)}</strong><span>${escapeHtml(market.statusMessage || '弹窗只读取当前已加载的本站内部数据，不触发数据更新。')}</span></p></div></section></div>`;
+  return portal;
+}
+
+async function closeIndicatorDialog({ restoreFocus = true } = {}) {
+  if (indicatorDialogState.phase === 'closed' || indicatorDialogState.phase === 'closing') return;
+  const portal = indicatorDialogState.portal;
+  const dialog = portal?.querySelector('.indicator-dialog');
+  const backdrop = portal?.querySelector('.dialog-backdrop');
+  const trigger = indicatorDialogState.trigger;
+  indicatorDialogState.phase = 'closing';
+  if (dialog && backdrop && trigger?.isConnected) await animateIndicatorDialog(dialog, backdrop, trigger, false);
+  cancelDialogAnimations();
+  portal?.remove();
+  if (indicatorDialogState.keydownHandler) document.removeEventListener('keydown', indicatorDialogState.keydownHandler);
+  indicatorDialogState.keydownHandler = null;
+  indicatorDialogState.portal = null;
+  if (trigger) trigger.setAttribute('aria-expanded', 'false');
+  unlockDialogBackground();
+  indicatorDialogState.phase = 'closed';
+  indicatorDialogState.trigger = null;
+  if (restoreFocus && trigger?.isConnected) trigger.focus({ preventScroll: true });
+  const queued = indicatorDialogState.queued;
+  indicatorDialogState.queued = null;
+  if (queued?.isConnected) await requestIndicatorDialog(queued);
+}
+
+async function requestIndicatorDialog(trigger) {
+  if (!trigger?.isConnected) return;
+  if (indicatorDialogState.phase !== 'closed') {
+    if (indicatorDialogState.trigger === trigger) return;
+    indicatorDialogState.queued = trigger;
+    await closeIndicatorDialog({ restoreFocus: false });
+    return;
+  }
+  const portal = createIndicatorDialog(trigger);
+  if (!portal) return;
+  indicatorDialogState.phase = 'opening';
+  indicatorDialogState.trigger = trigger;
+  indicatorDialogState.portal = portal;
+  trigger.setAttribute('aria-expanded', 'true');
+  document.body.append(portal);
+  lockDialogBackground();
+  const dialog = portal.querySelector('.indicator-dialog');
+  const backdrop = portal.querySelector('.dialog-backdrop');
+  portal.querySelector('[data-close-indicator-dialog]')?.addEventListener('click', () => void closeIndicatorDialog());
+  backdrop.addEventListener('click', event => { if (event.target === backdrop) void closeIndicatorDialog(); });
+  dialog.addEventListener('click', event => event.stopPropagation());
+  const keydown = event => {
+    if (event.key === 'Escape') { event.preventDefault(); void closeIndicatorDialog(); return; }
+    if (event.key !== 'Tab') return;
+    const focusable = dialogFocusable(dialog);
+    if (!focusable.length) return;
+    const first = focusable[0]; const last = focusable.at(-1);
+    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+  };
+  document.addEventListener('keydown', keydown);
+  indicatorDialogState.keydownHandler = keydown;
+  await animateIndicatorDialog(dialog, backdrop, trigger, true);
+  if (indicatorDialogState.portal !== portal) return;
+  indicatorDialogState.phase = 'open';
+  portal.querySelector('[data-close-indicator-dialog]')?.focus({ preventScroll: true });
+}
+
+function destroyIndicatorDialog() {
+  cancelDialogAnimations();
+  if (indicatorDialogState.portal) indicatorDialogState.portal.remove();
+  if (indicatorDialogState.keydownHandler) document.removeEventListener('keydown', indicatorDialogState.keydownHandler);
+  indicatorDialogState.keydownHandler = null;
+  if (indicatorDialogState.phase !== 'closed') unlockDialogBackground();
+  indicatorDialogState.phase = 'closed';
+  indicatorDialogState.portal = null;
+  indicatorDialogState.trigger = null;
+  indicatorDialogState.queued = null;
 }
 
 function bindCommonEvents() {
@@ -1543,55 +1709,12 @@ function bindCommonEvents() {
     location.hash = `#/options/${event.target.value}`;
   });
 
-  const indicatorDialog = document.getElementById('indicatorDialog');
-  const closeIndicatorDialog = () => {
-    if (!indicatorDialog || indicatorDialog.hidden) return;
-    indicatorDialog.hidden = true;
-    document.body.classList.remove('dialog-open');
-    indicatorDialogTrigger?.focus();
-    indicatorDialogTrigger = null;
-  };
   document.querySelectorAll('[data-indicator-info]').forEach(button => {
-    button.addEventListener('click', () => {
-      const indicator = state.indicators.find(item => item.id === button.dataset.indicatorInfo);
-      if (!indicator || !indicatorDialog) return;
-      const market = state.marketData[indicator.id] || initialMarketModel(indicator);
-      const status = DATA_STATUS[market.status] || DATA_STATUS.error;
-      indicatorDialogTrigger = button;
-      const setText = (id, value) => { const node = document.getElementById(id); if (node) node.textContent = valueOr(value); };
-      setText('indicatorDialogTitle', indicator.name);
-      const displayValue = market.value === null || market.value === undefined ? '暂无' : `${market.value}${market.unit || indicator.unit || ''}`;
-      setText('indicatorDialogValue', `当前值：${displayValue} · ${status.label} · 来源：${market.source || '—'}`);
-      setText('indicatorDialogDefinition', indicator.definition || indicator.meaning);
-      setText('indicatorDialogInterpretation', indicator.interpretation || indicator.explain);
-      setText('indicatorDialogRelation', indicator.marketRelation || '需要结合价格结构、波动率和市场广度共同判断。');
-      setText('indicatorDialogLimitations', indicator.limitations || indicator.limits);
-      setText('indicatorDialogNoticeTitle', status.label);
-      setText('indicatorDialogNoticeText', market.status === 'demo'
-        ? '当前数值为静态演示值，不代表实时市场数据；该指标不能单独用于判断市场阶段。'
-        : `${market.statusMessage || '请核对数据状态。'}；该指标不能单独用于判断市场阶段。`);
-      indicatorDialog.hidden = false;
-      document.body.classList.add('dialog-open');
-      indicatorDialog.querySelector('.indicator-dialog')?.focus();
-    });
-  });
-  indicatorDialog?.querySelector('[data-close-indicator-dialog]')?.addEventListener('click', closeIndicatorDialog);
-  indicatorDialog?.addEventListener('click', event => {
-    if (event.target === indicatorDialog) closeIndicatorDialog();
-  });
-  indicatorDialog?.addEventListener('keydown', event => {
-    if (event.key === 'Escape') {
+    button.addEventListener('click', event => {
       event.preventDefault();
-      closeIndicatorDialog();
-      return;
-    }
-    if (event.key !== 'Tab') return;
-    const focusable = [...indicatorDialog.querySelectorAll('button, [href], select, [tabindex]:not([tabindex="-1"])')].filter(item => !item.hidden);
-    if (!focusable.length) return;
-    const first = focusable[0];
-    const last = focusable.at(-1);
-    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
-    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+      event.stopPropagation();
+      void requestIndicatorDialog(button);
+    });
   });
 
   const revealObserver = new IntersectionObserver(entries => {
@@ -1612,21 +1735,23 @@ function parseRoute() {
 
 function render({ preserveScroll = false } = {}) {
   const route = parseRoute();
+  if (route === '/indicators' || route.startsWith('/indicators/')) {
+    history.replaceState(null, '', `${location.pathname}${location.search}#/`);
+    render();
+    return;
+  }
+  destroyIndicatorDialog();
   clearDrawdownChartInteraction({ clearDate: route !== '/drawdown-analysis' });
   if (route !== '/drawdown-analysis') activeDrawdownChartView = null;
   state.route = route;
-  document.body.classList.remove('dialog-open');
-  indicatorDialogTrigger = null;
   setActiveNav(route);
 
   if (route === '/') app.innerHTML = homeTemplate();
   else if (route === '/compare') app.innerHTML = compareTemplate();
   else if (route === '/drawdown-analysis') app.innerHTML = drawdownAnalysisTemplate();
   else if (route === '/options' || route.startsWith('/options/')) app.innerHTML = optionsTemplate(route.split('/')[2]);
-  else if (route === '/indicators') app.innerHTML = indicatorsTemplate();
   else if (route === '/settings') app.innerHTML = settingsTemplate();
   else if (route === '/indicator/naaim-exposure') app.innerHTML = naaimDetailTemplate();
-  else if (route.startsWith('/indicators/')) app.innerHTML = metricDetailTemplate(route.split('/')[2]);
   else if (route.startsWith('/stage/')) app.innerHTML = stageTemplate(state.stages.find(stage => stage.id === route.split('/')[2]));
   else app.innerHTML = notFoundTemplate();
 
@@ -1635,10 +1760,9 @@ function render({ preserveScroll = false } = {}) {
     '/compare': '阶段对比 · Market Cycle Strategy',
     '/drawdown-analysis': '回撤分析 · Market Cycle Strategy',
     '/options': '期权工具 · Market Cycle Strategy',
-    '/indicators': '指标说明 · Market Cycle Strategy',
     '/settings': '设置 · Market Cycle Strategy', '/indicator/naaim-exposure': 'NAAIM主动投资经理美股敞口 · Market Cycle Strategy'
   };
-  document.title = titleByRoute[route] || (route.startsWith('/stage/') ? '阶段详情 · Market Cycle Strategy' : route.startsWith('/options/') ? '期权工具 · Market Cycle Strategy' : route.startsWith('/indicators/') ? '指标详情 · Market Cycle Strategy' : '页面不存在 · Market Cycle Strategy');
+  document.title = titleByRoute[route] || (route.startsWith('/stage/') ? '阶段详情 · Market Cycle Strategy' : route.startsWith('/options/') ? '期权工具 · Market Cycle Strategy' : '页面不存在 · Market Cycle Strategy');
 
   bindCommonEvents();
   if (route === '/drawdown-analysis') void ensureDrawdownData();

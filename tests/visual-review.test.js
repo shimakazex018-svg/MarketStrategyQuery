@@ -15,11 +15,11 @@ test('visual privacy scanner detects private paths, private IPs and credential t
 });
 
 test('current visual review has its bounded WebP set and a relative-link manifest', async () => {
-  const required = ['manifest.md', 'contact-sheet.webp', 'desktop.webp', 'ipad.webp', 'iphone.webp', 'home-desktop.webp', 'settings-desktop.webp'];
+  const required = ['manifest.md', 'contact-sheet.webp', 'desktop.webp', 'ipad.webp', 'iphone.webp', 'indicator-pe-desktop.webp', 'iphone-dialog-scroll.webp', 'home-desktop.webp', 'settings-desktop.webp'];
   const files = await fs.readdir(current); for (const file of required) assert.equal(files.includes(file), true, `${file} missing`);
-  assert.equal(files.filter(file => file.endsWith('.webp')).length <= 7, true);
+  assert.equal(files.filter(file => file.endsWith('.webp')).length <= 8, true);
   const manifest = await fs.readFile(path.join(current, 'manifest.md'), 'utf8');
-  assert.match(manifest, /Data mode: local-production-cache/i); assert.match(manifest, /\[desktop\.webp\]\(desktop\.webp\)/);
+  assert.match(manifest, /Data mode: local-production-cache/i); assert.match(manifest, /\[desktop\.webp\]\(desktop\.webp\)/); assert.match(manifest, /Animation type: shared-element FLIP/); assert.match(manifest, /Route changed: false/); assert.match(manifest, /Scroll position preserved: true/);
   assert.equal(findSensitiveText(manifest).length, 0);
   for (const file of required.filter(file => file.endsWith('.webp'))) assert.equal((await fs.stat(path.join(current, file))).size < 3 * 1024 * 1024, true);
 });
