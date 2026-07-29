@@ -72,7 +72,7 @@ function sendFile(res, filePath) {
   });
 }
 
-function createHttpServer(marketDataService) {
+function createHttpServer(marketDataService, scheduler = null) {
   return http.createServer(async (req, res) => {
     try {
     const requestUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
@@ -81,7 +81,7 @@ function createHttpServer(marketDataService) {
       return;
     }
 
-    if (await handleMarketDataApi(req, res, requestUrl, marketDataService)) return;
+    if (await handleMarketDataApi(req, res, requestUrl, marketDataService, scheduler)) return;
 
     const filePath = safeResolve(requestUrl.pathname);
     if (!filePath) {
@@ -120,7 +120,7 @@ async function createMarketDataService(rootDir = __dirname, options = {}) {
 async function start() {
   const marketDataService = await createMarketDataService();
   const scheduler = new MarketDataScheduler(marketDataService, { timezone: marketDataService.config.timezone });
-  const server = createHttpServer(marketDataService);
+  const server = createHttpServer(marketDataService, scheduler);
   scheduler.start();
 
   server.on('close', () => scheduler.stop());

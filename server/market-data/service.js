@@ -8,6 +8,7 @@ const { ANALYSIS_METRIC_IDS, PRODUCTION_METRIC_IDS, ProductionDataCoordinator } 
 const { isProviderEffectivelyEnabled, providerById } = require('./provider-compliance');
 const { availableRanges, filterHistory, validateModel } = require('./schema');
 const { isWeekend } = require('./scheduler');
+const { AcquisitionAudit } = require('./acquisition-audit');
 
 const ONLINE_DECISIONS = Object.freeze({
   pe: { provider: 'sec-edgar', permission: 'secEdgar', reason: 'SEC bulk update requires explicit local opt-in and a valid user agent' },
@@ -117,6 +118,7 @@ class MarketDataService {
     this.definitionOverride = definitions;
     this.productionMode = false;
     this.productionCoordinator = null;
+    this.audit = new AcquisitionAudit(config.runtimeRoot || path.join(rootDir, 'runtime-data'), { now });
   }
 
   registerWebPageProvider(providerId, provider) {
@@ -266,7 +268,22 @@ class MarketDataService {
   }
 
   async refresh(id, { kind = 'scheduled', requestSource = 'scheduler' } = {}) {
-    if (this.productionMode) return this.productionCoordinator.refresh(id);
+    if (this.productionMode) {
+      const startedAt = isoNow(this.now());
+      const result = await this.productionCoordinator.refresh(id);
+      const indicator = this.getIndicator(id);
+      const providerId = id === 'soxx_price' ? 'ishares' : id.endsWith('_pe') ? 'worldperatio' : 'fred';
+      const trigger = id === 'soxx_price' ? 'local_reload' : kind === 'startup' ? 'startup_catchup' : 'scheduled';
+      await this.audit.append({
+        providerId, metricId: id, trigger, startedAt, completedAt: isoNow(this.now()),
+        result: result.ok ? (result.reason === 'already-successful-today' ? 'cached' : 'success') : 'failed',
+        externalRequestCount: id === 'soxx_price' ? 0 : result.reason === 'already-successful-today' ? 0 : 1,
+        cacheAction: result.ok ? (result.reason === 'already-successful-today' ? 'unchanged' : 'updated') : indicator?.status === 'stale' ? 'stale_fallback' : 'none',
+        sourceDataDate: indicator?.sourceDataDate || indicator?.asOf || null,
+        errorCategory: result.ok ? null : result.reason || 'source_unavailable'
+      });
+      return result;
+    }
     if (this.config.selfCalculatedMvp) return this.refreshSelfCalculated(id, { kind, requestSource });
     const indicator = this.indicatorDefinition(id);
     const source = this.sources.get(id);
@@ -457,6 +474,67 @@ class MarketDataService {
       cacheErrors: Object.fromEntries(this.cacheErrors),
       indicators: this.indicators.map(indicator => ({ id: indicator.id, status: this.models.get(indicator.id)?.status || 'error' })),
       servedAt: isoNow(this.now())
+    };
+  }
+
+  async getDataAcquisitionStatus(scheduler = null) {
+    const models = [...this.models.values()];
+    const diagnostics = {
+      fred: this.productionCoordinator?.providerStatus('fred') || null,
+      worldperatio: this.productionCoordinator?.providerStatus('worldperatio') || null,
+      ishares: this.productionCoordinator?.providerStatus('ishares-soxx') || null
+    };
+    const nextScheduledAt = scheduler?.nextScheduledAt?.() || null;
+    const providerDefinitions = [
+      { providerId: 'fred', displayName: 'FRED', domain: 'fred.stlouisfed.org', sourceType: 'official_csv', networkAccessEnabled: true, updateMode: 'scheduled_daily', ids: ['vix', 'vxn', 'nasdaq100_index', 'sp500_index'], note: '数据通过FRED取得，原始来源以各系列标注为准。' },
+      { providerId: 'worldperatio', displayName: 'WorldPEratio', domain: 'worldperatio.com', sourceType: 'public_webpage', networkAccessEnabled: true, updateMode: 'scheduled_daily', ids: ['nasdaq100_pe', 'sp500_pe'], note: '第三方公开参考数据，不代表指数编制机构官方估值。' },
+      { providerId: 'ishares', displayName: 'iShares / BlackRock', domain: 'ishares.com', sourceType: 'official_workbook_local_import', networkAccessEnabled: false, updateMode: 'manual_import', ids: ['soxx_price'], note: 'SOXX数据来自官方工作簿的本地人工导入，网站不会自动访问iShares。' }
+    ];
+    const metricMeta = {
+      vix: { sourceDataset: 'VIXCLS', sourcePageLabel: 'FRED VIXCLS', accessMethod: 'official_csv', limitations: ['原始来源为Cboe'] },
+      vxn: { sourceDataset: 'VXNCLS', sourcePageLabel: 'FRED VXNCLS', accessMethod: 'official_csv', limitations: ['原始来源为Cboe'] },
+      nasdaq100_index: { sourceDataset: 'NASDAQ100', sourcePageLabel: 'FRED NASDAQ100', accessMethod: 'official_csv', limitations: [] },
+      sp500_index: { sourceDataset: 'SP500', sourcePageLabel: 'FRED SP500', accessMethod: 'official_csv', limitations: [] },
+      nasdaq100_pe: { sourceDataset: '/index/nasdaq-100/', sourcePageLabel: 'WorldPEratio Nasdaq-100', accessMethod: 'public_webpage', limitations: ['QQQ-based第三方公开参考', 'PE时间曲线从本站首次成功采集日期开始积累'] },
+      sp500_pe: { sourceDataset: '/index/sp-500/', sourcePageLabel: 'WorldPEratio S&P 500', accessMethod: 'public_webpage', limitations: ['SPY-based第三方公开参考', 'PE时间曲线从本站首次成功采集日期开始积累'] },
+      soxx_price: { sourceDataset: 'iShares SOXX Data Download', sourcePageLabel: 'SOXX NAV 官方工作簿', accessMethod: 'official_workbook_local_import', limitations: ['NAV，不是交易所市场价格', 'seriesType = nav', 'adjustmentStatus = provider_adjusted'] }
+    };
+    const datasets = providerDefinitions.flatMap(provider => provider.ids.map(id => {
+      const model = this.models.get(id) || {};
+      const diagnostic = diagnostics[provider.providerId]?.metrics?.[id] || {};
+      const meta = metricMeta[id];
+      return {
+        metricId: id, label: model.displayName || model.label || id, providerId: provider.providerId,
+        sourceDataset: meta.sourceDataset, sourcePageLabel: meta.sourcePageLabel, sourceUrl: model.sourceUrl || null,
+        accessMethod: meta.accessMethod, updateMode: provider.updateMode, isRealtime: false,
+        networkFetchEnabled: provider.networkAccessEnabled, status: provider.providerId === 'ishares' && model.status === 'fresh' ? 'manual' : (model.status || 'unavailable'),
+        latestValue: Number.isFinite(Number(model.value)) ? Number(model.value) : null, unit: model.unit || null,
+        sourceDataDate: model.sourceDataDate || model.asOf || null, fetchedAt: model.fetchedAt || model.updatedAt || null,
+        lastAttemptAt: diagnostic.lastAttemptAt || (provider.providerId === 'ishares' ? diagnostics.ishares?.lastLoadedAt || null : null),
+        lastSuccessAt: model.lastSuccessAt || model.fetchedAt || null, nextScheduledAt: provider.updateMode === 'scheduled_daily' ? nextScheduledAt : null,
+        historyAvailable: Boolean(model.historyAvailable), historyStart: model.historyStart || null, historyEnd: model.historyEnd || null,
+        seriesType: model.seriesType || (id === 'soxx_price' ? 'nav' : null), adjustmentStatus: model.adjustmentStatus || (id === 'soxx_price' ? 'provider_adjusted' : null), limitations: [...(model.limitations || []), ...meta.limitations]
+      };
+    }));
+    const providers = providerDefinitions.map(provider => {
+      const entries = datasets.filter(item => item.providerId === provider.providerId);
+      const diagnostic = diagnostics[provider.providerId];
+      const state = entries.some(item => item.status === 'error') ? 'error' : entries.some(item => item.status === 'stale') ? 'stale' : provider.providerId === 'ishares' ? 'manual' : entries.some(item => item.status === 'unavailable') ? 'unavailable' : 'fresh';
+      return { ...provider, isRealtime: false, schedule: { enabled: provider.updateMode === 'scheduled_daily', timezone: this.config.timezone, time: '07:30' }, status: state,
+        lastAttemptAt: entries.map(item => item.lastAttemptAt).filter(Boolean).sort().at(-1) || null, lastSuccessAt: entries.map(item => item.lastSuccessAt).filter(Boolean).sort().at(-1) || null,
+        nextScheduledAt: provider.updateMode === 'scheduled_daily' ? nextScheduledAt : null, attemptsToday: Math.max(0, ...entries.map(item => Number(diagnostic?.metrics?.[item.metricId]?.attempts) || 0)),
+        dailyRequestBudget: provider.networkAccessEnabled ? 2 * entries.length : 0, lastErrorCategory: entries.map(item => diagnostic?.metrics?.[item.metricId]?.lastError?.type).find(Boolean) || diagnostics.ishares?.lastError || null,
+        datasets: entries, note: provider.note };
+    });
+    const recentRuns = (await this.audit.read()).slice(-20).reverse();
+    const allFresh = datasets.every(item => ['fresh', 'manual'].includes(item.status));
+    return {
+      generatedAt: isoNow(this.now()), service: { mode: this.productionMode ? 'production-six-metrics' : 'other', status: 'ready', startedAt: null, uptimeSeconds: null },
+      scheduler: scheduler?.getStatus?.() || { enabled: false, timezone: this.config.timezone, time: '07:30', nextScheduledAt: null, running: false, currentProviderId: null, startupCatchupEnabled: true, lastCycleStartedAt: null, lastCycleCompletedAt: null, lastCycleResult: 'not_available' },
+      summary: { enabledProviderCount: providers.length, enabledDatasetCount: datasets.length, dailyNetworkDatasetCount: datasets.filter(item => item.networkFetchEnabled).length, localImportDatasetCount: datasets.filter(item => !item.networkFetchEnabled).length, realtimeProviderCount: 0, schedulerStatus: scheduler?.running ? 'running' : allFresh ? 'normal' : 'partial' },
+      realtime: { enabled: false, message: '当前网站没有实时行情源。FRED和WorldPEratio按日检查，SOXX使用本地导入的官方NAV数据。' },
+      providers, datasets, recentRuns,
+      storage: { runtimeDataIgnored: true, gitTracksRealMarketData: false, rawHtmlStored: false, cookiesOrTokensUsed: false, externalApiExposed: false, message: '真实市场数据、运行缓存和采集记录仅保存在服务器本地runtime-data目录，不进入Git仓库。' }
     };
   }
 }

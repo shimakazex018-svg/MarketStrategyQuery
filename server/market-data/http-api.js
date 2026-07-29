@@ -26,7 +26,11 @@ function normalizedRange(requestUrl) {
   return RANGE_KEYS.includes(value) ? value : null;
 }
 
-async function handleMarketDataApi(req, res, requestUrl, service) {
+async function handleMarketDataApi(req, res, requestUrl, service, scheduler = null) {
+  if (req.method === 'GET' && requestUrl.pathname === '/api/settings/data-acquisition') {
+    sendJson(res, 200, await service.getDataAcquisitionStatus(scheduler));
+    return true;
+  }
   const prefix = '/api/market-data';
   if (!requestUrl.pathname.startsWith(prefix)) return false;
 
