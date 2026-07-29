@@ -13,7 +13,7 @@
 
 Node.js 原生 HTTP 服务
   -> /api/health
-  -> /api/market-data/*
+  -> /api/market-data/* + /api/settings/data-acquisition
   -> public/ 静态文件
 ```
 
@@ -89,6 +89,7 @@ docs/                           # 长期上下文与专项设计文档
 - `service.js`：组合静态定义、缓存、许可决策、来源和状态回退。
 - `logger.js`：有界日志轮转，防止磁盘持续增长。
 - `http-api.js`：内部 API 路由、范围校验和可信网段手动刷新限制。
+- `acquisition-audit.js`：只保留采集元数据的有界审计文件；设置状态 API 只聚合现有 Provider、缓存、调度和审计状态，不触发采集。
 - `server/imports/`：最大2 MiB、10,000行的CSV解析，校验ticker、日期、权重、价格、来源和人工Forward PE，并生成SHA-256导入manifest。
 - `tools/market-data/import-soxx-history.js`：从`runtime-data/`内的官方SpreadsheetML或用户CSV离线、幂等、原子导入SOXX；必须显式声明`seriesType`和`adjustmentStatus`。
 - `server/derived-indicators/sec-facts.js`：可配置GAAP/IFRS字段优先级、修订去重、季度TTM和显式拆股口径调整。

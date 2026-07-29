@@ -27,6 +27,7 @@
 - 六张正式指标卡：Nasdaq-100 PE、S&P 500 PE、VIX、VXN、Nasdaq-100指数和S&P 500指数；支持七个时间范围、状态元数据和真实历史/快照结构。
 - 首页指标状态支持 `loading`、`fresh`、`stale`、`error`、`demo`、`unavailable`、`provisional`、`insufficient_coverage` 和 `manual`，并可独立显示 `quality_warning`。
 - 深浅主题、Hash Router、键盘/触摸交互和响应式布局。
+- `#/settings` 只读展示当前正式数据源、采集状态、计划任务和有限审计记录；它只请求本站内部状态 API，不触发第三方采集。
 - Node.js 静态服务、健康检查和内部市场数据 API。
 - 回撤分析只通过内部history API一次读取所选完整历史；SOXX无有效本地文件时不显示选项。日期游标只更新SVG覆盖层和Tooltip，使用缓存完整序列二分查找，不改变回撤结果。现有首页和指标详情仍使用有界范围与最多240点的图表响应。
 
@@ -61,6 +62,7 @@
 | `runtime-data/derived/` | 派生结果 | 忽略 | 算法结果、版本和覆盖率 |
 | `runtime-data/market-data/web-pages/worldperatio/` | 运行数据 | 忽略 | 保存标准化latest、请求状态、去重快照历史和last-good备份；不保存HTML，内容不得提交 |
 | `runtime-data/market-data/production/` | 正式运行数据 | 忽略 | 保存四项FRED序列、两个PE当前值、PE快照历史、SOXX ETF本地导入序列及每日请求状态；由离线导入或正式Provider原子更新 |
+| `runtime-data/system/data-acquisition-audit.json` | 运行审计数据 | 忽略 | 只记录采集元数据，原子写入、损坏隔离、最多200条或90天 |
 | `runtime-data/process/` | 服务运行状态 | 忽略 | 仅保存48101经端口与进程校验后的PID元数据和最后退出记录 |
 | `runtime-data/logs/market-cycle/` | 服务日志 | 忽略 | 48101启动、标准输出和错误日志；单文件10 MiB、最近5个轮转副本 |
 | `tools/market-data-lab/core-data-acquisition/` | 隔离实验工具 | 跟踪 | 分来源一次性采集、规范化、冻结校验与本地报告；最新缺失项入口仅包含Invesco、Twelve Data和CFTC，不进入正式启动路径 |

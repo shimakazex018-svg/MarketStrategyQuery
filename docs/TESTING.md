@@ -135,6 +135,7 @@ Invoke-RestMethod http://127.0.0.1:48101/api/market-data/providers/worldperatio/
 - 缺失静态文件返回 404 `text/plain`，不得回退首页。
 - 非法 URL 解码和越界路径不得读取 `public/` 外文件。
 - 浏览器只请求本站 `/api/market-data/*`，页面访问不触发第三方抓取。
+- `#/settings` 只请求 `/api/settings/data-acquisition`；首次加载、刷新状态和60秒轮询不得调用刷新接口或第三方来源，离开路由必须清除轮询。
 - 手动刷新只允许可信本地网络，并受 30 分钟冷却、并发锁和每日预算限制。
 
 ## 页面回归

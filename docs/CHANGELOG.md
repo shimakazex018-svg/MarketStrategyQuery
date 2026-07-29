@@ -220,3 +220,9 @@
 - 补齐项目上下文、架构、决策、待办、测试和交接文档。
 
 本基线不新增真实行情、自动判断、IBKR、数据库、登录或交易功能。
+# 数据源与采集状态设置页 — 2026-07-29
+
+- 新增 `#/settings` 只读设置页和顶部可访问设置入口；页面通过本站内部状态 API 展示正式 Provider、7 个数据集、日频调度、无实时行情说明、最近审计记录和运行数据隐私状态。
+- 新增 `GET /api/settings/data-acquisition`，聚合现有正式 Provider、运行缓存和 scheduler 状态；读取该接口不会刷新 Provider、消耗请求预算或触发第三方网络请求。
+- 新增有界 `runtime-data/system/data-acquisition-audit.json` 审计记录：原子写入、损坏隔离、最多200条/90天，只记录脱敏采集元数据。
+- 保持 FRED、WorldPEratio、SOXX 本地导入、Asia/Shanghai 07:30 调度、48101 和 Windows 无感启动不变。

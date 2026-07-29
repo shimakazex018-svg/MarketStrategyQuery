@@ -2,33 +2,20 @@
 
 ## 当前状态
 
-- 当前开发分支为`main`，稳定标签仍为`v0.4.0`；本轮按用户要求直接在main接入SOXX回撤分析，不创建功能分支、worktree或标签。
-- v0.5首页和公开摘要仍固定为`nasdaq100_pe`、`sp500_pe`、`vix`、`vxn`、`nasdaq100_index`、`sp500_index`六项；SOXX仅为隐藏分析指标。
-- `#/drawdown-analysis`使用Nasdaq-100、S&P 500与可用SOXX完整日频历史，支持主/对比对象、七个快捷范围、自定义日期、阈值、排序、回撤事件、分布、年度收益和归一化对比。
-- 回撤页两张SVG图使用共享`selectedChartDate`日期游标；日期只从完整有效交易日序列二分吸附，交互层只更新虚线、点标记和Tooltip，并在路由切换、重渲染、失焦和取消时清理监听器与待执行动画帧。
-- `MarketCycleStrategy-Autostart`为48101当前登录用户建立隐藏PowerShell长运行宿主；任务为登录延迟触发、`IgnoreNew`、1分钟间隔最多3次失败重试。控制脚本位于`scripts/windows/`，PID与日志只在忽略的`runtime-data/`。
-- 真实数据只位于被Git忽略的`runtime-data/`；源码、测试和文档不包含真实数值、真实序列、原始响应、内容哈希或机器信息。
-
-## 正式数据流
-
-- `tools/market-data/import-successful-data.js`离线读取六项已成功规范化数据并原子写入`runtime-data/market-data/production/`；不发网络请求，可重复执行且相同数据不重复写入。
-- `FredProvider`和`WorldPERatioProductionProvider`通过现有`MarketDataService`生成六项模型；单项失败只把受影响指标标记为stale并保留最后成功缓存。
-- `tools/market-data/import-soxx-history.js`把runtime-data内的官方SpreadsheetML或明确口径CSV原子导入`production/etf/soxx.json`；`EtfPriceProvider`只读取本地文件，不发网络请求。
-- 每日更新保持Asia/Shanghai 07:30；六项既有来源规则不变，SOXX步骤只重载本地文件，不访问iShares/BlackRock。
-- history API支持`range=ALL`完整已校验序列供回撤分析一次读取；其他页面仍使用既有有界历史响应。API不返回本地路径、哈希、原始正文或错误堆栈。
+- 当前分支为 `main`；v0.5 正式首页仍为六项指标，SOXX仅用于回撤分析。
+- 新增 `#/settings`：顶部齿轮入口、只读数据源与采集状态页、60秒仅内部 API 的状态轮询；无实时行情源。
+- `GET /api/settings/data-acquisition` 聚合 FRED（4项）、WorldPEratio（2项）和 iShares 本地导入 SOXX NAV（1项）的现有运行状态，绝不触发刷新或外部请求。
+- 调度仍是 Asia/Shanghai 每日07:30；Windows 无感启动仅负责服务启动，不是采集任务。
+- `runtime-data/system/data-acquisition-audit.json` 从本功能上线后开始记录，原子写入、损坏隔离，最多200条或90天；不含原始数据、HTML、路径、Cookie、Token或内容哈希。
 
 ## 验证边界
 
-- 完整检查为149项测试通过、0失败；数据、语法和diff检查通过。Windows无感启动另有2项合成生命周期测试、隐藏启动/重复启动/受控停止重启及48101/48102 smoke；15分钟内健康和监听PID稳定、无新增cmd进程，Windows重新登录仍需目标桌面会话确认。
-- 自动测试只使用合成fixture；常规测试不得运行隔离实验真实采集入口。
-- 真实页面视觉验收截图不得进入Git，本轮截图位于Git工作树外。
-- 27个`core-data-acquisition`与`eodhd`实验文件继续保持未跟踪、未修改、未暂存、未接入正式服务。
-- 旧自计算模块只作历史兼容，不在首页、正常导航或正式六指标调度路径中出现。
+- `npm.cmd run check`：154项通过、0失败；数据检查、语法检查和完整自动测试均通过。
+- 设置 API、审计边界与前端路由的新增合成测试已覆盖；真实市场数据和隔离实验文件未纳入测试输入或 Git。
+- 后续视觉验收应检查 `#/settings` 的 1440×900、768×1024 和 390×844，并确认只存在本站内部 API 请求。
 
 ## 下一步
 
-1. SOXX官方来源采用iShares日频NAV，标记`provider_adjusted`；SOXX不是SOX，2024年3-for-1拆分不做二次调整。
-2. BlackRock条款不授权自动监控或复制；后续更新必须由用户人工取得公开文件并运行离线导入，不能增加官网调度。
-3. 48101应验证健康、六项首页摘要、SOXX详情/完整历史和回撤页；重启前必须确认监听进程属于本项目，不得误杀其他Node进程。
-4. 27个`core-data-acquisition`与`eodhd`实验文件必须继续保持未跟踪、未修改；真实SOXX文件和标准化序列不得进入Git。
-5. 如需卸载本机登录任务，执行`scripts/windows/unregister-market-autostart.ps1`；不得用任务计划程序创建周期性48101或07:30启动任务。
+1. 不要为设置页增加立即抓取、Provider启停、调度修改、缓存删除或上传功能，除非用户单独授权。
+2. 保持 FRED/WorldPEratio 既有合规与失败停机边界；SOXX继续仅允许人工下载后本地导入。
+3. `tools/market-data-lab/` 的未跟踪实验文件继续保持未修改、未暂存、未接入正式服务。
