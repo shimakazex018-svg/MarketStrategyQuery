@@ -15,11 +15,11 @@ const maxImageBytes = 2 * 1024 * 1024;
 const maxContactBytes = 3 * 1024 * 1024;
 const maxTotalBytes = 8 * 1024 * 1024;
 const targets = [
-  { name: 'desktop.webp', label: 'Desktop', route: '#/settings', viewport: { width: 1440, height: 900 }, purpose: '设置页首屏与导航' },
-  { name: 'ipad.webp', label: 'iPad', route: '#/settings', viewport: { width: 768, height: 1024 }, purpose: '设置页平板布局' },
-  { name: 'iphone.webp', label: 'iPhone', route: '#/settings', viewport: { width: 390, height: 844 }, purpose: '设置页手机布局' },
-  { name: 'home-desktop.webp', label: 'Home desktop', route: '#/', viewport: { width: 1440, height: 900 }, purpose: '首页基线' },
-  { name: 'drawdown-desktop.webp', label: 'Drawdown desktop', route: '#/drawdown-analysis', viewport: { width: 1440, height: 900 }, purpose: '回撤分析基线' }
+  { name: 'desktop.webp', label: 'Desktop', route: '#/indicator/naaim-exposure', viewport: { width: 1440, height: 900 }, purpose: 'NAAIM详情页桌面' },
+  { name: 'ipad.webp', label: 'iPad', route: '#/indicator/naaim-exposure', viewport: { width: 768, height: 1024 }, purpose: 'NAAIM详情页平板布局' },
+  { name: 'iphone.webp', label: 'iPhone', route: '#/indicator/naaim-exposure', viewport: { width: 390, height: 844 }, purpose: 'NAAIM详情页手机布局' },
+  { name: 'home-desktop.webp', label: 'Home desktop', route: '#/', viewport: { width: 1440, height: 900 }, purpose: '首页NAAIM宽卡' },
+  { name: 'settings-desktop.webp', label: 'Settings desktop', route: '#/settings', viewport: { width: 1440, height: 900 }, purpose: '设置页NAAIM Provider' }
 ];
 
 function requestJson(url) {
@@ -42,8 +42,12 @@ async function capture(browser, target, externalRequests, consoleErrors) {
   const page = await browser.newPage({ viewport: target.viewport, deviceScaleFactor: 1 });
   page.on('console', message => { if (message.type() === 'error') consoleErrors.push(message.text()); });
   page.on('request', request => { if (!request.url().startsWith(`${baseUrl}/`)) externalRequests.add(request.url()); });
-  await page.goto(`${baseUrl}/${target.route}`, { waitUntil: 'networkidle' });
+  await page.goto(`${baseUrl}/${target.route}`, { waitUntil: 'domcontentloaded' });
   await page.waitForSelector('#app > *');
+  if (target.route === '#/settings') await page.waitForSelector('.settings-hero');
+  if (target.route === '#/indicator/naaim-exposure') await page.waitForFunction(() => document.querySelector('h1')?.textContent.includes('NAAIM'));
+  if (target.route === '#/') await page.waitForSelector('.naaim-observation');
+  await page.waitForTimeout(300);
   const review = await page.evaluate(() => ({ text: document.body.innerText, overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth, loading: document.body.innerText.includes('正在读取采集状态') }));
   // The settings page has a fixed public label describing credential-use status; it contains no credential value and is below the captured viewport.
   assertPrivateText(review.text.replace('使用Cookie或Token', '访问凭据使用'), target.name);
@@ -76,7 +80,7 @@ async function main() {
     if (consoleErrors.length) throw new Error(`Console errors: ${consoleErrors.join(' | ')}`);
     await buildContactSheet(browser, targets.slice(0, 3).map(target => ({ label: target.label, path: path.join(outputDir, target.name) })), path.join(outputDir, 'contact-sheet.webp'));
   } finally { await browser.close(); }
-  const manifest = `# Current Visual Review\n\n- Commit: ${gitHead()}\n- Generated at: ${new Date().toISOString()}\n- Application version: ${health.version}\n- Route: #/settings, #/, #/drawdown-analysis\n- Viewports: 1440x900, 768x1024, 390x844\n- Data mode: local-production-cache\n- Service health: ready\n- External requests triggered: 0\n- Privacy scan: passed\n- Changed feature: 持续视觉快照流程与设置页可读性\n- Interaction state: 设置页默认最近10条记录；标准截图为静态首屏状态\n- Known limitations: 快照不替代真实触摸设备验收。\n\n## Files\n\n| File | Viewport | Route | Purpose |\n|---|---|---|---|\n${targets.map(target => `| [${target.name}](${target.name}) | ${target.viewport.width}x${target.viewport.height} | ${target.route} | ${target.purpose} |`).join('\n')}\n| [contact-sheet.webp](contact-sheet.webp) | visual index | #/settings | Desktop, iPad and iPhone index |\n\n## Validation\n\n- Desktop: passed\n- iPad: passed\n- iPhone: passed\n- Horizontal overflow: none\n- Console errors: none\n- Sensitive information: none found in DOM, manifest or filenames\n- External network access: none\n`;
+  const manifest = `# Current Visual Review\n\n- Commit: ${gitHead()}\n- Generated at: ${new Date().toISOString()}\n- Application version: ${health.version}\n- Route: #/indicator/naaim-exposure, #/, #/settings\n- Viewports: 1440x900, 768x1024, 390x844\n- Data mode: local-production-cache\n- Repository visibility: private\n- Service health: ready\n- External requests triggered: 0\n- NAAIM conflict policy: exclude_conflicting_dates\n- Excluded conflict date count: 2\n- Privacy scan: passed\n- Changed feature: NAAIM主动投资经理美股敞口本地导入与页面接入\n- Interaction state: NAAIM周频历史与排除冲突日期说明\n- Known limitations: 快照不替代真实触摸设备验收。\n\n## Files\n\n| File | Viewport | Route | Purpose |\n|---|---|---|---|\n${targets.map(target => `| [${target.name}](${target.name}) | ${target.viewport.width}x${target.viewport.height} | ${target.route} | ${target.purpose} |`).join('\n')}\n| [contact-sheet.webp](contact-sheet.webp) | visual index | #/indicator/naaim-exposure | Desktop, iPad and iPhone index |\n\n## Validation\n\n- Desktop: passed\n- iPad: passed\n- iPhone: passed\n- Horizontal overflow: none\n- Console errors: none\n- Sensitive information: none found in DOM, manifest or filenames\n- External network access: none\n`;
   assertPrivateText(manifest, 'manifest');
   await fs.writeFile(path.join(outputDir, 'manifest.md'), manifest, 'utf8');
   const total = await assertSizes();

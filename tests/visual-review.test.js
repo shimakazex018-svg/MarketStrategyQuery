@@ -15,7 +15,7 @@ test('visual privacy scanner detects private paths, private IPs and credential t
 });
 
 test('current visual review has its bounded WebP set and a relative-link manifest', async () => {
-  const required = ['manifest.md', 'contact-sheet.webp', 'desktop.webp', 'ipad.webp', 'iphone.webp', 'home-desktop.webp', 'drawdown-desktop.webp'];
+  const required = ['manifest.md', 'contact-sheet.webp', 'desktop.webp', 'ipad.webp', 'iphone.webp', 'home-desktop.webp', 'settings-desktop.webp'];
   const files = await fs.readdir(current); for (const file of required) assert.equal(files.includes(file), true, `${file} missing`);
   assert.equal(files.filter(file => file.endsWith('.webp')).length <= 7, true);
   const manifest = await fs.readFile(path.join(current, 'manifest.md'), 'utf8');
