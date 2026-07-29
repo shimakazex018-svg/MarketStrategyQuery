@@ -1253,7 +1253,7 @@ async function loadIndicatorRange(id, range) {
 }
 
 async function loadNaaim(range = '1Y') {
-  try { const response = await fetch(`/api/market-data/metrics/naaim_exposure?range=${encodeURIComponent(range)}`, { headers: { Accept: 'application/json' } }); if (!response.ok) throw new Error(`NAAIM API ${response.status}`); state.naaim = await response.json(); }
+  try { const [summaryResponse, historyResponse] = await Promise.all([fetch('/api/market-data/metrics/naaim_exposure', { headers: { Accept: 'application/json' } }), fetch(`/api/market-data/metrics/naaim_exposure/history?range=${encodeURIComponent(range)}`, { headers: { Accept: 'application/json' } })]); if (!summaryResponse.ok || !historyResponse.ok) throw new Error(`NAAIM API ${summaryResponse.status}/${historyResponse.status}`); const [summary, history] = await Promise.all([summaryResponse.json(), historyResponse.json()]); state.naaim = { ...summary, history: history.history || [], requestedRange: range }; }
   catch { state.naaim = { status: 'unavailable', history: [], statusMessage: '本地NAAIM数据暂不可用' }; }
 }
 
