@@ -28,6 +28,7 @@
 - 首页指标状态支持 `loading`、`fresh`、`stale`、`error`、`demo`、`unavailable`、`provisional`、`insufficient_coverage` 和 `manual`，并可独立显示 `quality_warning`。
 - 深浅主题、Hash Router、键盘/触摸交互和响应式布局。
 - `#/settings` 只读展示当前正式数据源、采集状态、计划任务和有限审计记录；它只请求本站内部状态 API，不触发第三方采集。
+- NAAIM Exposure Index is an optional weekly local-import observation module; it does not change the six homepage metric cards or the daily external collection schedule.
 - Node.js 静态服务、健康检查和内部市场数据 API。
 - 回撤分析只通过内部history API一次读取所选完整历史；SOXX无有效本地文件时不显示选项。日期游标只更新SVG覆盖层和Tooltip，使用缓存完整序列二分查找，不改变回撤结果。现有首页和指标详情仍使用有界范围与最多240点的图表响应。
 

@@ -11,7 +11,7 @@ const MVP_SCHEDULES = Object.freeze({
   'nasdaq-cot-positioning': { hour: 7, minute: 30, weekdays: ['Sat'] }
 });
 const PRODUCTION_SCHEDULE = Object.freeze({ hour: 7, minute: 30 });
-const LOCAL_ANALYSIS_METRICS = Object.freeze(['soxx_price']);
+const LOCAL_ANALYSIS_METRICS = Object.freeze(['soxx_price', 'naaim_exposure']);
 
 function zonedParts(date, timezone) {
   return new Intl.DateTimeFormat('en-GB', {

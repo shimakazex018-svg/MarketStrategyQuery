@@ -272,12 +272,12 @@ class MarketDataService {
       const startedAt = isoNow(this.now());
       const result = await this.productionCoordinator.refresh(id);
       const indicator = this.getIndicator(id);
-      const providerId = id === 'soxx_price' ? 'ishares' : id.endsWith('_pe') ? 'worldperatio' : 'fred';
-      const trigger = id === 'soxx_price' ? 'local_reload' : kind === 'startup' ? 'startup_catchup' : 'scheduled';
+      const providerId = id === 'soxx_price' ? 'ishares' : id === 'naaim_exposure' ? 'naaim' : id.endsWith('_pe') ? 'worldperatio' : 'fred';
+      const trigger = ['soxx_price', 'naaim_exposure'].includes(id) ? 'local_reload' : kind === 'startup' ? 'startup_catchup' : 'scheduled';
       await this.audit.append({
         providerId, metricId: id, trigger, startedAt, completedAt: isoNow(this.now()),
         result: result.ok ? (result.reason === 'already-successful-today' ? 'cached' : 'success') : 'failed',
-        externalRequestCount: id === 'soxx_price' ? 0 : result.reason === 'already-successful-today' ? 0 : 1,
+        externalRequestCount: ['soxx_price', 'naaim_exposure'].includes(id) ? 0 : result.reason === 'already-successful-today' ? 0 : 1,
         cacheAction: result.ok ? (result.reason === 'already-successful-today' ? 'unchanged' : 'updated') : indicator?.status === 'stale' ? 'stale_fallback' : 'none',
         sourceDataDate: indicator?.sourceDataDate || indicator?.asOf || null,
         errorCategory: result.ok ? null : result.reason || 'source_unavailable'
@@ -430,7 +430,7 @@ class MarketDataService {
     if (!model) return null;
     if (range !== 'ALL') {
       const ranged = this.getIndicator(id, range);
-      return { metricId: ranged.id, range, history: ranged.history, historyStart: ranged.historyStart, historyEnd: ranged.historyEnd, status: ranged.status, provider: ranged.provider, sourceLabel: ranged.sourceLabel, seriesType: ranged.seriesType || null, adjustmentStatus: ranged.adjustmentStatus || null, limitations: ranged.limitations || [] };
+      return { metricId: ranged.id, range, history: ranged.history, historyStart: ranged.historyStart, historyEnd: ranged.historyEnd, status: ranged.status, provider: ranged.provider, sourceLabel: ranged.sourceLabel, seriesType: ranged.seriesType || null, adjustmentStatus: ranged.adjustmentStatus || null, excludedConflictDateCount: ranged.excludedConflictDateCount || 0, limitations: ranged.limitations || [] };
     }
     const history = (model.history || []).map(point => ({ date: point.date, value: point.value }));
     return {
@@ -444,7 +444,7 @@ class MarketDataService {
       sourceLabel: model.sourceLabel,
       seriesType: model.seriesType || null,
       adjustmentStatus: model.adjustmentStatus || null,
-      limitations: model.limitations || []
+      excludedConflictDateCount: model.excludedConflictDateCount || 0, limitations: model.limitations || []
     };
   }
 
@@ -482,13 +482,14 @@ class MarketDataService {
     const diagnostics = {
       fred: this.productionCoordinator?.providerStatus('fred') || null,
       worldperatio: this.productionCoordinator?.providerStatus('worldperatio') || null,
-      ishares: this.productionCoordinator?.providerStatus('ishares-soxx') || null
+      ishares: this.productionCoordinator?.providerStatus('ishares-soxx') || null, naaim: this.productionCoordinator?.providerStatus('naaim') || null
     };
     const nextScheduledAt = scheduler?.nextScheduledAt?.() || null;
     const providerDefinitions = [
       { providerId: 'fred', displayName: 'FRED', domain: 'fred.stlouisfed.org', sourceType: 'official_csv', networkAccessEnabled: true, updateMode: 'scheduled_daily', ids: ['vix', 'vxn', 'nasdaq100_index', 'sp500_index'], note: '数据通过FRED取得，原始来源以各系列标注为准。' },
       { providerId: 'worldperatio', displayName: 'WorldPEratio', domain: 'worldperatio.com', sourceType: 'public_webpage', networkAccessEnabled: true, updateMode: 'scheduled_daily', ids: ['nasdaq100_pe', 'sp500_pe'], note: '第三方公开参考数据，不代表指数编制机构官方估值。' },
-      { providerId: 'ishares', displayName: 'iShares / BlackRock', domain: 'ishares.com', sourceType: 'official_workbook_local_import', networkAccessEnabled: false, updateMode: 'manual_import', ids: ['soxx_price'], note: 'SOXX数据来自官方工作簿的本地人工导入，网站不会自动访问iShares。' }
+      { providerId: 'ishares', displayName: 'iShares / BlackRock', domain: 'ishares.com', sourceType: 'official_workbook_local_import', networkAccessEnabled: false, updateMode: 'manual_import', ids: ['soxx_price'], note: 'SOXX数据来自官方工作簿的本地人工导入，网站不会自动访问iShares。' },
+      { providerId: 'naaim', displayName: 'NAAIM', domain: 'naaim.org', sourceType: 'official_workbook_local_import', networkAccessEnabled: false, updateMode: 'manual_import', frequency: 'weekly', ids: ['naaim_exposure'], note: '官方Excel由用户人工下载并导入。服务器不会自动访问NAAIM或MacroMicro。' }
     ];
     const metricMeta = {
       vix: { sourceDataset: 'VIXCLS', sourcePageLabel: 'FRED VIXCLS', accessMethod: 'official_csv', limitations: ['原始来源为Cboe'] },
@@ -497,7 +498,8 @@ class MarketDataService {
       sp500_index: { sourceDataset: 'SP500', sourcePageLabel: 'FRED SP500', accessMethod: 'official_csv', limitations: [] },
       nasdaq100_pe: { sourceDataset: '/index/nasdaq-100/', sourcePageLabel: 'WorldPEratio Nasdaq-100', accessMethod: 'public_webpage', limitations: ['QQQ-based第三方公开参考', 'PE时间曲线从本站首次成功采集日期开始积累'] },
       sp500_pe: { sourceDataset: '/index/sp-500/', sourcePageLabel: 'WorldPEratio S&P 500', accessMethod: 'public_webpage', limitations: ['SPY-based第三方公开参考', 'PE时间曲线从本站首次成功采集日期开始积累'] },
-      soxx_price: { sourceDataset: 'iShares SOXX Data Download', sourcePageLabel: 'SOXX NAV 官方工作簿', accessMethod: 'official_workbook_local_import', limitations: ['NAV，不是交易所市场价格', 'seriesType = nav', 'adjustmentStatus = provider_adjusted'] }
+      soxx_price: { sourceDataset: 'iShares SOXX Data Download', sourcePageLabel: 'SOXX NAV 官方工作簿', accessMethod: 'official_workbook_local_import', limitations: ['NAV，不是交易所市场价格', 'seriesType = nav', 'adjustmentStatus = provider_adjusted'] },
+      naaim_exposure: { sourceDataset: 'NAAIM Exposure Index workbook', sourcePageLabel: 'NAAIM官方Excel', accessMethod: 'official_workbook_local_import', limitations: ['NAAIM官方工作簿中有2个早期同日冲突日期，本站已将这些日期从正式序列中排除。'] }
     };
     const datasets = providerDefinitions.flatMap(provider => provider.ids.map(id => {
       const model = this.models.get(id) || {};
@@ -506,20 +508,20 @@ class MarketDataService {
       return {
         metricId: id, label: model.displayName || model.label || id, providerId: provider.providerId,
         sourceDataset: meta.sourceDataset, sourcePageLabel: meta.sourcePageLabel, sourceUrl: model.sourceUrl || null,
-        accessMethod: meta.accessMethod, updateMode: provider.updateMode, isRealtime: false,
+        accessMethod: meta.accessMethod, updateMode: provider.updateMode, frequency: provider.frequency || model.frequency || 'daily', isRealtime: false,
         networkFetchEnabled: provider.networkAccessEnabled, status: provider.providerId === 'ishares' && model.status === 'fresh' ? 'manual' : (model.status || 'unavailable'),
         latestValue: Number.isFinite(Number(model.value)) ? Number(model.value) : null, unit: model.unit || null,
         sourceDataDate: model.sourceDataDate || model.asOf || null, fetchedAt: model.fetchedAt || model.updatedAt || null,
         lastAttemptAt: diagnostic.lastAttemptAt || (provider.providerId === 'ishares' ? diagnostics.ishares?.lastLoadedAt || null : null),
         lastSuccessAt: model.lastSuccessAt || model.fetchedAt || null, nextScheduledAt: provider.updateMode === 'scheduled_daily' ? nextScheduledAt : null,
         historyAvailable: Boolean(model.historyAvailable), historyStart: model.historyStart || null, historyEnd: model.historyEnd || null,
-        seriesType: model.seriesType || (id === 'soxx_price' ? 'nav' : null), adjustmentStatus: model.adjustmentStatus || (id === 'soxx_price' ? 'provider_adjusted' : null), limitations: [...(model.limitations || []), ...meta.limitations]
+        seriesType: model.seriesType || (id === 'soxx_price' ? 'nav' : null), adjustmentStatus: model.adjustmentStatus || (id === 'soxx_price' ? 'provider_adjusted' : null), excludedConflictDateCount: model.excludedConflictDateCount || 0, limitations: [...(model.limitations || []), ...meta.limitations]
       };
     }));
     const providers = providerDefinitions.map(provider => {
       const entries = datasets.filter(item => item.providerId === provider.providerId);
       const diagnostic = diagnostics[provider.providerId];
-      const state = entries.some(item => item.status === 'error') ? 'error' : entries.some(item => item.status === 'stale') ? 'stale' : provider.providerId === 'ishares' ? 'manual' : entries.some(item => item.status === 'unavailable') ? 'unavailable' : 'fresh';
+      const state = entries.some(item => item.status === 'error') ? 'error' : entries.some(item => item.status === 'stale') ? 'stale' : ['ishares','naaim'].includes(provider.providerId) ? 'manual' : entries.some(item => item.status === 'unavailable') ? 'unavailable' : 'fresh';
       return { ...provider, isRealtime: false, schedule: { enabled: provider.updateMode === 'scheduled_daily', timezone: this.config.timezone, time: '07:30' }, status: state,
         lastAttemptAt: entries.map(item => item.lastAttemptAt).filter(Boolean).sort().at(-1) || null, lastSuccessAt: entries.map(item => item.lastSuccessAt).filter(Boolean).sort().at(-1) || null,
         nextScheduledAt: provider.updateMode === 'scheduled_daily' ? nextScheduledAt : null, attemptsToday: Math.max(0, ...entries.map(item => Number(diagnostic?.metrics?.[item.metricId]?.attempts) || 0)),

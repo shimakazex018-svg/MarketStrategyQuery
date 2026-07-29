@@ -11,6 +11,7 @@ const state = {
   ranges: {},
   marketData: {},
   externalPE: { loaded: false, loading: false, status: null, latest: null, history: null, statistics: null, error: null },
+  naaim: { status: 'loading', history: [] },
   drawdown: {
     primaryId: 'nasdaq100_index',
     comparisonId: 'sp500_index',
@@ -475,6 +476,7 @@ function homeTemplate() {
           <a class="button ghost" href="#/indicators">查看指标说明</a>
         </div>
         <div class="metric-grid">${state.indicators.map(metricCard).join('')}</div>
+        ${naaimObservationTemplate()}
         <p class="cycle-disclaimer">数据仅用于本人投资研究。初步估算表示部分成分数据缺失或日期并非完全一致；覆盖不足时不输出正式数值。所有指标均不能单独用于判断市场阶段或形成自动仓位建议。</p>
         <div id="indicatorDialog" class="dialog-backdrop" hidden>
           <section class="indicator-dialog" role="dialog" aria-modal="true" aria-labelledby="indicatorDialogTitle" tabindex="-1">
@@ -718,6 +720,20 @@ function metricDetailTemplate(id) {
   const lastPoint = chart?.points?.at(-1);
   const chartMarkup = chart ? `<figure class="external-pe-series interactive-history-chart" data-chart-points="${escapeHtml(JSON.stringify(chartPoints))}"><figcaption>${isPe ? '真实快照曲线' : '真实日频历史曲线'}</figcaption><div class="history-chart-frame"><svg viewBox="0 0 720 220" preserveAspectRatio="none" role="img" aria-label="${escapeHtml(indicator.name)}真实历史曲线"><line class="baseline" x1="14" x2="706" y1="206" y2="206"></line><path class="line" d="${chart.line}"></path><circle class="current-marker" cx="${lastPoint?.[0]}" cy="${lastPoint?.[1]}" r="5"></circle></svg><output class="history-chart-tooltip" hidden></output></div><div class="history-chart-axis history-chart-axis-y"><span>${high}</span><span>${low}</span></div><div class="history-chart-axis history-chart-axis-x"><span>${escapeHtml(history[0]?.date)}</span><span>${escapeHtml(history.at(-1)?.date)}</span></div><p>${history.length}点 · 低点 ${low} · 高点 ${high}</p></figure>` : `<div class="external-pe-series-empty"><strong>${history.length ? '当前PE与历史统计区间' : '暂无数据'}</strong><span>${isPe ? `当前有${history.length}个真实快照；不足2点不绘制折线。` : '历史不足2点时不绘制折线。'}</span></div>`;
   return `<div class="page"><div class="breadcrumb"><a href="#/">首页</a><span>/</span><a href="#/indicators">指标说明</a><span>/</span><span>${escapeHtml(indicator.name)}</span></div><header class="page-title"><div><p class="eyebrow">Market Data</p><h1>${escapeHtml(indicator.name)}</h1><p>${escapeHtml(indicator.definition)}</p></div><span class="metric-status" data-status="${status.tone}">${status.label}</span></header><section class="external-pe-section"><div class="external-pe-summary"><article><span>当前值</span><strong>${hasFiniteValue(market.value) ? escapeHtml(market.value) : '—'}${isPe ? 'x' : ''}</strong></article><dl><div><dt>数据日期</dt><dd>${escapeHtml(market.asOf || '—')}</dd></div><div><dt>数据来源</dt><dd>${escapeHtml(market.source || '—')}</dd></div><div><dt>更新时间</dt><dd>${escapeHtml(formatDateTime(market.updatedAt))}</dd></div><div><dt>${isPe ? '估值标签' : '相对前值'}</dt><dd>${escapeHtml(isPe ? market.valuationLabel || '—' : hasFiniteValue(market.change) ? market.change : '—')}</dd></div></dl></div><h2>${isPe ? '当前PE与历史统计区间' : '历史曲线'}</h2>${statsMarkup}${rangeTabs}${chartMarkup}<div class="notice"><strong>数据说明</strong><span>本站数据仅用于个人市场观察和研究，不构成投资建议。数据可能存在延迟、修订或来源口径差异。</span></div>${isPe ? '<div class="notice"><strong>PE口径</strong><span>Nasdaq-100和S&P 500 PE来自第三方公开参考数据，不代表指数编制机构官方估值。PE历史曲线从本站首次成功采集日期开始积累。</span></div>' : '<div class="notice"><strong>FRED口径</strong><span>数据通过FRED获取，原始来源以指标详情页标注为准。</span></div>'}</section></div>`;
+}
+
+function naaimObservationTemplate() {
+  const model = state.naaim || {}; const status = DATA_STATUS[model.status] || DATA_STATUS.unavailable;
+  const history = model.history || []; const values = history.map(point => Number(point.value)).filter(Number.isFinite); const chart = values.length > 1 ? seriesToPath(values, 680, 132, 10) : null;
+  const value = hasFiniteValue(model.value) ? Number(model.value).toFixed(2) : '—';
+  return `<section class="naaim-observation section reveal"><div class="section-heading"><div><p class="eyebrow">INSTITUTIONAL EXPOSURE</p><h2>机构敞口观察</h2><p>NAAIM Exposure Index反映参与调查的主动投资经理所报告的美国股票市场平均敞口，不代表全部基金经理或机构的实际持仓。</p></div><a class="button ghost" href="#/indicator/naaim-exposure">查看详细分析</a></div><article class="naaim-card"><div><span class="metric-status" data-status="${status.tone}">${status.label}</span><h3>NAAIM主动投资经理美股敞口</h3><strong class="naaim-value">${value}</strong><small>数据日期：${escapeHtml(model.asOf || '—')}</small></div><dl><div><dt>较上周变化</dt><dd>${hasFiniteValue(model.change) ? Number(model.change).toFixed(2) : '—'}</dd></div><div><dt>四周移动平均</dt><dd>${hasFiniteValue(model.fourWeekAverage) ? Number(model.fourWeekAverage).toFixed(2) : '—'}</dd></div><div><dt>一年历史分位</dt><dd>${hasFiniteValue(model.oneYearPercentile) ? `${Number(model.oneYearPercentile).toFixed(1)}%` : '—'}</dd></div><div><dt>数据来源</dt><dd>NAAIM官方Excel本地导入</dd></div></dl>${chart ? `<figure class="naaim-mini-chart"><svg viewBox="0 0 680 132" preserveAspectRatio="none" aria-label="NAAIM最近52周趋势"><path class="line" d="${chart.line}"></path></svg><figcaption>最近52周趋势 · 非交易信号</figcaption></figure>` : '<p>尚未导入NAAIM官方数据。</p>'}</article></section>`;
+}
+
+function naaimDetailTemplate() {
+  const model = state.naaim || {}; const status = DATA_STATUS[model.status] || DATA_STATUS.unavailable; const history = model.history || [];
+  const values = history.map(point => Number(point.value)).filter(Number.isFinite); const chart = values.length > 1 ? seriesToPath(values, 720, 220, 14) : null;
+  const range = state.naaimRange || 'ALL'; const rangeButtons = [['6M','6个月'],['1Y','1年'],['3Y','3年'],['5Y','5年'],['10Y','10年'],['ALL','全历史']].map(([key,label]) => `<button class="range-tab${range === key ? ' active' : ''}" data-naaim-range="${key}" type="button">${label}</button>`).join('');
+  return `<section class="page"><div class="breadcrumb"><a href="#/">首页</a><span>/</span><span>NAAIM主动投资经理美股敞口</span></div><header class="page-title"><div><p class="eyebrow">WEEKLY · LOCAL IMPORT</p><h1>NAAIM主动投资经理美股敞口</h1><p>NAAIM Exposure Index为参与调查的主动投资经理报告的美国股票平均敞口；不是预测、买卖信号或全部机构持仓。</p></div><span class="metric-status" data-status="${status.tone}">${status.label}</span></header><section class="naaim-card naaim-detail"><div><span>当前敞口</span><strong class="naaim-value">${hasFiniteValue(model.value) ? Number(model.value).toFixed(2) : '—'}</strong><small>${escapeHtml(model.asOf || '—')}</small></div><dl><div><dt>上周变化</dt><dd>${hasFiniteValue(model.change) ? Number(model.change).toFixed(2) : '—'}</dd></div><div><dt>四周均值</dt><dd>${hasFiniteValue(model.fourWeekAverage) ? Number(model.fourWeekAverage).toFixed(2) : '—'}</dd></div><div><dt>一年分位</dt><dd>${hasFiniteValue(model.oneYearPercentile) ? `${Number(model.oneYearPercentile).toFixed(1)}%` : '—'}</dd></div><div><dt>全历史分位</dt><dd>${hasFiniteValue(model.allHistoryPercentile) ? `${Number(model.allHistoryPercentile).toFixed(1)}%` : '—'}</dd></div><div><dt>近52周区间</dt><dd>${hasFiniteValue(model.oneYearLow) ? `${model.oneYearLow} 至 ${model.oneYearHigh}` : '—'}</dd></div><div><dt>排除冲突日期</dt><dd>${model.excludedConflictDateCount || 0}</dd></div></dl></section><section class="external-pe-section"><div class="range-tabs">${rangeButtons}</div>${chart ? `<figure class="external-pe-series interactive-history-chart" data-chart-points="${escapeHtml(JSON.stringify(history))}"><figcaption>完整周频历史 · 0为现金、对冲或市场中性参考；100为完全投资参考</figcaption><div class="history-chart-frame"><svg viewBox="0 0 720 220" preserveAspectRatio="none" aria-label="NAAIM周频历史"><line class="baseline" x1="14" x2="706" y1="206" y2="206"></line><path class="line" d="${chart.line}"></path></svg><output class="history-chart-tooltip" hidden></output></div></figure>` : '<div class="notice"><strong>暂无数据</strong><span>尚未导入NAAIM官方数据。</span></div>'}<div class="notice"><strong>数据限制</strong><span>NAAIM官方工作簿中有2个早期同日冲突日期，本站未选择其中任何值，已将这些日期从正式序列中排除。调查参与者有限、策略不同，指标不构成投资建议。</span></div><div class="notice"><strong>本地导入状态</strong><span>服务器不会自动访问NAAIM或MacroMicro。</span></div></section></section>`;
 }
 
 function formatPercent(value, digits = 1) {
@@ -1236,6 +1252,11 @@ async function loadIndicatorRange(id, range) {
   render({ preserveScroll: true });
 }
 
+async function loadNaaim(range = '1Y') {
+  try { const response = await fetch(`/api/market-data/metrics/naaim_exposure?range=${encodeURIComponent(range)}`, { headers: { Accept: 'application/json' } }); if (!response.ok) throw new Error(`NAAIM API ${response.status}`); state.naaim = await response.json(); }
+  catch { state.naaim = { status: 'unavailable', history: [], statusMessage: '本地NAAIM数据暂不可用' }; }
+}
+
 async function loadDrawdownDataset(id, { force = false } = {}) {
   if (!id || state.drawdown.loading.has(id)) return;
   const controller = new AbortController();
@@ -1333,6 +1354,7 @@ function bindSettingsRunToggle() {
 function bindCommonEvents() {
   bindSettingsRunToggle();
   document.querySelector('[data-settings-refresh]')?.addEventListener('click', () => void loadSettingsStatus());
+  document.querySelectorAll('[data-naaim-range]').forEach(button => button.addEventListener('click', async () => { state.naaimRange = button.dataset.naaimRange; await loadNaaim(state.naaimRange); render({ preserveScroll: true }); }));
   document.querySelector('[data-drawdown-control="primary"]')?.addEventListener('change', event => {
     clearDrawdownChartInteraction({ clearDate: true });
     state.drawdown.primaryId = event.target.value;
@@ -1603,6 +1625,7 @@ function render({ preserveScroll = false } = {}) {
   else if (route === '/options' || route.startsWith('/options/')) app.innerHTML = optionsTemplate(route.split('/')[2]);
   else if (route === '/indicators') app.innerHTML = indicatorsTemplate();
   else if (route === '/settings') app.innerHTML = settingsTemplate();
+  else if (route === '/indicator/naaim-exposure') app.innerHTML = naaimDetailTemplate();
   else if (route.startsWith('/indicators/')) app.innerHTML = metricDetailTemplate(route.split('/')[2]);
   else if (route.startsWith('/stage/')) app.innerHTML = stageTemplate(state.stages.find(stage => stage.id === route.split('/')[2]));
   else app.innerHTML = notFoundTemplate();
@@ -1613,13 +1636,14 @@ function render({ preserveScroll = false } = {}) {
     '/drawdown-analysis': '回撤分析 · Market Cycle Strategy',
     '/options': '期权工具 · Market Cycle Strategy',
     '/indicators': '指标说明 · Market Cycle Strategy',
-    '/settings': '设置 · Market Cycle Strategy'
+    '/settings': '设置 · Market Cycle Strategy', '/indicator/naaim-exposure': 'NAAIM主动投资经理美股敞口 · Market Cycle Strategy'
   };
   document.title = titleByRoute[route] || (route.startsWith('/stage/') ? '阶段详情 · Market Cycle Strategy' : route.startsWith('/options/') ? '期权工具 · Market Cycle Strategy' : route.startsWith('/indicators/') ? '指标详情 · Market Cycle Strategy' : '页面不存在 · Market Cycle Strategy');
 
   bindCommonEvents();
   if (route === '/drawdown-analysis') void ensureDrawdownData();
   if (route === '/settings' && !settingsPollTimer) { void loadSettingsStatus(); settingsPollTimer = setInterval(() => void loadSettingsStatus(), 60_000); }
+  if (route === '/indicator/naaim-exposure') { const wanted = state.naaimRange || 'ALL'; if (state.naaim?.requestedRange !== wanted) void loadNaaim(wanted).then(() => { if (parseRoute() === route) render({ preserveScroll: true }); }); }
   if (route !== '/settings') clearSettingsPolling();
   if (!preserveScroll) {
     app.focus({ preventScroll: true });
@@ -1694,7 +1718,7 @@ async function loadData() {
   try {
     await loadData();
     render();
-    await loadMarketData('1Y');
+    await Promise.all([loadMarketData('1Y'), loadNaaim('1Y')]);
     render({ preserveScroll: true });
   } catch (error) {
     console.error(error);

@@ -2,6 +2,8 @@
 
 ## 当前状态
 
+- NAAIM Exposure Index is a local-import-only weekly analysis metric. Its canonical series excludes early conflicting source dates and never contacts NAAIM or MacroMicro at startup, page view, or 07:30 local reload.
+
 ### NAAIM Exposure Index checkpoint A
 
 - `main` contains only the local NAAIM workbook import pipeline and synthetic tests. No official NAAIM workbook exists under `runtime-data/imports/naaim/` yet.

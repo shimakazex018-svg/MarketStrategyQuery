@@ -12,13 +12,11 @@ const CORE_HEADERS = Object.freeze({
   value: ['naaim number mean/average', 'naaim number', 'mean/average', 'exposure index']
 });
 const OPTIONAL_HEADERS = Object.freeze({
-  bearish: ['bearish'],
-  quartile1: ['quart1', 'quartile 1', 'first quartile'],
-  median: ['quart2', 'quartile 2', 'median'],
-  quartile3: ['quart3', 'quartile 3', 'third quartile'],
-  bullish: ['bullish'],
-  deviation: ['deviation']
+  bearish: ['bearish', 'most bearish response'], quartile1: ['quart1', 'quartile 1', 'first quartile', 'quart 1 (25% at/below)'],
+  median: ['quart2', 'quartile 2', 'median', 'quart 2 (median)'], quartile3: ['quart3', 'quartile 3', 'third quartile', 'quart 3 (25% at/above)'],
+  bullish: ['bullish', 'most bullish response'], deviation: ['deviation', 'standard deviation']
 });
+const CONFLICT_POLICY = 'exclude_conflicting_dates';
 
 function xmlText(value) {
   return String(value || '').replace(/<[^>]+>/g, '')
@@ -79,10 +77,10 @@ function deriveNaaimStatistics(values) {
   };
 }
 
-function normalizeNaaimRows(rows, { now = new Date() } = {}) {
+function normalizeNaaimRows(rows, { now = new Date(), conflictPolicy = null } = {}) {
   if (!Array.isArray(rows) || !rows.length) throw new TypeError('NAAIM workbook contains no data rows');
   const today = new Date(now).toISOString().slice(0, 10);
-  const byDate = new Map();
+  const byDate = new Map(); const quarantined = new Map();
   let duplicateCount = 0;
   let conflictCount = 0;
   let missingValueCount = 0;
@@ -102,9 +100,12 @@ function normalizeNaaimRows(rows, { now = new Date() } = {}) {
     const point = { date, value, ...optional };
     const existing = byDate.get(date);
     if (existing) {
-      if (JSON.stringify(existing) !== JSON.stringify(point)) { conflictCount += 1; throw new TypeError(`NAAIM workbook contains conflicting values for ${date}`); }
-      duplicateCount += 1;
-    } else byDate.set(date, point);
+      if (JSON.stringify(existing) !== JSON.stringify(point)) {
+        conflictCount += 1;
+        if (conflictPolicy !== CONFLICT_POLICY) throw new TypeError(`NAAIM workbook contains conflicting values for ${date}`);
+        quarantined.set(date, [...(quarantined.get(date) || [existing]), point]); byDate.delete(date);
+      } else duplicateCount += 1;
+    } else if (!quarantined.has(date)) byDate.set(date, point);
   }
   const values = [...byDate.values()].sort((left, right) => left.date.localeCompare(right.date));
   let weeklyGapCount = 0;
@@ -118,12 +119,12 @@ function normalizeNaaimRows(rows, { now = new Date() } = {}) {
       lastDate: values.at(-1).date,
       rowCount: values.length,
       duplicateCount,
-      conflictCount,
+      conflictCount, conflictPolicy: conflictCount ? CONFLICT_POLICY : null, conflictDates: [...quarantined.keys()].sort(), excludedConflictDates: [...quarantined.keys()].sort(), excludedConflictRowCount: [...quarantined.values()].reduce((n, rows) => n + rows.length, 0),
       missingValueCount,
       abnormalRangeCount,
       weeklyGapCount
     },
-    derived: deriveNaaimStatistics(values)
+    derived: deriveNaaimStatistics(values), quarantine: [...quarantined.entries()].map(([date, rows]) => ({ date, rows }))
   };
 }
 
@@ -224,6 +225,15 @@ function validateStoredNaaim(model) {
   return { ...model, values: normalized.values, validation: normalized.diagnostics, derived: normalized.derived };
 }
 
+class NaaimExposureProvider {
+  constructor({ productionRoot, now = () => new Date(), timezone = 'Asia/Shanghai' }) { this.filePath = path.join(productionRoot, 'naaim', 'naaim-exposure.json'); this.now = now; this.timezone = timezone; this.data = null; this.lastError = null; this.lastLoadedAt = null; }
+  async init() { await this.reload(); return this; }
+  async reload() { const previous = this.data; try { this.data = validateStoredNaaim(JSON.parse(await fs.readFile(this.filePath, 'utf8'))); this.lastError = null; this.lastLoadedAt = this.now().toISOString(); } catch (error) { this.data = previous; this.lastError = error.code === 'ENOENT' ? null : 'invalid_local_naaim_data'; } return this.data; }
+  async read() { return this.data; }
+  async refresh() { const data = await this.reload(); return { ok: Boolean(data), status: data ? 'loaded' : 'unavailable', networkRequested: false }; }
+  getStatus() { return { providerId: 'naaim', enabled: true, mode: 'local_import_only', timezone: this.timezone, networkRequestsEnabled: false, metricId: NAAIM_METRIC_ID, available: Boolean(this.data), lastLoadedAt: this.lastLoadedAt, lastError: this.lastError }; }
+}
+
 async function assertLocalNaaimInput(filePath) {
   const stat = await fs.stat(filePath);
   if (!stat.isFile() || stat.size === 0 || stat.size > MAX_WORKBOOK_BYTES) throw new RangeError('NAAIM workbook size is invalid');
@@ -232,5 +242,5 @@ async function assertLocalNaaimInput(filePath) {
 module.exports = {
   CORE_HEADERS, MAX_WORKBOOK_BYTES, NAAIM_METRIC_ID, OPTIONAL_HEADERS,
   assertLocalNaaimInput, deriveNaaimStatistics, detectColumns, excelDate,
-  inspectNaaimWorkbook, normalizeNaaimRows, normalizedHeader, validateStoredNaaim
+  CONFLICT_POLICY, NaaimExposureProvider, inspectNaaimWorkbook, normalizeNaaimRows, normalizedHeader, validateStoredNaaim
 };

@@ -1,5 +1,10 @@
 # 变更日志
 
+## 2026-07-29 - NAAIM Exposure Index local integration
+
+- Added local-only NAAIM weekly provider, API metadata, homepage institutional-exposure card, detail route, settings-source visibility, and 07:30 local reload with zero external requests.
+- Canonical history excludes conflicting source dates under `exclude_conflicting_dates`; raw workbook, conflict audit, import state, and normalized real history remain ignored runtime data.
+
 ## 2026-07-29 - NAAIM local workbook import checkpoint A
 
 - Added an offline-only NAAIM `.xlsx` importer with bounded ZIP parsing, explicit header discovery, local-path confinement, macro/external-link rejection, normalization, duplicate/conflict checks, range checks, and atomic writes to ignored runtime data.
