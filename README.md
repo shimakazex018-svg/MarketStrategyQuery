@@ -80,3 +80,13 @@ powershell -ExecutionPolicy Bypass -File .\scripts\open-firewall.ps1
 ## Latest Visual Review
 
 最新可提交的网页内容区快照、隐私检查结果和审阅说明见 [previews/current/manifest.md](previews/current/manifest.md)。UI 改动完成后执行 `npm.cmd run visual:current` 刷新；该工具只访问本机 `127.0.0.1:48101`。
+
+## NAAIM local workbook import (checkpoint A)
+
+The NAAIM Exposure Index is not enabled in the product until an owner-supplied official workbook passes local validation. Place an officially downloaded `.xlsx` file under `runtime-data/imports/naaim/`, then run:
+
+```powershell
+npm.cmd run data:import:naaim -- runtime-data/imports/naaim/naaim-exposure-index.xlsx
+```
+
+The command is local-only: it neither contacts NAAIM nor MacroMicro, accepts no path outside that ignored import directory, and writes normalized data only below ignored `runtime-data/`. NAAIM has announced that non-member access changes to subscription access on 2026-08-01; local import does not imply continuing access, API permission, or redistribution permission.

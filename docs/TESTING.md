@@ -238,6 +238,11 @@ UI、布局或交互改动通过完整检查后执行 `npm.cmd run visual:curren
 
 ## 最近确认的基线
 
+### NAAIM checkpoint A
+
+- `npm.cmd run check` includes `tests/naaim-import.test.js`, which creates only synthetic `.xlsx` ZIP fixtures. Tests cover workbook/header detection, optional fields, duplicate/conflict handling, allowed negative and leveraged values, range/future/missing rejection, macro/external-link/path rejection, atomic idempotence, and derived weekly statistics.
+- Do not add an official workbook or normalized NAAIM history to tests, fixtures, previews, or Git.
+
 2026-07-26，Windows无感启动专项：PowerShell语法与2项启动生命周期合成测试通过；任务、隐藏启动、重复启动、受控停止/重启、48101 health、首页/回撤路由、六项摘要、SOXX history和48102隔离检查通过。15分钟观察中健康和监听PID稳定、未出现新的`cmd.exe`，任务持续运行；Windows重新登录触发仍需目标桌面会话确认。
 
 2026-07-26，回撤图同步日期游标按完整check内容验证：149项测试通过、0失败，数据检查确认9阶段、8期权、6首页指标和7范围，全部语法检查与`git diff --check`通过。合成评审页覆盖桌面、平板和手机视口的SVG虚线、选中点、同步日期、Tooltip翻转、键盘移动和Escape关闭；真实iPad/iPhone硬件触摸仍待目标设备人工验收。

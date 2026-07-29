@@ -138,6 +138,10 @@
 
 ## Cancelled
 
+## NAAIM Exposure Index
+
+- Status: checkpoint A implemented; checkpoint B is blocked pending an owner-supplied official NAAIM workbook and its local structure audit. No automatic NAAIM or MacroMicro collection is permitted.
+
 - [ ] 使用未经逐来源审计和许可的网页 DOM、私有接口或普通财经网站临时替代正式数据源
   - 原因：不满足许可、稳定性和可维护性门槛；WorldPEratio 是项目所有者按单一来源严格边界接受风险的例外，不构成其他网站的通用授权。
   - 状态：取消。

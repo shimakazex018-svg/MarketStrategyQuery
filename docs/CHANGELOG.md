@@ -1,5 +1,12 @@
 # 变更日志
 
+## 2026-07-29 - NAAIM local workbook import checkpoint A
+
+- Added an offline-only NAAIM `.xlsx` importer with bounded ZIP parsing, explicit header discovery, local-path confinement, macro/external-link rejection, normalization, duplicate/conflict checks, range checks, and atomic writes to ignored runtime data.
+- Added synthetic workbook tests and an npm command for an owner-supplied local workbook.
+- No official workbook was present, so no real history was inspected or imported and no UI, Provider, API, scheduler, audit record, or visual snapshot was added.
+- NAAIM/MacroMicro were not collected automatically. NAAIM's announced 2026-08-01 subscription transition remains a documented access limitation.
+
 ## 2026-07-26 - Windows 无感启动
 
 - 新增`MarketCycleStrategy-Autostart`登录触发任务的注册、注销、启动、停止、重启、状态与隐藏宿主脚本；不使用`.cmd`、`npm.cmd`或周期性启动任务。

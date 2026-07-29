@@ -2,6 +2,13 @@
 
 ## 当前状态
 
+### NAAIM Exposure Index checkpoint A
+
+- `main` contains only the local NAAIM workbook import pipeline and synthetic tests. No official NAAIM workbook exists under `runtime-data/imports/naaim/` yet.
+- To continue, the owner must manually download the official workbook and place it at `runtime-data/imports/naaim/naaim-exposure-index.xlsx` (another `.xlsx` basename is accepted), then run `npm.cmd run data:import:naaim -- runtime-data/imports/naaim/naaim-exposure-index.xlsx`.
+- The importer does not contact NAAIM or MacroMicro. It reports workbook sheet names, selected explicit headers, dates, row counts, duplicates/conflicts, and validation diagnostics without printing local paths.
+- Do not begin provider/API/UI/settings/audit/visual work (checkpoint B) until a real workbook import passes and the source structure is reviewed.
+
 - 当前分支为 `main`；v0.5 正式首页仍为六项指标，SOXX仅用于回撤分析。
 - 新增 `#/settings`：顶部齿轮入口、只读数据源与采集状态页、60秒仅内部 API 的状态轮询；无实时行情源。
 - `GET /api/settings/data-acquisition` 聚合 FRED（4项）、WorldPEratio（2项）和 iShares 本地导入 SOXX NAV（1项）的现有运行状态，绝不触发刷新或外部请求。

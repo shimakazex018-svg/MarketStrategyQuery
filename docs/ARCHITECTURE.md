@@ -195,6 +195,12 @@ QQQ PE派生结果同时保留原始与WMAD4稳健分母稳定性、价格/财�
 
 ## 源文件与运行文件
 
+### NAAIM local-import checkpoint A
+
+- `tools/market-data/import-naaim-exposure.js` is an offline-only `.xlsx` importer for an owner-supplied NAAIM workbook under `runtime-data/imports/naaim/`.
+- It uses the existing bounded ZIP reader, rejects macros, external workbook relationships, path traversal, oversized files, absent explicit Date/mean headers, conflicts, future observations, and values outside -200 through 200.
+- A successful import atomically writes only ignored `runtime-data/market-data/production/naaim/naaim-exposure.json` and `import-state.json`; no provider, API, scheduler, or UI is connected until a real workbook has been audited.
+
 - 应进入 Git：源代码、`public/data/*.json`、测试、配置模板、脚本、文档和经确认的评审截图。
 - Provider注册表只保存非敏感结论；账户ID、凭据、会话、订阅账单和真实响应不得进入注册表。
 - 不应进入 Git：`runtime-data/`、`.env`、密钥、日志、缓存、PID、临时文件和机器相关状态。

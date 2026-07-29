@@ -6,8 +6,9 @@
   "scripts": {
     "start": "node server.js",
     "test": "node --test tests/*.test.js",
+    "data:import:naaim": "node tools/market-data/import-naaim-exposure.js",
     "visual:current": "node scripts/visual-review/capture-current.js",
-    "check": "node --check server.js && node --check public/drawdown-analysis.js && node --check public/drawdown-chart-interactions.js && node --check public/app.js && node --check scripts/visual-review/capture-current.js && node scripts/check-data.js && node --test tests/*.test.js"
+    "check": "node --check server.js && node --check public/drawdown-analysis.js && node --check public/drawdown-chart-interactions.js && node --check public/app.js && node --check server/data-sources/naaim-exposure-provider.js && node --check tools/market-data/import-naaim-exposure.js && node --check scripts/visual-review/capture-current.js && node scripts/check-data.js && node --test tests/*.test.js"
   },
   "engines": {
     "node": ">=18"
