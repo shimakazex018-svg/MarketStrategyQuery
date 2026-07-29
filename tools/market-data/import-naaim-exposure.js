@@ -43,7 +43,7 @@ function isSameSeries(existing, next) {
   return existing && JSON.stringify(existing.values) === JSON.stringify(next.values);
 }
 
-async function importNaaimExposure({ file, rootDir = ROOT, now = new Date(), requireProductionCoverage = rootDir === ROOT } = {}) {
+async function prepareNaaimImport({ file, rootDir = ROOT, now = new Date(), requireProductionCoverage = rootDir === ROOT } = {}) {
   const inputPath = resolveNaaimInput(file, rootDir);
   await assertLocalNaaimInput(inputPath);
   const audit = await inspectNaaimWorkbook(inputPath);
@@ -52,10 +52,7 @@ async function importNaaimExposure({ file, rootDir = ROOT, now = new Date(), req
   if (conflictDates.length > 10) throw new TypeError('NAAIM has too many conflicting dates');
   const newest52 = new Set(audit.rows.map(row => row.date).map(value => require('../../server/data-sources/naaim-exposure-provider').excelDate(value)).sort().slice(-52));
   if (conflictDates.some(date => newest52.has(date))) throw new TypeError('NAAIM has a conflict in the latest 52 weeks');
-  if (requireProductionCoverage && (normalized.values.length < 500 || normalized.values.at(-1)?.date !== '2026-07-22')) throw new TypeError('NAAIM usable history does not meet coverage requirements');
-  const targetDir = path.join(rootDir, 'runtime-data', 'market-data', 'production', 'naaim');
-  const targetPath = path.join(targetDir, 'naaim-exposure.json');
-  const statePath = path.join(targetDir, 'import-state.json');
+  if (requireProductionCoverage && normalized.values.length < 500) throw new TypeError('NAAIM usable history does not meet coverage requirements');
   const importedAt = new Date(now).toISOString();
   const model = {
     metricId: NAAIM_METRIC_ID,
@@ -83,6 +80,15 @@ async function importNaaimExposure({ file, rootDir = ROOT, now = new Date(), req
     derived: normalized.derived,
     values: normalized.values
   };
+  return { inputPath, audit, normalized, conflictDates, importedAt, model };
+}
+
+async function importNaaimExposure({ file, rootDir = ROOT, now = new Date(), requireProductionCoverage = rootDir === ROOT, trigger = 'manual_import', externalRequestCount = 0, writeAudit = true } = {}) {
+  const prepared = await prepareNaaimImport({ file, rootDir, now, requireProductionCoverage });
+  const { audit, normalized, conflictDates, importedAt, model } = prepared;
+  const targetDir = path.join(rootDir, 'runtime-data', 'market-data', 'production', 'naaim');
+  const targetPath = path.join(targetDir, 'naaim-exposure.json');
+  const statePath = path.join(targetDir, 'import-state.json');
   const existing = await readExisting(targetPath);
   const changed = !isSameSeries(existing, model);
   if (changed) await writeAtomic(targetPath, model);
@@ -94,10 +100,10 @@ async function importNaaimExposure({ file, rootDir = ROOT, now = new Date(), req
     rowCount: model.rowCount, validation: model.validation, excludedConflictDateCount: conflictDates.length
   };
   await writeAtomic(statePath, state);
-  await new AcquisitionAudit(path.join(rootDir, 'runtime-data'), { now: () => new Date(now) }).append({
-    providerId: 'naaim', metricId: NAAIM_METRIC_ID, trigger: 'manual_import',
+  if (writeAudit) await new AcquisitionAudit(path.join(rootDir, 'runtime-data'), { now: () => new Date(now) }).append({
+    providerId: 'naaim', metricId: NAAIM_METRIC_ID, trigger,
     startedAt: importedAt, completedAt: importedAt,
-    result: changed ? 'success_with_exclusions' : 'skipped', externalRequestCount: 0,
+    result: changed ? 'success_with_exclusions' : 'skipped', externalRequestCount,
     cacheAction: changed ? 'updated' : 'unchanged', sourceDataDate: model.sourceDataDate,
     excludedConflictDateCount: conflictDates.length
   });
@@ -114,4 +120,4 @@ if (require.main === module) {
     .catch(error => { process.stderr.write(`${JSON.stringify({ ok: false, error: error.message })}\n`); process.exitCode = 2; });
 }
 
-module.exports = { IMPORT_ROOT, importNaaimExposure, parseArguments, resolveNaaimInput, writeAtomic };
+module.exports = { IMPORT_ROOT, importNaaimExposure, parseArguments, prepareNaaimImport, resolveNaaimInput, writeAtomic };

@@ -231,12 +231,12 @@ function validateStoredNaaim(model) {
 }
 
 class NaaimExposureProvider {
-  constructor({ productionRoot, now = () => new Date(), timezone = 'Asia/Shanghai' }) { this.filePath = path.join(productionRoot, 'naaim', 'naaim-exposure.json'); this.now = now; this.timezone = timezone; this.data = null; this.lastError = null; this.lastLoadedAt = null; }
+  constructor({ productionRoot, now = () => new Date(), timezone = 'Asia/Shanghai' }) { this.filePath = path.join(productionRoot, 'naaim', 'naaim-exposure.json'); this.statePath = path.join(productionRoot, 'naaim', 'updater-state.json'); this.now = now; this.timezone = timezone; this.data = null; this.lastError = null; this.lastLoadedAt = null; this.updaterState = {}; }
   async init() { await this.reload(); return this; }
-  async reload() { const previous = this.data; try { this.data = validateStoredNaaim(JSON.parse(await fs.readFile(this.filePath, 'utf8'))); this.lastError = null; this.lastLoadedAt = this.now().toISOString(); } catch (error) { this.data = previous; this.lastError = error.code === 'ENOENT' ? null : 'invalid_local_naaim_data'; } return this.data; }
+  async reload() { const previous = this.data; try { this.data = validateStoredNaaim(JSON.parse(await fs.readFile(this.filePath, 'utf8'))); this.lastError = null; this.lastLoadedAt = this.now().toISOString(); } catch (error) { this.data = previous; this.lastError = error.code === 'ENOENT' ? null : 'invalid_local_naaim_data'; } try { this.updaterState = JSON.parse(await fs.readFile(this.statePath, 'utf8')); } catch (error) { if (error.code !== 'ENOENT') this.updaterState = { result: 'source_unavailable' }; } return this.data; }
   async read() { return this.data; }
   async refresh() { const data = await this.reload(); return { ok: Boolean(data), status: data ? 'loaded' : 'unavailable', networkRequested: false }; }
-  getStatus() { return { providerId: 'naaim', enabled: true, mode: 'local_import_only', timezone: this.timezone, networkRequestsEnabled: false, metricId: NAAIM_METRIC_ID, available: Boolean(this.data), lastLoadedAt: this.lastLoadedAt, lastError: this.lastError }; }
+  getStatus() { return { providerId: 'naaim', enabled: true, mode: 'scheduled_weekly', accessMode: 'public_official_workbook', timezone: this.timezone, networkRequestsEnabled: true, manualImportEnabled: true, metricId: NAAIM_METRIC_ID, available: Boolean(this.data), lastLoadedAt: this.lastLoadedAt, lastError: this.lastError, ...this.updaterState }; }
 }
 
 async function assertLocalNaaimInput(filePath) {

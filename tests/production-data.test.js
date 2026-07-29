@@ -91,10 +91,10 @@ test('one provider failure marks only its metric stale', async t => {
   assert.equal(coordinator.models.get('vix').status, 'stale'); assert.equal(coordinator.models.get('vxn').status, 'fresh'); assert.equal(coordinator.models.get('nasdaq100_pe').status, 'fresh');
 });
 
-test('production scheduler runs six network metrics then one local-only SOXX reload after 07:30', async () => {
+test('production scheduler runs six network metrics then only the local SOXX reload after 07:30', async () => {
   const calls = []; const service = { productionMode: true, indicators: definitions, refresh: async id => { calls.push(id); }, config: {} };
   const scheduler = new MarketDataScheduler(service, { now: () => new Date('2099-01-03T00:00:00Z'), timezone: 'Asia/Shanghai' });
-  await scheduler.tick(); await scheduler.tick(); assert.deepEqual(calls, [...PRODUCTION_METRIC_IDS, ...ANALYSIS_METRIC_IDS]);
+  await scheduler.tick(); await scheduler.tick(); assert.deepEqual(calls, [...PRODUCTION_METRIC_IDS, 'soxx_price']);
   const startupCalls = [];
   await MarketDataService.prototype.refreshExpiredOnStartup.call({ productionMode: true, config: { timezone: 'Asia/Shanghai' }, now: () => new Date('2099-01-03T00:00:00Z'), refresh: async id => { startupCalls.push(id); } });
   assert.deepEqual(startupCalls, [...PRODUCTION_METRIC_IDS, ...ANALYSIS_METRIC_IDS]);

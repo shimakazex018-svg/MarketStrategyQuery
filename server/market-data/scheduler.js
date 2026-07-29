@@ -11,7 +11,7 @@ const MVP_SCHEDULES = Object.freeze({
   'nasdaq-cot-positioning': { hour: 7, minute: 30, weekdays: ['Sat'] }
 });
 const PRODUCTION_SCHEDULE = Object.freeze({ hour: 7, minute: 30 });
-const LOCAL_ANALYSIS_METRICS = Object.freeze(['soxx_price', 'naaim_exposure']);
+const LOCAL_ANALYSIS_METRICS = Object.freeze(['soxx_price']);
 
 function zonedParts(date, timezone) {
   return new Intl.DateTimeFormat('en-GB', {
@@ -42,7 +42,7 @@ class MarketDataScheduler {
   async tick() {
     const now = this.now();
     const parts = zonedParts(now, this.timezone);
-    if (this.service.productionMode) return this.tickProduction(now, parts);
+    if (this.service.productionMode) { await this.tickNaaimWeekly(now, parts); return this.tickProduction(now, parts); }
     if (this.service.config.selfCalculatedMvp) return this.tickSelfCalculated(now, parts);
     if (isWeekend(now, this.timezone)) return;
     const day = dateParts(now, this.timezone);
@@ -82,6 +82,16 @@ class MarketDataScheduler {
     }
   }
 
+  async tickNaaimWeekly(now, parts) {
+    const weekday = parts.weekday;
+    if (!this.service.updateNaaimOfficial || !['Fri', 'Sat'].includes(weekday) || (Number(parts.hour) < 7 || (Number(parts.hour) === 7 && Number(parts.minute) < 30))) return;
+    const updater = this.service.productionCoordinator?.naaimUpdater;
+    if (!updater || !(await updater.due())) return;
+    this.running = true; this.currentProviderId = 'naaim';
+    try { await this.service.updateNaaimOfficial({ trigger: weekday === 'Fri' ? 'scheduled_weekly' : 'scheduled_retry' }); }
+    finally { this.running = false; this.currentProviderId = null; }
+  }
+
   async tickSelfCalculated(now, parts) {
     const day = dateParts(now, this.timezone);
     await this.service.limiter.ensureDay(now);
@@ -102,6 +112,12 @@ class MarketDataScheduler {
     if (this.timer) return;
     this.timer = setInterval(() => this.tick().catch(error => console.error('Market data scheduler:', error.message)), this.intervalMs);
     this.timer.unref?.();
+    if (this.service.productionMode) void this.tickNaaimStartup();
+  }
+
+  async tickNaaimStartup() {
+    const updater = this.service.productionCoordinator?.naaimUpdater;
+    if (updater && await updater.due({ startup: true })) await this.service.updateNaaimOfficial({ trigger: 'startup_catchup' });
   }
 
   stop() {
@@ -119,8 +135,15 @@ class MarketDataScheduler {
     return candidate.toISOString();
   }
 
+  nextNaaimScheduledAt() {
+    const base = this.now(); const formatter = new Intl.DateTimeFormat('en-CA', { timeZone: this.timezone, year: 'numeric', month: '2-digit', day: '2-digit' });
+    const parts = formatter.formatToParts(base).reduce((acc, part) => ({ ...acc, [part.type]: part.value }), {}); let candidate = new Date(`${parts.year}-${parts.month}-${parts.day}T07:30:00+08:00`);
+    while (candidate <= base || ![5, 6].includes(candidate.getUTCDay())) candidate.setUTCDate(candidate.getUTCDate() + 1);
+    return candidate.toISOString();
+  }
+
   getStatus() {
-    return { enabled: Boolean(this.timer), timezone: this.timezone, time: '07:30', nextScheduledAt: this.nextScheduledAt(), running: this.running, currentProviderId: this.currentProviderId, startupCatchupEnabled: true, lastCycleStartedAt: this.lastCycleStartedAt, lastCycleCompletedAt: this.lastCycleCompletedAt, lastCycleResult: this.lastCycleResult };
+    return { enabled: Boolean(this.timer), timezone: this.timezone, time: '07:30', nextScheduledAt: this.nextScheduledAt(), nextNaaimScheduledAt: this.nextNaaimScheduledAt(), running: this.running, currentProviderId: this.currentProviderId, startupCatchupEnabled: true, lastCycleStartedAt: this.lastCycleStartedAt, lastCycleCompletedAt: this.lastCycleCompletedAt, lastCycleResult: this.lastCycleResult };
   }
 }
 

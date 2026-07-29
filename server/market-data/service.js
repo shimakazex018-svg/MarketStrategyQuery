@@ -448,6 +448,13 @@ class MarketDataService {
     };
   }
 
+  async updateNaaimOfficial({ trigger = 'scheduled_weekly' } = {}) {
+    if (!this.productionMode || !this.productionCoordinator?.updateNaaimOfficial) return { ok: false, result: 'unavailable', externalRequestCount: 0 };
+    const startedAt = isoNow(this.now()); const result = await this.productionCoordinator.updateNaaimOfficial({ trigger }); const indicator = this.getIndicator('naaim_exposure');
+    await this.audit.append({ providerId: 'naaim', metricId: 'naaim_exposure', trigger, startedAt, completedAt: isoNow(this.now()), result: result.result || (result.ok ? 'success' : 'failed'), externalRequestCount: result.externalRequestCount || 0, cacheAction: result.changed ? 'updated' : result.result === 'no_change' ? 'unchanged' : 'preserved', sourceDataDate: result.sourceDataDate || indicator?.sourceDataDate || null, errorCategory: result.ok ? null : result.result || 'source_unavailable', excludedConflictDateCount: indicator?.excludedConflictDateCount || 0 });
+    return result;
+  }
+
   getIndicators(range = '1Y') {
     return this.indicators.map(indicator => this.getIndicator(indicator.id, range));
   }
@@ -489,7 +496,7 @@ class MarketDataService {
       { providerId: 'fred', displayName: 'FRED', domain: 'fred.stlouisfed.org', sourceType: 'official_csv', networkAccessEnabled: true, updateMode: 'scheduled_daily', ids: ['vix', 'vxn', 'nasdaq100_index', 'sp500_index'], note: '数据通过FRED取得，原始来源以各系列标注为准。' },
       { providerId: 'worldperatio', displayName: 'WorldPEratio', domain: 'worldperatio.com', sourceType: 'public_webpage', networkAccessEnabled: true, updateMode: 'scheduled_daily', ids: ['nasdaq100_pe', 'sp500_pe'], note: '第三方公开参考数据，不代表指数编制机构官方估值。' },
       { providerId: 'ishares', displayName: 'iShares / BlackRock', domain: 'ishares.com', sourceType: 'official_workbook_local_import', networkAccessEnabled: false, updateMode: 'manual_import', ids: ['soxx_price'], note: 'SOXX数据来自官方工作簿的本地人工导入，网站不会自动访问iShares。' },
-      { providerId: 'naaim', displayName: 'NAAIM', domain: 'naaim.org', sourceType: 'official_workbook_local_import', networkAccessEnabled: false, updateMode: 'manual_import', frequency: 'weekly', ids: ['naaim_exposure'], note: '官方Excel由用户人工下载并导入。服务器不会自动访问NAAIM或MacroMicro。' }
+      { providerId: 'naaim', displayName: 'NAAIM', domain: 'naaim.org', sourceType: 'official_workbook', networkAccessEnabled: true, updateMode: 'scheduled_weekly', frequency: 'weekly', manualImportEnabled: true, ids: ['naaim_exposure'], note: '每周仅从NAAIM官方页面发现明确提供的Excel链接；保留人工导入，不访问MacroMicro。' }
     ];
     const metricMeta = {
       vix: { sourceDataset: 'VIXCLS', sourcePageLabel: 'FRED VIXCLS', accessMethod: 'official_csv', limitations: ['原始来源为Cboe'] },
@@ -499,7 +506,7 @@ class MarketDataService {
       nasdaq100_pe: { sourceDataset: '/index/nasdaq-100/', sourcePageLabel: 'WorldPEratio Nasdaq-100', accessMethod: 'public_webpage', limitations: ['QQQ-based第三方公开参考', 'PE时间曲线从本站首次成功采集日期开始积累'] },
       sp500_pe: { sourceDataset: '/index/sp-500/', sourcePageLabel: 'WorldPEratio S&P 500', accessMethod: 'public_webpage', limitations: ['SPY-based第三方公开参考', 'PE时间曲线从本站首次成功采集日期开始积累'] },
       soxx_price: { sourceDataset: 'iShares SOXX Data Download', sourcePageLabel: 'SOXX NAV 官方工作簿', accessMethod: 'official_workbook_local_import', limitations: ['NAV，不是交易所市场价格', 'seriesType = nav', 'adjustmentStatus = provider_adjusted'] },
-      naaim_exposure: { sourceDataset: 'NAAIM Exposure Index workbook', sourcePageLabel: 'NAAIM官方Excel', accessMethod: 'official_workbook_local_import', limitations: ['NAAIM官方工作簿中有2个早期同日冲突日期，本站已将这些日期从正式序列中排除。'] }
+      naaim_exposure: { sourceDataset: 'NAAIM Exposure Index workbook', sourcePageLabel: 'NAAIM官方Excel', accessMethod: 'official_workbook', limitations: ['NAAIM官方工作簿中有2个早期同日冲突日期，本站已将这些日期从正式序列中排除。'] }
     };
     const datasets = providerDefinitions.flatMap(provider => provider.ids.map(id => {
       const model = this.models.get(id) || {};
@@ -512,8 +519,8 @@ class MarketDataService {
         networkFetchEnabled: provider.networkAccessEnabled, status: provider.providerId === 'ishares' && model.status === 'fresh' ? 'manual' : (model.status || 'unavailable'),
         latestValue: Number.isFinite(Number(model.value)) ? Number(model.value) : null, unit: model.unit || null,
         sourceDataDate: model.sourceDataDate || model.asOf || null, fetchedAt: model.fetchedAt || model.updatedAt || null,
-        lastAttemptAt: diagnostic.lastAttemptAt || (provider.providerId === 'ishares' ? diagnostics.ishares?.lastLoadedAt || null : null),
-        lastSuccessAt: model.lastSuccessAt || model.fetchedAt || null, nextScheduledAt: provider.updateMode === 'scheduled_daily' ? nextScheduledAt : null,
+        lastAttemptAt: model.lastAttemptAt || diagnostic.lastAttemptAt || (provider.providerId === 'naaim' ? diagnostics.naaim?.lastAttemptAt || null : provider.providerId === 'ishares' ? diagnostics.ishares?.lastLoadedAt || null : null),
+        lastSuccessAt: model.lastSuccessAt || model.fetchedAt || null, nextScheduledAt: provider.updateMode === 'scheduled_daily' ? nextScheduledAt : provider.providerId === 'naaim' ? scheduler?.nextNaaimScheduledAt?.() || null : null,
         historyAvailable: Boolean(model.historyAvailable), historyStart: model.historyStart || null, historyEnd: model.historyEnd || null,
         seriesType: model.seriesType || (id === 'soxx_price' ? 'nav' : null), adjustmentStatus: model.adjustmentStatus || (id === 'soxx_price' ? 'provider_adjusted' : null), excludedConflictDateCount: model.excludedConflictDateCount || 0, limitations: [...(model.limitations || []), ...meta.limitations]
       };
@@ -521,12 +528,12 @@ class MarketDataService {
     const providers = providerDefinitions.map(provider => {
       const entries = datasets.filter(item => item.providerId === provider.providerId);
       const diagnostic = diagnostics[provider.providerId];
-      const state = entries.some(item => item.status === 'error') ? 'error' : entries.some(item => item.status === 'stale') ? 'stale' : ['ishares','naaim'].includes(provider.providerId) ? 'manual' : entries.some(item => item.status === 'unavailable') ? 'unavailable' : 'fresh';
-      return { ...provider, isRealtime: false, schedule: { enabled: provider.updateMode === 'scheduled_daily', timezone: this.config.timezone, time: '07:30' }, status: state,
+      const state = entries.some(item => item.status === 'error') ? 'error' : entries.some(item => item.status === 'stale') ? 'stale' : provider.providerId === 'ishares' ? 'manual' : entries.some(item => item.status === 'unavailable') ? 'unavailable' : 'fresh';
+      return { ...provider, isRealtime: false, schedule: { enabled: ['scheduled_daily', 'scheduled_weekly'].includes(provider.updateMode), timezone: this.config.timezone, time: '07:30', firstCheck: provider.providerId === 'naaim' ? 'Fri 07:30' : null, retryCheck: provider.providerId === 'naaim' ? 'Sat 07:30' : null }, status: state,
         lastAttemptAt: entries.map(item => item.lastAttemptAt).filter(Boolean).sort().at(-1) || null, lastSuccessAt: entries.map(item => item.lastSuccessAt).filter(Boolean).sort().at(-1) || null,
-        nextScheduledAt: provider.updateMode === 'scheduled_daily' ? nextScheduledAt : null, attemptsToday: Math.max(0, ...entries.map(item => Number(diagnostic?.metrics?.[item.metricId]?.attempts) || 0)),
+        nextScheduledAt: provider.updateMode === 'scheduled_daily' ? nextScheduledAt : provider.providerId === 'naaim' ? scheduler?.nextNaaimScheduledAt?.() || null : null, attemptsToday: Math.max(0, ...entries.map(item => Number(diagnostic?.metrics?.[item.metricId]?.attempts) || 0)),
         dailyRequestBudget: provider.networkAccessEnabled ? 2 * entries.length : 0, lastErrorCategory: entries.map(item => diagnostic?.metrics?.[item.metricId]?.lastError?.type).find(Boolean) || diagnostics.ishares?.lastError || null,
-        datasets: entries, excludedConflictDateCount: Math.max(0, ...entries.map(item => Number(item.excludedConflictDateCount) || 0)), note: provider.note };
+        lastDownloadedAt: diagnostics.naaim?.lastDownloadedAt || null, sourceDataDate: entries[0]?.sourceDataDate || null, result: diagnostics.naaim?.result || null, accessState: diagnostics.naaim?.accessState || null, latestWorkbookId: diagnostics.naaim?.latestWorkbookId || null, datasets: entries, excludedConflictDateCount: Math.max(0, ...entries.map(item => Number(item.excludedConflictDateCount) || 0)), note: provider.note };
     });
     const recentRuns = (await this.audit.read()).slice(-20).reverse();
     const allFresh = datasets.every(item => ['fresh', 'manual'].includes(item.status));
