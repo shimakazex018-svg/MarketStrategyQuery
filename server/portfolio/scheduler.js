@@ -38,7 +38,7 @@ class PortfolioSyncScheduler {
     const now = this.now();
     if (!this.due(now)) return null;
     const day = dateKey(now, this.timezone);
-    if (!this.service.syncDue(day)) return { ok: true, result: 'already-successful-today' };
+    if (!this.service.syncDue(day)) return { ok: true, result: 'already-attempted-today' };
     this.running = true;
     this.lastCycleStartedAt = now.toISOString();
     this.lastCycleResult = 'running';

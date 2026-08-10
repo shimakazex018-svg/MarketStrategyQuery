@@ -7,7 +7,8 @@ const path = require('node:path');
 const test = require('node:test');
 const { createHttpServer } = require('../server');
 const { loadPortfolioConfig } = require('../server/portfolio/config');
-const { normalizeFlexReport } = require('../server/portfolio/flex-parser');
+const { buildFlexCapabilityAudit, inspectFlexResponse, normalizeFlexReport, validateFlexCore } = require('../server/portfolio/flex-parser');
+const { FLEX_USER_AGENT, FlexClient, isAllowedRedirect } = require('../server/portfolio/flex-client');
 const { PortfolioService } = require('../server/portfolio/service');
 const { writePasswordFile } = require('../server/portfolio/auth');
 const { inspectContent } = require('../scripts/privacy/check-public-repo');
@@ -35,6 +36,44 @@ function testConfig(runtimeRoot) {
 }
 
 const flexXml = `<FlexQueryResponse><FlexStatements><FlexStatement accountId="SIM000001" baseCurrency="USD" date="2026-08-07"><AccountInformation><NetLiquidation value="100000" date="2026-08-07"/><CashBalance value="22000" date="2026-08-07"/></AccountInformation><CashTransactions><CashTransaction transactionId="FLOW-1" date="2026-08-07" type="Deposit" amount="1000" currency="USD"/></CashTransactions></FlexStatement></FlexStatements></FlexQueryResponse>`;
+const syntheticOfficialCoreFlexXml = `<FlexQueryResponse><FlexStatements><FlexStatement fromDate="2025-01-01" toDate="2026-08-07"><AccountInformation accountId="SIM000001" currency="USD"/><EquitySummaryInBase><EquitySummaryByReportDateInBase accountId="SIM000001" currency="USD" reportDate="2026-08-07" total="100000" cash="22000"/></EquitySummaryInBase><CashTransactions><CashTransaction accountId="SIM000001" reportDate="2026-08-07" type="Deposit" amount="1000" currency="USD" transactionID="SYNTH-FLOW-1"/></CashTransactions></FlexStatement></FlexStatements></FlexQueryResponse>`;
+
+function mockFlexResponse(body, status = 200, contentType = 'application/xml', extraHeaders = {}) {
+  return {
+    status,
+    ok: status >= 200 && status < 300,
+    headers: new Headers({ 'content-type': contentType, ...extraHeaders }),
+    arrayBuffer: async () => Buffer.from(body, 'utf8')
+  };
+}
+
+async function createMockFlexClient(t, responses, options = {}) {
+  const runtimeRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'portfolio-flex-client-test-'));
+  t.after(() => fs.rm(runtimeRoot, { recursive: true, force: true }));
+  const secretPath = path.join(runtimeRoot, 'secrets', 'ibkr-flex.json');
+  await fs.mkdir(path.dirname(secretPath), { recursive: true });
+  await fs.writeFile(secretPath, '{"token":"<TEST_TOKEN>","queryId":"<TEST_QUERY_ID>"}\n', 'utf8');
+  const calls = [];
+  const config = {
+    flexSecretPath: secretPath,
+    flexEndpoint: 'https://ndcdyn.interactivebrokers.com/AccountManagement/FlexWebService',
+    flexTimeoutMs: 2_000,
+    flexMaxReportBytes: 1_000_000,
+    flexPollAttempts: 0,
+    flexPollDelayMs: 1,
+    ...options
+  };
+  const client = new FlexClient({
+    rootDir,
+    config,
+    fetchImpl: async (url, requestOptions) => {
+      calls.push({ url: String(url), requestOptions });
+      return responses.shift();
+    },
+    sleepImpl: async () => {}
+  });
+  return { client, calls };
+}
 
 test('public privacy scanner detects quoted JSON Flex secrets while accepting placeholders', () => {
   assert.deepEqual(inspectContent('config/fixture.json', '{"token":"<IBKR_FLEX_TOKEN>","queryId":"<IBKR_FLEX_QUERY_ID>"}'), []);
@@ -48,6 +87,120 @@ test('Flex field adapter preserves missing values instead of converting them to 
   const snapshot = report.statements[0].snapshots;
   assert.equal(snapshot.find(row => row.netLiquidation === 100000)?.netLiquidation, 100000);
   assert.equal(snapshot.find(row => row.totalCash === 22000)?.netLiquidation, null);
+});
+
+test('synthetic-review-fixture maps official core EquitySummary fields', () => {
+  const report = normalizeFlexReport(syntheticOfficialCoreFlexXml);
+  assert.equal(report.ok, true);
+  assert.deepEqual(validateFlexCore(report), { ok: true, missing: [], warnings: ['income_missing', 'positions_missing', 'reported_performance_missing', 'trades_missing'] });
+  assert.equal(report.statements[0].baseCurrency, 'USD');
+  assert.equal(report.reportDate, '2026-08-07');
+  assert.equal(report.statements[0].snapshots.length, 1);
+  assert.equal(report.statements[0].snapshots[0].netLiquidation, 100000);
+  assert.equal(report.statements[0].cashFlows.length, 1);
+});
+
+test('portfolio scheduler does not retry a failed attempt on the same local day', () => {
+  const service = new PortfolioService({ rootDir, config: { timezone: 'Asia/Shanghai' } });
+  service.state = { lastAttemptAt: '2026-08-10T02:00:00.000Z' };
+  assert.equal(service.syncDue('2026-08-10'), false);
+  assert.equal(service.syncDue('2026-08-11'), true);
+});
+
+test('Flex capability audit records names, counts and dates without values', () => {
+  const audit = buildFlexCapabilityAudit(flexXml, { diagnostic: inspectFlexResponse(flexXml, { contentType: 'application/xml', status: 200 }) });
+  const serialized = JSON.stringify(audit);
+  assert.equal(audit.responseFormat, 'xml');
+  assert.equal(audit.flexStatementCount, 1);
+  assert.equal(audit.sections.some(section => section.section === 'AccountInformation'), true);
+  assert.equal(audit.sections.some(section => section.section === 'CashTransactions'), true);
+  assert.match(serialized, /NetLiquidation/);
+  assert.doesNotMatch(serialized, /SIM000001|100000|22000|1000/);
+});
+
+test('Flex client uses the v3 request shape and dynamic Node User-Agent', async t => {
+  const send = '<FlexStatementResponse><Status>Success</Status><ReferenceCode>1234567890</ReferenceCode></FlexStatementResponse>';
+  const { client, calls } = await createMockFlexClient(t, [mockFlexResponse(send), mockFlexResponse(flexXml)]);
+  const report = await client.fetchReport();
+  assert.equal(report.externalRequestCount, 2);
+  assert.equal(calls.length, 2);
+  const sendUrl = new URL(calls[0].url);
+  const statementUrl = new URL(calls[1].url);
+  assert.equal(sendUrl.pathname, '/AccountManagement/FlexWebService/SendRequest');
+  assert.equal(statementUrl.pathname, '/AccountManagement/FlexWebService/GetStatement');
+  assert.equal(sendUrl.searchParams.get('v'), '3');
+  assert.equal(statementUrl.searchParams.get('v'), '3');
+  assert.equal(calls[0].requestOptions.headers['User-Agent'], FLEX_USER_AGENT);
+  assert.equal(calls[0].requestOptions.redirect, 'manual');
+  assert.equal(report.diagnostics.every(item => !JSON.stringify(item).includes('TEST_TOKEN')), true);
+});
+
+test('XML response with a comma in an attribute is not misclassified as CSV', () => {
+  const diagnostic = inspectFlexResponse('<FlexStatementResponse queryName="NAV, Core"><Status>Success</Status></FlexStatementResponse>', {
+    contentType: 'text/xml;charset=UTF-8',
+    status: 200
+  });
+  assert.equal(diagnostic.responseFormat, 'xml');
+  assert.equal(diagnostic.rootTag, 'FlexStatementResponse');
+});
+
+test('Flex client preserves an IBKR error code and response diagnostics', async t => {
+  const failure = '<FlexStatementResponse><Status>Fail</Status><ErrorCode>1014</ErrorCode><ErrorMessage>Query is invalid.</ErrorMessage></FlexStatementResponse>';
+  const { client } = await createMockFlexClient(t, [mockFlexResponse(failure)]);
+  await assert.rejects(client.fetchReport(), error => {
+    assert.equal(error.category, 'invalid_query');
+    assert.equal(error.ibkrErrorCode, '1014');
+    assert.equal(error.stage, 'parse_response');
+    assert.equal(error.externalRequestCount, 1);
+    assert.equal(error.diagnostics[0].responseFormat, 'xml');
+    assert.equal(error.diagnostics[0].errorCode, '1014');
+    assert.equal(error.diagnostics[0].errorMessageCategory, 'invalid_query');
+    assert.doesNotMatch(JSON.stringify(error.diagnostics), /Query is invalid|TEST_TOKEN|TEST_QUERY_ID/);
+    return true;
+  });
+});
+
+test('Flex client classifies HTML and blocks non-IBKR redirects', async t => {
+  const html = '<!doctype html><html><body>blocked</body></html>';
+  const htmlClient = await createMockFlexClient(t, [mockFlexResponse(html, 200, 'text/html')]);
+  await assert.rejects(htmlClient.client.fetchReport(), error => {
+    assert.equal(error.category, 'unexpected_html_response');
+    assert.equal(error.diagnostics[0].responseFormat, 'html');
+    assert.equal(error.diagnostics[0].rootTag, 'html');
+    return true;
+  });
+  assert.equal(isAllowedRedirect('https://ndcdyn.interactivebrokers.com/AccountManagement/FlexWebService/GetStatement'), true);
+  assert.equal(isAllowedRedirect('http://ndcdyn.interactivebrokers.com/AccountManagement/FlexWebService/GetStatement'), false);
+  assert.equal(isAllowedRedirect('https://evil.example/AccountManagement/FlexWebService/GetStatement'), false);
+  const redirectClient = await createMockFlexClient(t, [mockFlexResponse('', 302, 'text/html', { location: 'https://evil.example/redirect' })]);
+  await assert.rejects(redirectClient.client.fetchReport(), error => {
+    assert.equal(error.category, 'redirect_error');
+    assert.equal(error.diagnostics[0].httpStatus, 302);
+    assert.equal(error.diagnostics[0].redirectAllowed, false);
+    return true;
+  });
+});
+
+test('sync persists safe diagnostics and schema migration fields', async t => {
+  const runtimeRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'portfolio-sync-diagnostic-test-'));
+  t.after(() => fs.rm(runtimeRoot, { recursive: true, force: true }));
+  const config = testConfig(runtimeRoot);
+  await fs.mkdir(path.dirname(config.flexSecretPath), { recursive: true });
+  await fs.writeFile(config.flexSecretPath, '{"token":"<TEST_TOKEN>","queryId":"<TEST_QUERY_ID>"}\n', 'utf8');
+  const failure = '<FlexStatementResponse><Status>Fail</Status><ErrorCode>1014</ErrorCode><ErrorMessage>Query is invalid.</ErrorMessage></FlexStatementResponse>';
+  const service = await new PortfolioService({ rootDir, config, fetchImpl: async () => mockFlexResponse(failure) }).init();
+  t.after(() => service.close());
+  const result = await service.sync({ trigger: 'mock_diagnostic' });
+  assert.equal(result.errorCategory, 'invalid_query');
+  assert.equal(result.ibkrErrorCode, '1014');
+  assert.equal(result.stage, 'parse_response');
+  assert.equal(result.externalRequestCount, 1);
+  const run = service.lastSyncRun();
+  assert.equal(run.ibkrErrorCode, '1014');
+  assert.equal(run.stage, 'parse_response');
+  assert.equal(run.diagnostics[0].responseFormat, 'xml');
+  assert.equal(service.db.prepare('PRAGMA user_version').get().user_version, 3);
+  assert.doesNotMatch(JSON.stringify(run), /TEST_TOKEN|TEST_QUERY_ID|Query is invalid/);
 });
 
 test('local import is idempotent and keeps NAV/cash semantics', async t => {

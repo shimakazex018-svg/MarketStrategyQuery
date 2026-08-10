@@ -4,7 +4,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const { DatabaseSync } = require('node:sqlite');
 
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 
 const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS portfolio_meta (
@@ -169,6 +169,9 @@ CREATE TABLE IF NOT EXISTS portfolio_sync_runs (
   imported_row_counts TEXT,
   warnings TEXT,
   error_category TEXT,
+  stage TEXT,
+  ibkr_error_code TEXT,
+  diagnostics_json TEXT NOT NULL DEFAULT '[]',
   external_request_count INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_sync_runs_started ON portfolio_sync_runs(started_at);
@@ -190,6 +193,13 @@ async function openPortfolioDatabase(databasePath) {
     if (!columns.has('gross_position_value')) db.exec('ALTER TABLE daily_performance ADD COLUMN gross_position_value REAL');
     if (!columns.has('flow_count')) db.exec('ALTER TABLE daily_performance ADD COLUMN flow_count INTEGER NOT NULL DEFAULT 0');
     db.exec('PRAGMA user_version=2');
+  }
+  if (current < 3) {
+    const columns = new Set(db.prepare('PRAGMA table_info(portfolio_sync_runs)').all().map(row => row.name));
+    if (!columns.has('stage')) db.exec('ALTER TABLE portfolio_sync_runs ADD COLUMN stage TEXT');
+    if (!columns.has('ibkr_error_code')) db.exec('ALTER TABLE portfolio_sync_runs ADD COLUMN ibkr_error_code TEXT');
+    if (!columns.has('diagnostics_json')) db.exec("ALTER TABLE portfolio_sync_runs ADD COLUMN diagnostics_json TEXT NOT NULL DEFAULT '[]'");
+    db.exec('PRAGMA user_version=3');
   }
   const quickCheck = db.prepare('PRAGMA quick_check').get().quick_check;
   if (quickCheck !== 'ok') {

@@ -1,5 +1,11 @@
 # 当前测试与验收方法
 
+## IBKR Flex real-response checks (2026-08-10)
+
+The real-response path is read-only and must be run only as a bounded manual sync. Verify the five safe stages (`send_request`, `get_statement`, `parse_response`, `validate_statement`, `import_database`), response format/root metadata, CORE validation, SQLite `quick_check`, performance quality, and benchmark coverage without printing raw XML, credentials, account identifiers, or amounts. The structure audit belongs to ignored runtime data.
+
+Synthetic tests cover v3 parameters, dynamic User-Agent, XML/CSV precedence, error-code persistence, official core-field mapping, date-range selection, and same-day scheduler retry prevention. Public fixtures use only `synthetic-review-fixture` data.
+
 ## 环境要求
 
 - Windows PowerShell。

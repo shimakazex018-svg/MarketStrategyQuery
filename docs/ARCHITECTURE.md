@@ -1,5 +1,11 @@
 # 当前系统架构
 
+## IBKR Flex diagnostic pipeline (2026-08-10)
+
+`FlexClient` uses the official v3 two-step request flow and emits only safe phase diagnostics. `flex-parser` classifies the response before parsing, audits section and field names, maps `EquitySummaryInBase` into core NAV snapshots, and validates account identifier, base currency, date, NAV, and cash-flow coverage before import. `PortfolioService` persists diagnostics and IBKR error codes in schema version 3 while keeping raw response material in ignored runtime data.
+
+The portfolio scheduler treats a same-day failed attempt as consumed, so an upstream or schema failure cannot create a minute-by-minute external request loop. Manual retry remains explicit and read-only.
+
 ## 整体结构
 
 ```text

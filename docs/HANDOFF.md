@@ -1,5 +1,12 @@
 # 最新交接
 
+## 2026-08-10 IBKR Flex real-response calibration
+
+- The controlled read-only Flex request chain reached HTTP 200 XML for both request stages; no IBKR error code was returned. The raw response and structural capability audit remain in ignored runtime data only.
+- `EquitySummaryInBase` now supplies the CORE NAV/base-currency path, and the latest parsed record date is used for coverage. The local reprocessing path verified SQLite import, daily performance generation, and cash-flow reconciliation metadata without publishing account values.
+- Income and IBKR-reported performance sections were absent in the response and remain optional warnings. No Query field change is required for the CORE path based on the structure audit; do not configure trading or add credentials to Git.
+- The scheduler now consumes one attempt per local day after success or failure, preventing automatic Flex request loops. Production mode remains separate from `synthetic-review-fixture`; `tools/market-data-lab/` remains untouched.
+
 ## 当前状态
 
 - 当前分支为 `main`；本轮最终提交前基线为 `4b44705fa510e13b86fcb21ce80d2a86ae4cd9d3`。用户既有未跟踪的 `tools/market-data-lab/` 保持原样、未暂存、未接入正式服务。

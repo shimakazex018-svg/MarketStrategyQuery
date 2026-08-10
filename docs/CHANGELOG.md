@@ -1,5 +1,11 @@
 # 变更日志
 
+## 2026-08-10 - IBKR Flex real-response calibration
+
+- Added safe Flex request/parse/validation/import diagnostics, dynamic Node User-Agent coverage, official v3 request-shape checks, controlled redirect validation, and schema version 3 persistence for stage and IBKR error code.
+- Mapped the official `EquitySummaryInBase` core fields and corrected XML responses containing commas so a valid XML response cannot be misclassified as CSV. Top-level report dates now use the latest parsed record date.
+- Added a same-day scheduler retry guard and a synthetic parser regression; real Flex response material, account data, and SQLite remain ignored runtime data and are not fixtures or public examples.
+
 ## 2026-08-10 - 修复未认证资产分析交互循环
 
 - 将资产分析前端认证流程明确为 `unknown`、`checking`、`unauthenticated`、`authenticating`、`authenticated` 和 `error` 状态；未认证 401 后停止自动重试，不再重复替换登录面板。

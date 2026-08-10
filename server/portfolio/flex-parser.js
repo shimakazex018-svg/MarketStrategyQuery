@@ -6,14 +6,15 @@ const ERROR_CATEGORIES = Object.freeze({
   1001: 'report_generation_pending', 1003: 'report_generation_pending', 1004: 'report_generation_pending',
   1005: 'report_generation_pending', 1006: 'report_generation_pending', 1007: 'report_generation_pending',
   1008: 'report_generation_pending', 1009: 'report_generation_pending', 1019: 'report_generation_pending',
-  1012: 'invalid_token', 1015: 'invalid_token', 1013: 'authentication_error',
-  1014: 'invalid_query', 1016: 'authentication_error', 1017: 'invalid_query', 1018: 'http_error',
-  1020: 'schema_error', 1021: 'http_error'
+  1010: 'invalid_query', 1011: 'service_inactive', 1012: 'token_expired', 1013: 'ip_restriction',
+  1014: 'invalid_query', 1015: 'invalid_token', 1016: 'invalid_account', 1017: 'invalid_reference_code',
+  1018: 'rate_limit', 1020: 'invalid_request', 1021: 'statement_retrieval_error'
 });
 
 const SECTION_KINDS = Object.freeze({
   accountinformation: 'snapshot', accountsummary: 'snapshot', financialsummary: 'snapshot',
   netassetvalue: 'snapshot', nav: 'snapshot', cashreport: 'snapshot', cashbalance: 'snapshot',
+  equitysummaryinbase: 'snapshot', equitysummarybyreportdateinbase: 'snapshot',
   cashtransaction: 'cashFlow', cashtransactions: 'cashFlow', cashflow: 'cashFlow', cashflows: 'cashFlow',
   depositswithdrawals: 'cashFlow', externalcashflow: 'cashFlow', transaction: 'transaction', transactions: 'transaction',
   trade: 'trade', trades: 'trade', execution: 'trade', executions: 'trade',
@@ -28,9 +29,9 @@ const REQUIRED_FIELD_ALIASES = Object.freeze({
   accountId: ['accountid', 'acctid', 'account'],
   date: ['date', 'reportdate', 'tradedate', 'transactiondate', 'settlementdate', 'fromdate', 'todate'],
   occurredAt: ['datetime', 'date/time', 'executiontime', 'transactiontime', 'tradetime', 'time'],
-  baseCurrency: ['basecurrency', 'basecurr', 'accountbasecurrency'],
+  baseCurrency: ['basecurrency', 'basecurr', 'accountbasecurrency', 'currency'],
   currency: ['currency', 'curr'],
-  netLiquidation: ['netliquidation', 'netassetvalue', 'nav', 'netliquidationvalue', 'endingnav', 'endingnetliquidation'],
+  netLiquidation: ['netliquidation', 'netassetvalue', 'nav', 'netliquidationvalue', 'endingnav', 'endingnetliquidation', 'total', 'totalvalue'],
   totalCash: ['totalcash', 'cashbalance', 'cash', 'cashvalue'],
   grossPositionValue: ['grosspositionvalue', 'grossposition', 'grossmarketvalue'],
   stockMarketValue: ['stockmarketvalue', 'stockvalue', 'equitymarketvalue'],
@@ -109,6 +110,81 @@ function findAll(node, predicate, output = []) {
   if (predicate(node)) output.push(node);
   for (const child of node.children || []) findAll(child, predicate, output);
   return output;
+}
+
+function normalizeContentType(value) {
+  return String(value || '').trim().slice(0, 120);
+}
+
+function firstTagName(value) {
+  const match = /<\s*([A-Za-z_:][A-Za-z0-9_.:-]*)\b[^>]*>/i.exec(String(value || ''));
+  return match ? match[1] : null;
+}
+
+function classifyResponseFormat(body, contentType = '') {
+  const text = String(body || '').trim();
+  const mediaType = normalizeContentType(contentType).toLowerCase().split(';', 1)[0];
+  if (mediaType.includes('html') || /^<!doctype\s+html\b/i.test(text) || /^<html\b/i.test(text)) return 'html';
+  if (mediaType.includes('xml') || /^<\?xml\b/i.test(text) || /^<\s*[A-Za-z_:][A-Za-z0-9_.:-]*\b[^>]*>/i.test(text)) return 'xml';
+  if (mediaType.includes('csv') || /^(?:[^\r\n,]+,){1,}[^\r\n]*\r?\n/.test(text)) return 'csv';
+  if (mediaType.startsWith('text/')) return 'text';
+  return text ? 'unknown' : 'unknown';
+}
+
+function statusValue(node) {
+  const value = node ? nodeText(node).toLowerCase() : '';
+  if (value === 'success' || value === 'fail') return value;
+  return value ? 'other' : null;
+}
+
+function scalarField(node, names) {
+  const normalizedNames = new Set(names.map(normalizeName));
+  const matches = findAll(node, child => normalizedNames.has(normalizeName(child.name)));
+  return matches[0] ? nodeText(matches[0]).trim() : null;
+}
+
+function inspectFlexResponse(body, { contentType = '', status = null } = {}) {
+  const text = String(body || '');
+  const responseFormat = classifyResponseFormat(text, contentType);
+  const diagnostic = {
+    httpStatus: Number.isInteger(status) ? status : null,
+    contentType: normalizeContentType(contentType),
+    responseBytes: Buffer.byteLength(text, 'utf8'),
+    responseFormat,
+    rootTag: firstTagName(text),
+    topLevelElementNames: [],
+    flexStatementCount: 0,
+    flexStatementsCount: 0,
+    status: null,
+    statusPresent: false,
+    errorCode: null,
+    errorCodePresent: false,
+    errorMessageCategory: null,
+    referenceCodePresent: false,
+    parseErrorCategory: null
+  };
+  if (responseFormat !== 'xml') return diagnostic;
+  try {
+    const root = parseXml(text);
+    diagnostic.rootTag = root.children[0]?.name || diagnostic.rootTag;
+    diagnostic.topLevelElementNames = [...new Set(root.children.map(child => child.name))].sort();
+    const statusNode = findAll(root, node => normalizeName(node.name) === 'status')[0];
+    const errorCodeRaw = scalarField(root, ['errorcode']);
+    const errorCode = /^\d+$/.test(String(errorCodeRaw || '').trim()) ? String(errorCodeRaw).trim() : null;
+    const errorMessagePresent = Boolean(scalarField(root, ['errormessage']));
+    const referenceCode = scalarField(root, ['referencecode']);
+    diagnostic.status = statusValue(statusNode);
+    diagnostic.statusPresent = Boolean(statusNode);
+    diagnostic.errorCode = errorCode;
+    diagnostic.errorCodePresent = Boolean(errorCodeRaw);
+    diagnostic.errorMessageCategory = errorCode ? (ERROR_CATEGORIES[Number(errorCode)] || 'ibkr_error') : errorMessagePresent ? 'unclassified_failure' : null;
+    diagnostic.referenceCodePresent = Boolean(referenceCode);
+    diagnostic.flexStatementCount = findAll(root, node => normalizeName(node.name) === 'flexstatement').length;
+    diagnostic.flexStatementsCount = findAll(root, node => normalizeName(node.name) === 'flexstatements').length;
+  } catch {
+    diagnostic.parseErrorCategory = 'malformed_xml';
+  }
+  return diagnostic;
 }
 
 function nodeText(node) {
@@ -199,6 +275,7 @@ function addRecord(statement, record) {
 function walkStatement(node, statement, context, inheritedKind = null) {
   const name = normalizeName(node.name);
   const kind = SECTION_KINDS[name] || inheritedKind;
+  if (SECTION_KINDS[name]) statement.sections.add(node.name);
   const values = flattenNode(node);
   const nextContext = {
     accountId: context.accountId || pick(values, REQUIRED_FIELD_ALIASES.accountId),
@@ -223,7 +300,8 @@ function statementFromNode(node) {
     || statement.cashFlows.find(item => item.accountId)?.accountId
     || statement.trades.find(item => item.accountId)?.accountId || null;
   statement.baseCurrency ||= statement.snapshots.find(item => item.baseCurrency)?.baseCurrency || null;
-  statement.reportDate ||= [...statement.snapshots, ...statement.cashFlows, ...statement.trades, ...statement.positions, ...statement.incomeEvents, ...statement.reportedPerformance].map(item => item.date).filter(Boolean).sort().at(-1) || null;
+  const recordDates = [...statement.snapshots, ...statement.cashFlows, ...statement.trades, ...statement.positions, ...statement.incomeEvents, ...statement.reportedPerformance].map(item => item.date).filter(Boolean).sort();
+  statement.reportDate = recordDates.at(-1) || statement.reportDate || null;
   statement.sections = [...statement.sections];
   const present = new Set(statement.sections.map(normalizeName));
   for (const required of REQUIRED_SECTIONS) {
@@ -252,9 +330,115 @@ function normalizeFlexReport(xml) {
   return { ok: true, status: status || 'success', referenceCode, responseUrl, reportDate, statements, rawXml: xml };
 }
 
+function hasSectionKind(statement, kind) {
+  return (statement?.sections || []).some(section => SECTION_KINDS[normalizeName(section)] === kind);
+}
+
+function validateFlexCore(report) {
+  const missing = new Set();
+  const warnings = new Set();
+  const statements = report?.statements || [];
+  if (!statements.length) missing.add('statement');
+  for (const statement of statements) {
+    if (!statement.accountId) missing.add('account_identifier');
+    if (!statement.baseCurrency) missing.add('base_currency');
+    if (!statement.reportDate) missing.add('date');
+    if (!statement.snapshots.some(row => Number.isFinite(row.netLiquidation))) missing.add('net_asset_value');
+    if (!statement.cashFlows.length && !hasSectionKind(statement, 'cashFlow')) missing.add('external_cash_flow');
+    if (!statement.trades.length) warnings.add('trades_missing');
+    if (!statement.positions.length) warnings.add('positions_missing');
+    if (!statement.incomeEvents.length) warnings.add('income_missing');
+    if (!statement.reportedPerformance.length) warnings.add('reported_performance_missing');
+  }
+  return { ok: missing.size === 0, missing: [...missing].sort(), warnings: [...warnings].sort() };
+}
+
+function collectCapabilityFields(node, fields, dates) {
+  for (const [name, value] of Object.entries(node.attrs || {})) {
+    fields.add(name);
+    if (/date|time/i.test(name)) {
+      const match = /(?:^|[^0-9])(\d{4}[-/]?\d{2}[-/]?\d{2})(?:[^0-9]|$)/.exec(String(value || ''));
+      if (match) dates.push(dateOrNull(match[1]));
+    }
+  }
+  for (const child of node.children || []) {
+    fields.add(child.name);
+    if (!child.children.length) {
+      if (/date|time/i.test(child.name)) dates.push(dateOrNull(nodeText(child)));
+    } else collectCapabilityFields(child, fields, dates);
+  }
+}
+
+function capabilityRecordCount(node) {
+  const structuredChildren = (node.children || []).filter(child => child.children.length || Object.keys(child.attrs || {}).length);
+  if (!structuredChildren.length) return 1;
+  const firstName = normalizeName(structuredChildren[0].name);
+  return structuredChildren.every(child => normalizeName(child.name) === firstName) ? structuredChildren.length : 1;
+}
+
+function buildFlexCapabilityAudit(xml, metadata = {}) {
+  const diagnostic = metadata.diagnostic || inspectFlexResponse(xml, metadata);
+  const sections = [];
+  try {
+    const root = parseXml(xml);
+    const statements = findAll(root, node => normalizeName(node.name) === 'flexstatement');
+    for (const statement of (statements.length ? statements : [root])) {
+      for (const section of statement.children || []) {
+        const sectionName = normalizeName(section.name);
+        if (['flexqueryresponse', 'flexstatements', 'flexstatementresponse', 'flexstatement'].includes(sectionName)) continue;
+        const fields = new Set();
+        const dates = [];
+        collectCapabilityFields(section, fields, dates);
+        const supported = Boolean(SECTION_KINDS[sectionName] || findAll(section, node => Boolean(SECTION_KINDS[normalizeName(node.name)])).length);
+        const validDates = dates.filter(Boolean).sort();
+        sections.push({
+          section: section.name,
+          fields: [...fields].sort(),
+          recordCount: capabilityRecordCount(section),
+          dateRange: validDates.length ? { start: validDates[0], end: validDates.at(-1) } : { start: null, end: null },
+          supported,
+          unsupported: !supported
+        });
+      }
+    }
+  } catch {
+    // Structural diagnostics remain useful even when the XML is malformed.
+  }
+  const deduplicated = new Map();
+  for (const section of sections) {
+    const key = `${section.section}|${section.fields.join(',')}`;
+    if (!deduplicated.has(key)) deduplicated.set(key, section);
+  }
+  return {
+    schemaVersion: 1,
+    dataMode: 'real-flex-audit',
+    responseFormat: diagnostic.responseFormat,
+    rootTag: diagnostic.rootTag,
+    topLevelElementNames: diagnostic.topLevelElementNames,
+    status: diagnostic.status,
+    errorCode: diagnostic.errorCode,
+    referenceCodePresent: diagnostic.referenceCodePresent,
+    flexStatementCount: diagnostic.flexStatementCount,
+    flexStatementsCount: diagnostic.flexStatementsCount,
+    sections: [...deduplicated.values()].sort((left, right) => left.section.localeCompare(right.section))
+  };
+}
+
 function parseFlexError(xml) {
   const parsed = normalizeFlexReport(xml);
   return parsed.ok ? null : parsed;
 }
 
-module.exports = { ERROR_CATEGORIES, REQUIRED_SECTIONS, decodeXml, normalizeFlexReport, numberOrNull, parseFlexError, parseXml };
+module.exports = {
+  ERROR_CATEGORIES,
+  REQUIRED_SECTIONS,
+  buildFlexCapabilityAudit,
+  classifyResponseFormat,
+  decodeXml,
+  inspectFlexResponse,
+  normalizeFlexReport,
+  numberOrNull,
+  parseFlexError,
+  parseXml,
+  validateFlexCore
+};

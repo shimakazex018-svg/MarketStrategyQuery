@@ -14,8 +14,15 @@ const RANGE_KEYS = Object.freeze(['1D', 'MTD', '3M', '6M', 'YTD', '1Y', 'ALL', '
 const MAX_API_POINTS = 8_000;
 
 function isoNow(now) { return new Date(now()).toISOString(); }
+function dayKey(value, timezone) {
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: timezone || 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date(value)).reduce((acc, part) => ({ ...acc, [part.type]: part.value }), {});
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
 function hashKey(...parts) { return crypto.createHash('sha256').update(parts.map(value => String(value ?? '')).join('|')).digest('hex').slice(0, 48); }
 function validDate(value) { return /^\d{4}-\d{2}-\d{2}$/.test(String(value || '')); }
+function parseJson(value, fallback) {
+  try { return value ? JSON.parse(value) : fallback; } catch { return fallback; }
+}
 function dateShift(dateString, unit, amount) {
   const date = new Date(`${dateString}T00:00:00Z`);
   if (unit === 'day') date.setUTCDate(date.getUTCDate() + amount);
@@ -125,7 +132,11 @@ class PortfolioService {
     return { accounts: getCount('portfolio_accounts'), snapshots: getCount('account_daily_snapshots'), cashFlows: getCount('cash_flows'), trades: getCount('trades'), positions: getCount('positions_daily'), incomeEvents: getCount('income_events'), performance: getCount('daily_performance'), firstDate: coverage.firstDate || null, lastDate: coverage.lastDate || null, latestDate: latest.latestDate || null };
   }
 
-  lastSyncRun() { return this.db.prepare('SELECT run_id AS runId, trigger, started_at AS startedAt, ended_at AS endedAt, result, report_date AS reportDate, imported_row_counts AS importedRowCounts, warnings, error_category AS errorCategory, external_request_count AS externalRequestCount FROM portfolio_sync_runs ORDER BY started_at DESC LIMIT 1').get() || null; }
+  lastSyncRun() {
+    const row = this.db.prepare('SELECT run_id AS runId, trigger, started_at AS startedAt, ended_at AS endedAt, result, report_date AS reportDate, imported_row_counts AS importedRowCounts, warnings, error_category AS errorCategory, stage, ibkr_error_code AS ibkrErrorCode, diagnostics_json AS diagnosticsJson, external_request_count AS externalRequestCount FROM portfolio_sync_runs ORDER BY started_at DESC LIMIT 1').get() || null;
+    if (!row) return null;
+    return { ...row, diagnostics: parseJson(row.diagnosticsJson, []) };
+  }
 
   getStatus(scheduler = null) {
     const counts = this.databaseCounts();
@@ -145,7 +156,7 @@ class PortfolioService {
       historyEnd: counts.lastDate,
       latestDataDate: counts.latestDate,
       recordCounts: { snapshots: counts.snapshots, cashFlows: counts.cashFlows, trades: counts.trades, positions: counts.positions, incomeEvents: counts.incomeEvents, performance: counts.performance },
-      lastSync: lastRun ? { trigger: lastRun.trigger, startedAt: lastRun.startedAt, endedAt: lastRun.endedAt, result: lastRun.result, reportDate: lastRun.reportDate, errorCategory: lastRun.errorCategory, externalRequestCount: lastRun.externalRequestCount } : null,
+      lastSync: lastRun ? { trigger: lastRun.trigger, startedAt: lastRun.startedAt, endedAt: lastRun.endedAt, result: lastRun.result, reportDate: lastRun.reportDate, errorCategory: lastRun.errorCategory, stage: lastRun.stage, ibkrErrorCode: lastRun.ibkrErrorCode, diagnostics: lastRun.diagnostics, externalRequestCount: lastRun.externalRequestCount } : null,
       lastSuccessfulAt: this.state.lastSuccessfulAt || null,
       lastSuccessfulDay: this.state.lastSuccessfulDay || null,
       nextScheduledAt: scheduler?.nextScheduledAt?.() || null,
@@ -157,7 +168,13 @@ class PortfolioService {
     };
   }
 
-  syncDue(day) { return this.state.lastSuccessfulDay !== day; }
+  syncDue(day) {
+    let lastAttemptDay = this.state.lastAttemptDay || null;
+    if (!lastAttemptDay && this.state.lastAttemptAt) {
+      try { lastAttemptDay = dayKey(this.state.lastAttemptAt, this.config.timezone); } catch { lastAttemptDay = null; }
+    }
+    return lastAttemptDay !== day;
+  }
 
   async acquireSyncLock() {
     if (this.syncRunning) return false;
@@ -178,12 +195,12 @@ class PortfolioService {
   createRun(trigger) {
     const runId = `${new Date(this.now()).toISOString().replace(/[^0-9]/g, '')}-${crypto.randomBytes(5).toString('hex')}`;
     const startedAt = isoNow(this.now);
-    this.db.prepare('INSERT INTO portfolio_sync_runs(run_id,trigger,started_at,result,imported_row_counts,warnings,external_request_count) VALUES(?,?,?,?,?,?,?)').run(runId, trigger, startedAt, 'running', '{}', '[]', 0);
+    this.db.prepare('INSERT INTO portfolio_sync_runs(run_id,trigger,started_at,result,imported_row_counts,warnings,stage,ibkr_error_code,diagnostics_json,external_request_count) VALUES(?,?,?,?,?,?,?,?,?,?)').run(runId, trigger, startedAt, 'running', '{}', '[]', 'start', null, '[]', 0);
     return { runId, startedAt };
   }
 
   finishRun(run, result, details = {}) {
-    this.db.prepare('UPDATE portfolio_sync_runs SET ended_at=?,result=?,report_date=?,imported_row_counts=?,warnings=?,error_category=?,external_request_count=? WHERE run_id=?').run(isoNow(this.now), result, details.reportDate || null, JSON.stringify(details.importedRowCounts || {}), JSON.stringify(details.warnings || []), details.errorCategory || null, Number(details.externalRequestCount || 0), run.runId);
+    this.db.prepare('UPDATE portfolio_sync_runs SET ended_at=?,result=?,report_date=?,imported_row_counts=?,warnings=?,error_category=?,stage=?,ibkr_error_code=?,diagnostics_json=?,external_request_count=? WHERE run_id=?').run(isoNow(this.now), result, details.reportDate || null, JSON.stringify(details.importedRowCounts || {}), JSON.stringify(details.warnings || []), details.errorCategory || null, details.stage || null, details.ibkrErrorCode || null, JSON.stringify(details.diagnostics || []), Number(details.externalRequestCount || 0), run.runId);
   }
 
   async writeRawFlex(report) {
@@ -196,6 +213,15 @@ class PortfolioService {
     return destination;
   }
 
+  async writeFlexCapabilityAudit(audit) {
+    if (!audit) return null;
+    const destination = path.join(this.config.auditDir, 'flex-capability.json');
+    const temporary = `${destination}.${process.pid}.${Date.now()}.tmp`;
+    await fs.writeFile(temporary, `${JSON.stringify(audit, null, 2)}\n`, 'utf8');
+    await fs.rename(temporary, destination);
+    return destination;
+  }
+
   importReport(report) {
     const importedAt = isoNow(this.now);
     const counts = { accounts: 0, snapshots: 0, cashFlows: 0, trades: 0, positions: 0, incomeEvents: 0, performance: 0 };
@@ -203,11 +229,11 @@ class PortfolioService {
     const accountKeys = new Set();
     withTransaction(this.db, () => {
       for (const statement of report.statements || []) {
-        if (!statement.accountId) throw Object.assign(new Error('Flex statement has no account identifier'), { category: 'schema_error' });
+        if (!statement.accountId) throw Object.assign(new Error('Flex statement has no account identifier'), { category: 'schema_error', stage: 'import_database' });
         const accountKey = this.accountKey(statement.accountId);
         accountKeys.add(accountKey);
         const baseCurrency = statement.baseCurrency || statement.snapshots.find(row => row.baseCurrency)?.baseCurrency;
-        if (!baseCurrency) throw Object.assign(new Error('Flex statement has no base currency'), { category: 'schema_error' });
+        if (!baseCurrency) throw Object.assign(new Error('Flex statement has no base currency'), { category: 'schema_error', stage: 'import_database' });
         const existing = this.db.prepare('SELECT first_seen AS firstSeen, last_seen AS lastSeen FROM portfolio_accounts WHERE account_key=?').get(accountKey);
         const statementDates = [...statement.snapshots, ...statement.cashFlows, ...statement.trades, ...statement.positions, ...statement.incomeEvents].map(row => row.date).filter(validDate).sort();
         const firstSeen = statementDates[0] || existing?.firstSeen || null;
@@ -277,23 +303,30 @@ class PortfolioService {
       this.credentialsConfigured = Boolean(credentials);
       if (!credentials) {
         await this.saveState({ lastAttemptAt: isoNow(this.now), lastResult: 'waiting_configuration' });
-        this.finishRun(run, 'waiting_configuration', { errorCategory: 'authentication_error' });
-        return { ok: false, result: 'waiting_configuration', errorCategory: 'authentication_error', externalRequestCount: 0 };
+        this.finishRun(run, 'waiting_configuration', { errorCategory: 'authentication_error', stage: 'credential_check', externalRequestCount: 0 });
+        return { ok: false, result: 'waiting_configuration', errorCategory: 'authentication_error', stage: 'credential_check', ibkrErrorCode: null, externalRequestCount: 0, diagnostics: [] };
       }
       if (this.databaseCounts().performance > 0) await atomicBackup(this.db, this.config.databasePath, this.config.backupsDir, this.now());
       const report = await this.flexClient.fetchReport();
-      const importedRowCounts = this.importReport(report);
+      await this.writeFlexCapabilityAudit(report.capabilityAudit);
       await this.writeRawFlex(report);
+      const importedRowCounts = this.importReport(report);
+      const diagnostics = [...(report.diagnostics || []), { stage: 'import_database', outcome: 'success', externalRequestCount: report.externalRequestCount || 0 }];
       const finishedAt = isoNow(this.now);
       const successfulDay = report.reportDate || new Date(this.now()).toISOString().slice(0, 10);
       await this.saveState({ lastAttemptAt: finishedAt, lastSuccessfulAt: finishedAt, lastSuccessfulDay: successfulDay, lastImportedStatementDate: successfulDay, lastResult: 'success', lastErrorCategory: null });
-      this.finishRun(run, 'success', { reportDate: report.reportDate, importedRowCounts, externalRequestCount: report.externalRequestCount || 2, warnings: report.statements.flatMap(statement => statement.warnings || []) });
-      return { ok: true, result: 'success', reportDate: report.reportDate, importedRowCounts, externalRequestCount: report.externalRequestCount || 2, status: 'ready' };
+      this.finishRun(run, 'success', { reportDate: report.reportDate, importedRowCounts, stage: 'import_database', ibkrErrorCode: null, diagnostics, externalRequestCount: report.externalRequestCount || 2, warnings: [...new Set([...(report.warnings || []), ...report.statements.flatMap(statement => statement.warnings || [])])] });
+      return { ok: true, result: 'success', reportDate: report.reportDate, importedRowCounts, externalRequestCount: report.externalRequestCount || 2, diagnostics, status: 'ready' };
     } catch (error) {
       const errorCategory = error.category || error.errorCategory || 'database_error';
+      try { await this.writeFlexCapabilityAudit(error.capabilityAudit); } catch { /* preserve original sync error */ }
+      try { await this.writeRawFlex({ rawXml: error.rawXml, reportDate: error.reportDate }); } catch { /* preserve original sync error */ }
+      const diagnostics = Array.isArray(error.diagnostics) ? error.diagnostics : this.flexClient?.diagnostics || [];
+      if (error.stage === 'import_database' && !diagnostics.some(item => item.stage === 'import_database')) diagnostics.push({ stage: 'import_database', outcome: 'failure', externalRequestCount: error.externalRequestCount || this.flexClient?.externalRequestCount || 0, localErrorCategory: errorCategory });
+      const ibkrErrorCode = error.ibkrErrorCode || error.errorCode || diagnostics.at(-1)?.errorCode || null;
       await this.saveState({ lastAttemptAt: isoNow(this.now), lastResult: 'failed', lastErrorCategory: errorCategory });
-      this.finishRun(run, 'failed', { errorCategory, externalRequestCount: error.externalRequestCount || 0 });
-      return { ok: false, result: 'failed', errorCategory, externalRequestCount: error.externalRequestCount || 0 };
+      this.finishRun(run, 'failed', { errorCategory, stage: error.stage || 'unknown', ibkrErrorCode, diagnostics, externalRequestCount: error.externalRequestCount || this.flexClient?.externalRequestCount || 0, warnings: error.warnings || [] });
+      return { ok: false, result: 'failed', errorCategory, stage: error.stage || 'unknown', ibkrErrorCode, diagnostics, externalRequestCount: error.externalRequestCount || this.flexClient?.externalRequestCount || 0 };
     } finally {
       await this.releaseSyncLock();
     }
@@ -405,7 +438,10 @@ class PortfolioService {
     return { range: resolved.range, startDate: resolved.startDate, endDate: resolved.endDate, trades: rows, statistics: { tradeCount: rows.length, symbols: new Set(rows.map(row => row.symbol).filter(Boolean)).size, profitableTrades: completed.filter(row => row.realizedPnl > 0).length, losingTrades: completed.filter(row => row.realizedPnl < 0).length, winRate: completed.length ? completed.filter(row => row.realizedPnl > 0).length / completed.length : null, averagePositionDays: null, averagePosition: rows.length ? rows.reduce((total, row) => total + Math.abs(finite(row.proceeds) ?? 0), 0) / rows.length : null, turnover: null } };
   }
 
-  getSyncStatus(scheduler = null) { return { ...this.getStatus(scheduler), recentRuns: this.db.prepare('SELECT trigger,started_at AS startedAt,ended_at AS endedAt,result,report_date AS reportDate,error_category AS errorCategory,external_request_count AS externalRequestCount FROM portfolio_sync_runs ORDER BY started_at DESC LIMIT 10').all() }; }
+  getSyncStatus(scheduler = null) {
+    const recentRuns = this.db.prepare('SELECT trigger,started_at AS startedAt,ended_at AS endedAt,result,report_date AS reportDate,error_category AS errorCategory,stage,ibkr_error_code AS ibkrErrorCode,diagnostics_json AS diagnosticsJson,external_request_count AS externalRequestCount FROM portfolio_sync_runs ORDER BY started_at DESC LIMIT 10').all().map(row => ({ ...row, diagnostics: parseJson(row.diagnosticsJson, []) }));
+    return { ...this.getStatus(scheduler), recentRuns };
+  }
 }
 
 module.exports = { MAX_API_POINTS, PortfolioService, RANGE_KEYS, combinePerformanceRows, parseRange };

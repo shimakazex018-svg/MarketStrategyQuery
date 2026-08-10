@@ -13,7 +13,9 @@ async function main() {
       return;
     }
     if (!result.ok) {
-      console.error(`资产同步未完成：${result.errorCategory || result.result || 'unknown'}`);
+      const stage = result.stage ? `；stage=${result.stage}` : '';
+      const errorCode = result.ibkrErrorCode ? `；IBKR error code=${result.ibkrErrorCode}` : '';
+      console.error(`资产同步未完成：${result.errorCategory || result.result || 'unknown'}${stage}${errorCode}`);
       process.exitCode = 1;
       return;
     }
