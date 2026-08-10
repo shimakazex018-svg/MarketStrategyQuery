@@ -141,7 +141,10 @@ class PortfolioService {
   getStatus(scheduler = null) {
     const counts = this.databaseCounts();
     const lastRun = this.lastSyncRun();
-    const status = this.fixtureMode || counts.performance > 0 ? (lastRun?.result === 'failed' ? 'sync_error' : 'ready') : lastRun?.result === 'failed' ? 'sync_error' : 'disconnected';
+    const hasSuccessfulCache = Boolean(this.state.lastSuccessfulAt) || lastRun?.result === 'success';
+    const status = this.fixtureMode || counts.performance > 0
+      ? (lastRun?.result === 'failed' && !hasSuccessfulCache ? 'sync_error' : 'ready')
+      : lastRun?.result === 'failed' ? 'sync_error' : 'disconnected';
     return {
       enabled: true,
       status,

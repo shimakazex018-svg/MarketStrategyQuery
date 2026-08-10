@@ -218,6 +218,19 @@ test('local import is idempotent and keeps NAV/cash semantics', async t => {
   assert.equal(service.getSummary('ALL').summary.currentNav, 100000);
 });
 
+test('successful cached portfolio data remains usable after a later failed attempt', async t => {
+  const runtimeRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'portfolio-status-cache-test-'));
+  t.after(() => fs.rm(runtimeRoot, { recursive: true, force: true }));
+  const service = await new PortfolioService({ rootDir, config: testConfig(runtimeRoot), now: () => new Date('2026-08-08T00:00:00Z') }).init();
+  t.after(() => service.close());
+  service.importReport(normalizeFlexReport(flexXml));
+  service.state.lastSuccessfulAt = '2026-08-08T00:00:00.000Z';
+  const run = service.createRun('scheduled_daily');
+  service.finishRun(run, 'failed', { errorCategory: 'network_error', stage: 'send_request', externalRequestCount: 1 });
+  assert.equal(service.getStatus().status, 'ready');
+  assert.equal(service.lastSyncRun().errorCategory, 'network_error');
+});
+
 test('synthetic review fixture is local-only and exposes required analysis sections', async t => {
   const runtimeRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'portfolio-fixture-test-'));
   t.after(() => fs.rm(runtimeRoot, { recursive: true, force: true }));
