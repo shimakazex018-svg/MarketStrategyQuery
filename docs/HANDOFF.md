@@ -2,37 +2,31 @@
 
 ## 当前状态
 
-- The six homepage auxiliary-indicator explanations are now opened in-place from the dashboard information buttons. No `#/indicators` page or navigation entry remains; legacy hashes replace back to `#/`.
-- Dialog opening does not change the hash, navigate, reload data, or contact providers. It uses a body-level portal, scroll-position preservation, focus isolation/trap, and a reduced-motion fallback.
-- Before the next handoff, run `npm.cmd run check`, `npm.cmd run visual:current`, verify the six dialogs on 48101, and retain the existing ignored `tools/market-data-lab/` experiments untouched.
+- 当前分支仍为 `main`；初始基线为 `5df8f65b183181cbad76809d4578d088bf647aae`。用户既有未跟踪的 `tools/market-data-lab/` 保持原样、未暂存、未接入正式服务。
+- 已完成只读 IBKR Flex Web Service v3 投资组合模块：官方两步请求客户端、DOM-free XML 适配、Node 内置 SQLite/WAL、版本化 schema、幂等导入、现金流/NAV/P&L/收益率语义、基准复用、scrypt 本机密码、受保护 API、独立 `10:30 Asia/Shanghai` 同步和启动补采。
+- 已完成 `#/portfolio-analysis`：金额本地显示开关、掩码账户、`1D/MTD/3M/6M/YTD/1Y/ALL/CUSTOM`、收益率/P&L/NAV SVG 曲线、鼠标/触摸/键盘十字线、收益日历、月度统计、贡献、现金流桥、持仓、交易和同步覆盖状态。
+- 真实 Flex 配置尚未提供；生产页在本机密码登录后会显示 `IBKR 尚未连接` 或历史缓存状态。页面不会因打开而触发 IBKR 请求。
+- 正式 `48101` 已由现有隐藏 Windows 计划任务恢复为当前代码的单实例；health 为 ready，production 未启用 `PORTFOLIO_REVIEW_FIXTURE`，`48102` 保持可用。
+- 合成审查模式为 `PORTFOLIO_REVIEW_FIXTURE=synthetic-review-fixture`，使用内存 SQLite 和 `SIM000001`，不读取本机生产组合缓存。
+- `npm.cmd run check` 已包含公开仓库隐私扫描；它阻止跟踪/暂存 runtime-data、SQLite/WAL/SHM、raw Flex、真实 IBKR 账户号和凭据。
 
-## 当前状态
+## 已验证
 
-- NAAIM Exposure Index is a local-import-only weekly analysis metric. Its canonical series excludes early conflicting source dates and never contacts NAAIM or MacroMicro at startup, page view, or 07:30 local reload.
-
-### NAAIM Exposure Index checkpoint A
-
-- `main` contains only the local NAAIM workbook import pipeline and synthetic tests. No official NAAIM workbook exists under `runtime-data/imports/naaim/` yet.
-- To continue, the owner must manually download the official workbook and place it at `runtime-data/imports/naaim/naaim-exposure-index.xlsx` (another `.xlsx` basename is accepted), then run `npm.cmd run data:import:naaim -- runtime-data/imports/naaim/naaim-exposure-index.xlsx`.
-- The importer does not contact NAAIM or MacroMicro. It reports workbook sheet names, selected explicit headers, dates, row counts, duplicates/conflicts, and validation diagnostics without printing local paths.
-- Do not begin provider/API/UI/settings/audit/visual work (checkpoint B) until a real workbook import passes and the source structure is reviewed.
-
-- 当前分支为 `main`；v0.5 正式首页仍为六项指标，SOXX仅用于回撤分析。
-- 新增 `#/settings`：顶部齿轮入口、只读数据源与采集状态页、60秒仅内部 API 的状态轮询；无实时行情源。
-- `GET /api/settings/data-acquisition` 聚合 FRED（4项）、WorldPEratio（2项）和 iShares 本地导入 SOXX NAV（1项）的现有运行状态，绝不触发刷新或外部请求。
-- API 只返回中性凭据使用布尔状态，不返回Cookie或Token名称、内容或其他敏感凭据。
-- UI改动完成并通过检查后运行`npm.cmd run visual:current`，覆盖`previews/current/`最新快照；截图只包含网页内容区并经过DOM、manifest、文件名和视觉隐私检查。
-- 调度仍是 Asia/Shanghai 每日07:30；Windows 无感启动仅负责服务启动，不是采集任务。
-- `runtime-data/system/data-acquisition-audit.json` 从本功能上线后开始记录，原子写入、损坏隔离，最多200条或90天；不含原始数据、HTML、路径、Cookie、Token或内容哈希。
-
-## 验证边界
-
-- `npm.cmd run check`：165项通过、0失败；数据检查、语法检查和完整自动测试均通过。
-- 设置 API、审计边界与前端路由的新增合成测试已覆盖；真实市场数据和隔离实验文件未纳入测试输入或 Git。
-- 后续视觉验收应检查 `#/settings` 的 1440×900、768×1024 和 390×844，并确认只存在本站内部 API 请求。
+- `node --check`：server、组合模块、前端和视觉脚本通过。
+- `node --test tests/portfolio-analysis.test.js`：Flex 缺失值、幂等导入、合成夹具、API 401/登录/无交易路由通过。
+- `npm.cmd run check`：178/178 测试通过；数据检查、公开仓库隐私扫描和组合模块语法检查通过，Node 测试默认单并发运行。
+- 合成 Flex 两步同步：SendRequest/GetStatement 调用 2 次，NAV、现金、资金流和每日绩效正确落库，缺失字段保持 `null`。
+- 隔离浏览器：桌面、768×1024、390×844 无横向溢出；金额开关、3M、NAV、键盘 Home 十字线和组合页主要内容通过。
+- 当前视觉快照：`previews/current/` 含组合桌面/iPad/iPhone、日历、收益曲线以及既有页面 WebP；manifest 声明 `synthetic-review-fixture`、`containsRealAccountData: false` 和 `repositoryVisibility: public`。
 
 ## 下一步
 
-1. 不要为设置页增加立即抓取、Provider启停、调度修改、缓存删除或上传功能，除非用户单独授权。
-2. 保持 FRED/WorldPEratio 既有合规与失败停机边界；SOXX继续仅允许人工下载后本地导入。
-3. `tools/market-data-lab/` 的未跟踪实验文件继续保持未修改、未暂存、未接入正式服务。
+1. 如需真实连接，按 `docs/IBKR_PORTFOLIO_SETUP.md` 在 Client Portal 人工创建 Activity Flex Query，运行本机密码初始化并把配置放入 ignored runtime-data；先手动执行一次 `npm.cmd run portfolio:sync`。
+2. 真实连接验收必须使用独立端口和只读检查，确认账户号只在本机数据库、API 仅返回掩码、同步失败保留历史；不要把真实缓存用于公开截图。
+3. 如需提交或推送，先检查 `git diff --check`、`git status --short`、隐私扫描和完整 `npm.cmd run check`；不要使用 `git add .`，不要处理 `tools/market-data-lab/`。
+
+## 固定边界
+
+- 不增加下单、撤单、调仓、自动投资、交易 API、TWS/IB Gateway 或私有接口。
+- 不把演示/合成数据描述为实时或正式账户数据；真实账户、凭据、原始 Flex、SQLite、日志和机器状态继续留在 ignored runtime-data。
+- 市场数据仍保持既有 Provider 许可门禁与 `07:30 Asia/Shanghai` 调度；组合 `10:30` 调度独立。

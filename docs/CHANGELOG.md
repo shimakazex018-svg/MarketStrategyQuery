@@ -1,5 +1,22 @@
 # 变更日志
 
+## 2026-08-10 - PUBLIC 安全提交与正式服务恢复
+
+- 加强公开仓库隐私扫描，覆盖 JSON 引号字段形式的 Flex Token/Query ID，并补充 SQLite、raw Flex、secret、session 与组合运行目录的显式忽略规则。
+- 完成 synthetic-only 组合代码的提交前全量审计、production 48101 隐藏单实例恢复和未认证 API smoke 验证；真实 Flex 未配置、未请求。
+
+## 2026-08-09 - IBKR Flex 只读投资组合分析
+
+- 新增只读 `#/portfolio-analysis` 和受保护 `/api/portfolio/*`：账户摘要、区间绩效、收益日历、月度统计、标的贡献、现金流桥、持仓、交易和同步覆盖状态。
+- 新增官方 IBKR Flex Web Service v3 两步客户端、有限轮询、超时/大小限制、错误分类、DOM-free XML 字段适配和缺失字段保持 `null` 的导入语义。
+- 新增本机 SQLite/WAL、版本化 schema、foreign keys、busy timeout、quick_check、原子备份、幂等导入、每日绩效、Modified Dietz fallback、基准复用和独立 `10:30 Asia/Shanghai` 同步。
+- 新增 scrypt 本机密码、HttpOnly SameSite Strict 会话、无交易路由、同步状态和启动补采；页面不会因打开而请求 IBKR。
+- 新增确定性 `synthetic-review-fixture` 内存 SQLite、公开仓库隐私扫描器，并将扫描器接入 `npm.cmd run check`；真实账户、凭据、SQLite、raw Flex 和运行数据不进入仓库。
+- 新增组合桌面/iPad/iPhone、日历和收益曲线视觉快照；manifest 标记 `portfolioDataMode: synthetic-review-fixture`、`containsRealAccountData: false`、`repositoryVisibility: public`。
+- 图表页新增本地区间基准对比摘要（Nasdaq-100、S&P 500、SOXX），并将完整检查固定为单并发以避免 Windows 文件锁测试的并行挂起。
+- 修复数值归一化把 `null` 转成 0 的问题，并新增 Flex、SQLite、认证 API、性能和合成夹具测试。
+- 真实 Flex Query、Token 和账户数据未配置、未写入 Git、未用于公开截图；后续按 `docs/IBKR_PORTFOLIO_SETUP.md` 在本机配置。
+
 ## 2026-07-29 - Dashboard indicator dialogs
 
 - Removed the standalone six-indicator navigation entry and legacy `#/indicators` rendering. Legacy hashes now use `history.replaceState` to return to the homepage without creating a dead history entry.
