@@ -3,8 +3,8 @@
 ## 环境要求
 
 - Windows PowerShell。
-- Node.js 18 或更高版本。
-- 项目没有第三方运行依赖和构建步骤；不需要生成 `package-lock.json` 或 `pnpm-lock.yaml`。
+- Node.js 22.5 或更高版本；`node:sqlite` 是投资组合模块的内置运行能力。
+- 项目没有第三方运行时依赖和构建步骤；`package-lock.json` 作为 npm 元数据跟踪，不能删除或重写。
 - 启动前检查目标端口，发现占用时先识别 PID，不终止未知进程。
 
 ## 自动检查
@@ -12,6 +12,8 @@
 ```powershell
 npm.cmd run check
 ```
+
+检查默认使用单并发运行 Node 测试，避免 Windows 下 NAAIM 文件锁测试与并行 worker 互相等待；这不会改变生产服务的运行并发。
 
 核心数据隔离实验使用Node.js 22或更高版本和实验目录自己的依赖；只运行合成测试时：
 
@@ -44,6 +46,8 @@ node run-missing-only.js --cftc-positioning
 5. 自计算指标检查：有界CSV、SEC字段/季度TTM、QQQ原始PE与WMAD4稳健PE、实现波动率、历史分位、风险偏好、CFTC候选合约和人工Forward PE边界。
 6. WorldPEratio检查：风险接受与30天条款复查门禁、采集前robots、服务器HTML提取、完整序列/仅汇总判定、目标/日期/数值歧义、403/429/登录/验证码停止、每日1+1请求、快照去重/损坏恢复、HTML不落盘、四个诊断API和Trim 10%统计。
 7. v0.5六指标检查：离线导入、FRED缺失值、PE统计/快照分离、日期去重与修订、stale回退、单项故障隔离、每日预算、启动补采、周末去重、API脱敏和正式六卡范围。
+8. 投资组合检查：Flex XML 字段别名、错误分类、缺失值不转0、SQLite schema/WAL/foreign key/quick_check、幂等导入、现金流与 NAV 语义、Modified Dietz fallback、区间收益连乘、掩码账户、scrypt 会话、未授权 401、无交易路由、同步锁和合成审查模式。
+9. 公开仓库隐私检查：跟踪/暂存文件不得包含 `runtime-data`、SQLite/WAL/SHM、raw Flex、真实 IBKR 账户号、Flex 凭据、私钥或云凭据。
 
 单独运行测试：
 
@@ -51,7 +55,46 @@ node run-missing-only.js --cftc-positioning
 npm.cmd test
 ```
 
-当前没有编译或数据库迁移命令。
+当前没有编译命令；数据库 schema migration 在组合服务启动时由 `server/portfolio/sqlite.js` 执行，并在启动时运行 `PRAGMA quick_check`。
+
+## 投资组合只读模块
+
+合成回归：
+
+```powershell
+node --test tests/portfolio-analysis.test.js
+```
+
+本机密码初始化（交互输入，不把密码放入参数）：
+
+```powershell
+npm.cmd run portfolio:auth:init
+```
+
+本机一次性 Flex 同步：
+
+```powershell
+npm.cmd run portfolio:sync
+```
+
+没有本机 Flex 配置时，`portfolio:sync` 必须返回 `waiting_configuration`，不发外部请求，不清空既有历史。真实同步不得用于公开视觉审查；视觉审查使用隔离进程和内存 SQLite：
+
+```powershell
+$env:PORT = "48201"
+$env:HOST = "127.0.0.1"
+$env:MARKET_DATA_ENABLED = "false"
+$env:PORTFOLIO_REVIEW_FIXTURE = "synthetic-review-fixture"
+npm.cmd start
+```
+
+另开 PowerShell 运行：
+
+```powershell
+$env:VISUAL_BASE_URL = "http://127.0.0.1:48201"
+npm.cmd run visual:current
+```
+
+组合 API 最低验收：未登录请求 `/api/portfolio/summary` 返回 401；登录后只允许 GET 分析接口，状态只返回掩码账户和中性同步元数据；页面不会请求 Flex endpoint。
 
 ## 启动
 
@@ -140,7 +183,7 @@ Invoke-RestMethod http://127.0.0.1:48101/api/market-data/providers/worldperatio/
 
 ## 持续视觉快照
 
-UI、布局或交互改动通过完整检查后执行 `npm.cmd run visual:current`。该命令只访问`http://127.0.0.1:48101`，检查health、DOM隐私、控制台、页面溢出和外部请求，生成并覆盖`previews/current/`中的WebP与manifest。普通开发不创建历史目录；仅正式版本可复制到`previews/releases/<VERSION>/`。
+UI、布局或交互改动通过完整检查后执行 `npm.cmd run visual:current`。该命令默认访问`http://127.0.0.1:48101`，也可用 `VISUAL_BASE_URL` 指向隔离合成审查服务；它检查health、DOM隐私、控制台、页面溢出和外部请求，生成并覆盖`previews/current/`中的WebP与manifest。组合快照必须声明 `synthetic-review-fixture` 且不含真实账户数据。普通开发不创建历史目录；仅正式版本可复制到`previews/releases/<VERSION>/`。
 
 ## 页面回归
 
@@ -153,6 +196,7 @@ UI、布局或交互改动通过完整检查后执行 `npm.cmd run visual:curren
 5. `#/indicators`：六指标说明。
 6. `#/drawdown-analysis`：默认Nasdaq-100、S&P 500对比、近10年、15%阈值；验证七个快捷范围、自定义日期、对象互斥、阈值、排序、空错态、前进/后退，以及两张图真实交易日日期游标同步、右侧Tooltip翻转、Escape关闭和键盘导航。
 7. 未知 Hash：前端 404。
+8. `#/portfolio-analysis`：先验证只读本机密码门禁；合成审查验证账户掩码、八个范围、三种曲线模式、收益日历、近24个月、贡献、现金流桥、持仓、交易统计和金额显示开关。
 
 交互通过标准：
 
@@ -163,6 +207,8 @@ UI、布局或交互改动通过完整检查后执行 `npm.cmd run visual:curren
 - 深浅主题均可读；状态不能只依赖颜色。
 - 单指标切换范围不改变其他卡片；不可用范围保持禁用。
 - 控制台无错误。
+- 投资组合页未登录为 401/密码页；登录后不显示原始账户号、Flex 凭据、SQLite 路径或机器用户名，缺失数值保持“暂不可用”，金额开关只写浏览器本地偏好。
+- 投资组合图表最多使用服务端有界点数；SVG 十字线只更新覆盖层和提示，不触发网络请求；路由离开时取消请求。
 - 回撤页核心计算必须使用`range=ALL`完整历史；切换范围不得重复请求，同日期冲突必须失败，null不得变成0，两个对比序列必须从首个共同日期归一化为100。
 - 回撤图日期游标必须从完整有效点二分吸附，不能由显示抽样或插值生成日期；pointermove使用动画帧节流，触摸仅在明确横向跟踪时阻止默认滚动，重新渲染、离开路由、失焦和取消时必须清理监听器与待执行帧。
 - SOXX专项必须覆盖准确标的、SOX/SOXL/SOXS拒绝、NAV/market/adjusted口径、排序/重复/冲突/null、基金成立日前数据、2024拆分连续性、幂等原子导入、Provider失败隔离、API元数据、可选UI和首页仍为六卡。
@@ -225,11 +271,11 @@ UI、布局或交互改动通过完整检查后执行 `npm.cmd run visual:curren
 
 ## 数据库、媒体与生成文件检查
 
-数据库、缩略图、媒体上传、视频、HLS 和查重模块当前不存在，因此没有适用的迁移、索引、Range、转码或缩略图测试。若未来新增，必须先补充本节，不得假设已有验证覆盖。
+投资组合 SQLite 已存在并由 `tests/portfolio-analysis.test.js` 覆盖 schema、WAL/foreign key/quick_check、幂等导入、null 语义、绩效和 API；真实 `runtime-data/portfolio-analysis/` 不进入测试输入。项目仍没有缩略图、媒体上传、视频、HLS 和查重模块，因此这些类型没有适用测试。若未来新增媒体功能，必须先补充容量、清理、转码和权限测试。
 
 ## 常见失败现象
 
-- `node` 或 `npm` 不可识别：安装/确认官方 Node.js 18+，或在当前 PowerShell 修正 PATH；不要改项目脚本规避环境问题。
+- `node` 或 `npm` 不可识别：安装/确认 Node.js 22.5+，或在当前 PowerShell 修正 PATH；不要改项目脚本规避环境问题。
 - 48101 被占用：查明监听 PID，使用临时端口测试；不要终止未知服务。
 - 自计算指标显示 unavailable：缺少对应本地导入或官方运行缓存时是预期行为，不得用演示值或零补齐。
 - 没有 `FRED_API_KEY`：当前是预期配置，不影响启动。

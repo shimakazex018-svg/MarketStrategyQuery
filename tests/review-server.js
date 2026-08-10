@@ -3,6 +3,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { createHttpServer } = require('../server');
+const { createPortfolioService } = require('../server/portfolio');
 
 const rootDir = path.join(__dirname, '..');
 const port = Number(process.env.PORT || 48215);
@@ -162,18 +163,35 @@ function soxxModel() {
   };
 }
 
+function naaimModel() {
+  const history = Array.from({ length: 28 }, (_, index) => ({ date: `2026-${String(Math.floor(index / 4) + 1).padStart(2, '0')}-${String((index % 4) * 7 + 1).padStart(2, '0')}`, value: Number((48 + index * 0.55 + Math.sin(index / 3) * 4).toFixed(2)) }));
+  return {
+    id: 'naaim_exposure', metricId: 'naaim_exposure', displayName: 'NAAIM Exposure Index', value: history.at(-1).value,
+    unit: '%', asOf: history.at(-1).date, source: 'UI验收合成夹具（非真实行情）', status: 'fresh', statusMessage: '合成本地导入夹具，不代表真实NAAIM数据。',
+    historyStart: history[0].date, historyEnd: history.at(-1).date, history, dataMode: 'synthetic-fixture'
+  };
+}
+
 function models(range = '1Y') {
   return definitions.map(definition => ({ ...modelFor(definition), requestedRange: range, servedAt: new Date().toISOString() }));
 }
 
 const service = {
   getIndicators: range => models(range),
-  getIndicator: (id, range) => id === 'soxx_price' ? (reviewSoxxAvailable ? soxxModel() : null) : models(range).find(model => model.id === id) || null,
+  getIndicator: (id, range) => id === 'naaim_exposure' ? naaimModel() : id === 'soxx_price' ? (reviewSoxxAvailable ? soxxModel() : null) : models(range).find(model => model.id === id) || null,
   getIndicatorHistory: (id, range) => {
+    if (id === 'naaim_exposure') { const model = naaimModel(); return { metricId: id, range, history: model.history, historyStart: model.historyStart, historyEnd: model.historyEnd, status: model.status, provider: 'synthetic-fixture', sourceLabel: model.source, limitations: ['合成夹具，仅用于视觉验收'] }; }
     const model = id === 'soxx_price' ? (reviewSoxxAvailable ? soxxModel() : null) : models(range).find(item => item.id === id);
     return model ? { metricId: id, range, history: model.history, historyStart: model.historyStart, historyEnd: model.historyEnd || model.history.at(-1)?.date || null, status: model.status, provider: model.provider || null, sourceLabel: model.sourceLabel || model.source, seriesType: model.seriesType || null, adjustmentStatus: model.adjustmentStatus || null, limitations: model.limitations || [] } : null;
   },
   getStatus: () => ({ enabled: false, timezone: 'Asia/Shanghai', reviewFixture: true, indicators: models().map(({ id, status }) => ({ id, status })), servedAt: new Date().toISOString() }),
+  getDataAcquisitionStatus: async () => ({
+    summary: { enabledProviderCount: 0, enabledDatasetCount: 0, schedulerStatus: 'review-fixture', dailyNetworkDatasetCount: 0, localImportDatasetCount: 0, realtimeProviderCount: 0 },
+    providers: [], datasets: [], recentRuns: [],
+    scheduler: { enabled: false, timezone: 'Asia/Shanghai', time: '07:30', startupCatchupEnabled: false, running: false, lastCycleResult: 'review-fixture' },
+    realtime: { enabled: false, message: 'UI验收合成夹具（非真实行情）；未启用实时数据。' },
+    storage: { message: 'UI验收合成夹具不读取正式运行缓存。', runtimeDataIgnored: true, gitTracksRealMarketData: false, rawHtmlStored: false, credentialsUsed: false }
+  }),
   getProviderDiagnosticStatus: id => id === 'worldperatio' ? {
     providerId: id, enabled: true, status: 'fresh', complianceStatus: 'approved_with_conditions', attemptsToday: 1
   } : null,
@@ -196,5 +214,9 @@ const service = {
   refresh: async () => ({ ok: false, statusCode: 409, reason: 'review-fixture-read-only' })
 };
 
-const server = createHttpServer(service);
-server.listen(port, '127.0.0.1', () => console.log(`Review fixture (${reviewState}) running on http://127.0.0.1:${port}`));
+(async () => {
+  const portfolioService = await createPortfolioService(rootDir, { fixtureMode: 'synthetic-review-fixture' });
+  const server = createHttpServer(service, null, portfolioService, null);
+  server.on('close', () => { void portfolioService.close(); });
+  server.listen(port, '127.0.0.1', () => console.log(`Review fixture (${reviewState}) running on http://127.0.0.1:${port}`));
+})().catch(error => { console.error(`Review fixture failed: ${error.message}`); process.exitCode = 1; });

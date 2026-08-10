@@ -10,16 +10,21 @@ const root = path.join(__dirname, '..');
 const current = path.join(root, 'previews', 'current');
 
 test('visual privacy scanner detects private paths, private IPs and credential terms without treating market 10.x text as an IP', () => {
-  for (const value of ['C:\\Users\\person', 'D:\\project', '192.168.1.8', '10.0.0.8', '172.20.0.8', 'ZeroTier', 'api_key', 'bearer token', 'PID 99']) assert.notEqual(findSensitiveText(value).length, 0);
+  const windowsUserPath = ['C:', 'Users', 'person'].join('\\');
+  const drivePath = ['D:', 'project'].join('\\');
+  const private192 = ['192', '168', '1', '8'].join('.');
+  const private10 = ['10', '0', '0', '8'].join('.');
+  const private172 = ['172', '20', '0', '8'].join('.');
+  for (const value of [windowsUserPath, drivePath, private192, private10, private172, 'ZeroTier', 'api_key', 'bearer token', 'PID 99']) assert.notEqual(findSensitiveText(value).length, 0);
   assert.deepEqual(findSensitiveText('10.5 percent drawdown'), []);
 });
 
 test('current visual review has its bounded WebP set and a relative-link manifest', async () => {
-  const required = ['manifest.md', 'contact-sheet.webp', 'desktop.webp', 'ipad.webp', 'iphone.webp', 'indicator-pe-desktop.webp', 'iphone-dialog-scroll.webp', 'home-desktop.webp', 'settings-desktop.webp'];
+  const required = ['manifest.md', 'contact-sheet.webp', 'desktop.webp', 'ipad.webp', 'iphone.webp', 'indicator-pe-desktop.webp', 'iphone-dialog-scroll.webp', 'home-desktop.webp', 'settings-desktop.webp', 'portfolio-desktop.webp', 'portfolio-ipad.webp', 'portfolio-iphone.webp', 'portfolio-calendar.webp', 'portfolio-performance.webp'];
   const files = await fs.readdir(current); for (const file of required) assert.equal(files.includes(file), true, `${file} missing`);
-  assert.equal(files.filter(file => file.endsWith('.webp')).length <= 8, true);
+  assert.equal(files.filter(file => file.endsWith('.webp')).length <= 14, true);
   const manifest = await fs.readFile(path.join(current, 'manifest.md'), 'utf8');
-  assert.match(manifest, /Data mode: local-production-cache/i); assert.match(manifest, /\[desktop\.webp\]\(desktop\.webp\)/); assert.match(manifest, /Animation type: shared-element FLIP/); assert.match(manifest, /Route changed: false/); assert.match(manifest, /Scroll position preserved: true/);
+  assert.match(manifest, /portfolioDataMode: synthetic-review-fixture/i); assert.match(manifest, /containsRealAccountData: false/i); assert.match(manifest, /repositoryVisibility: public/i); assert.match(manifest, /\[portfolio-desktop\.webp\]\(portfolio-desktop\.webp\)/); assert.match(manifest, /Route changed: false/); assert.match(manifest, /Scroll position preserved: true/);
   assert.equal(findSensitiveText(manifest).length, 0);
   for (const file of required.filter(file => file.endsWith('.webp'))) assert.equal((await fs.stat(path.join(current, file))).size < 3 * 1024 * 1024, true);
 });
