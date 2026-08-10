@@ -1,9 +1,13 @@
 'use strict';
 
 const fs = require('node:fs');
+const fsPromises = require('node:fs/promises');
+const os = require('node:os');
 const path = require('node:path');
 const { createHttpServer } = require('../server');
 const { createPortfolioService } = require('../server/portfolio');
+const { loadPortfolioConfig } = require('../server/portfolio/config');
+const { writePasswordFile } = require('../server/portfolio/auth');
 
 const rootDir = path.join(__dirname, '..');
 const port = Number(process.env.PORT || 48215);
@@ -214,9 +218,39 @@ const service = {
   refresh: async () => ({ ok: false, statusCode: 409, reason: 'review-fixture-read-only' })
 };
 
-(async () => {
-  const portfolioService = await createPortfolioService(rootDir, { fixtureMode: 'synthetic-review-fixture' });
+async function startReviewServer({ port: requestedPort = port, authPassword = null } = {}) {
+  let temporaryRuntimeRoot = null;
+  let config;
+  if (authPassword) {
+    temporaryRuntimeRoot = await fsPromises.mkdtemp(path.join(os.tmpdir(), 'market-cycle-review-'));
+    const baseConfig = loadPortfolioConfig(rootDir);
+    config = {
+      ...baseConfig,
+      runtimeRoot: temporaryRuntimeRoot,
+      databasePath: path.join(temporaryRuntimeRoot, 'portfolio.sqlite'),
+      passwordPath: path.join(temporaryRuntimeRoot, 'portfolio-password.json')
+    };
+    await writePasswordFile(config.passwordPath, authPassword);
+  }
+  const portfolioService = await createPortfolioService(rootDir, { config, fixtureMode: 'synthetic-review-fixture' });
+  if (authPassword) portfolioService.auth.fixtureMode = false;
   const server = createHttpServer(service, null, portfolioService, null);
-  server.on('close', () => { void portfolioService.close(); });
-  server.listen(port, '127.0.0.1', () => console.log(`Review fixture (${reviewState}) running on http://127.0.0.1:${port}`));
-})().catch(error => { console.error(`Review fixture failed: ${error.message}`); process.exitCode = 1; });
+  server.on('close', () => {
+    void portfolioService.close().finally(async () => {
+      if (temporaryRuntimeRoot) await fsPromises.rm(temporaryRuntimeRoot, { recursive: true, force: true });
+    });
+  });
+  await new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(requestedPort, '127.0.0.1', resolve);
+  });
+  return { server, port: server.address().port, portfolioService };
+}
+
+if (require.main === module) {
+  startReviewServer().then(({ port: listeningPort }) => {
+    console.log(`Review fixture (${reviewState}) running on http://127.0.0.1:${listeningPort}`);
+  }).catch(error => { console.error(`Review fixture failed: ${error.message}`); process.exitCode = 1; });
+}
+
+module.exports = { startReviewServer };

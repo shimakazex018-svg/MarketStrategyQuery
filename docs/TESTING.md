@@ -269,6 +269,56 @@ UI、布局或交互改动通过完整检查后执行 `npm.cmd run visual:curren
 
 `tests/review-server.js` 只用于展示 UI 状态，来源必须显示“UI验收合成夹具（非真实行情）”。它不进入正式启动路径，不访问第三方。
 
+## REAL INTERACTION SMOKE（正式要求）
+
+Visual Review != Interaction Review。
+
+真实浏览器交互测试与视觉快照分开执行。交互测试沿用项目现有 Playwright 工具链，在临时本机端口启动独立的 `synthetic-review-fixture` 服务，不使用正式 `48101`，不读取生产 `runtime-data/`，不访问真实 IBKR。
+
+```powershell
+npm.cmd run test:interaction
+```
+
+Visual Review 验证：
+
+- layout；
+- responsive；
+- screenshots；
+- privacy。
+
+Interaction Review 验证：
+
+- real browser navigation；
+- mouse click；
+- keyboard input；
+- touch/tap；
+- dialog lifecycle；
+- route stability；
+- request-loop detection。
+
+以下 UI 修改必须运行 `npm.cmd run test:interaction`：
+
+- navigation；
+- button；
+- dialog/modal；
+- login；
+- tabs；
+- dropdown；
+- forms；
+- chart interactions；
+- touch interactions；
+- settings controls。
+
+每次资产分析认证相关改动都必须覆盖：
+
+- 首页通过真实鼠标点击进入 `#/portfolio-analysis`；未认证页面空闲30秒期间，登录表单挂载和登录面板挂载各不超过1次，401状态探测仅1次，不得请求业务分析接口，不得改变Hash或滚动位置；
+- 错误合成密码、正确合成密码、退出本机页面和刷新后的登录状态；
+- Tab、Shift+Tab、Enter、Space、Escape；指标说明弹窗开关、阶段详情返回首页、回撤图真实指针和方向键、设置页与资产分析导航；
+- 768×1024 iPad 与390×844 iPhone 的真实触摸点击；至少覆盖移动菜单和资产分析入口；
+- 记录并检查页面控制台错误、页面异常、组合 API 请求/响应、DOM登录面板挂载、`#app` 重建和 `pageIn` 动画次数；生产页面不得暴露调试计数 API。
+
+视觉审查仍使用 `npm.cmd run visual:current`，只验证 synthetic fixture 截图、视口、横向溢出、隐私和 manifest；Visual Review 不能替代 Interaction Review，也不能替代 REAL INTERACTION SMOKE。
+
 ## 数据库、媒体与生成文件检查
 
 投资组合 SQLite 已存在并由 `tests/portfolio-analysis.test.js` 覆盖 schema、WAL/foreign key/quick_check、幂等导入、null 语义、绩效和 API；真实 `runtime-data/portfolio-analysis/` 不进入测试输入。项目仍没有缩略图、媒体上传、视频、HLS 和查重模块，因此这些类型没有适用测试。若未来新增媒体功能，必须先补充容量、清理、转码和权限测试。

@@ -1,5 +1,12 @@
 # 变更日志
 
+## 2026-08-10 - 修复未认证资产分析交互循环
+
+- 将资产分析前端认证流程明确为 `unknown`、`checking`、`unauthenticated`、`authenticating`、`authenticated` 和 `error` 状态；未认证 401 后停止自动重试，不再重复替换登录面板。
+- 增加请求代次保护，避免登出、路由离开或中止请求的旧异步结果再次触发渲染。
+- 增加独立 synthetic Playwright REAL INTERACTION SMOKE：覆盖真实鼠标、键盘、触摸、错误/正确合成密码、登出、刷新和30秒未认证稳定性；不使用正式端口，不访问真实 IBKR。
+- 本轮修复进入最终公开提交；没有配置真实 Flex Token、Query ID 或账户数据。
+
 ## 2026-08-10 - PUBLIC 安全提交与正式服务恢复
 
 - 加强公开仓库隐私扫描，覆盖 JSON 引号字段形式的 Flex Token/Query ID，并补充 SQLite、raw Flex、secret、session 与组合运行目录的显式忽略规则。
