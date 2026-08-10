@@ -126,27 +126,114 @@ async function calendarPopoverVisible(page) {
 
 async function testDesktopCalendar(page, requestCounts) {
   const cell = page.locator('[data-portfolio-calendar-cell]').first();
+  const secondCell = page.locator('[data-portfolio-calendar-cell]').nth(1);
   await cell.scrollIntoViewIfNeeded();
   const before = await page.evaluate(() => ({ hash: window.location.hash, scrollY: Math.round(window.scrollY) }));
   const requestSnapshot = mapObject(requestCounts);
-  await cell.hover();
-  await page.waitForFunction(() => {
-    const popover = document.querySelector('[data-portfolio-calendar-popover]');
-    return Boolean(popover && !popover.hidden);
+  await page.evaluate(() => {
+    window.__calendarPointerProbe = null;
+    document.addEventListener('pointermove', event => {
+      if (event.target.closest?.('[data-portfolio-calendar-cell]')) {
+        window.__calendarPointerProbe = { clientX: event.clientX, clientY: event.clientY };
+      }
+    }, true);
   });
-  const hoverText = await page.locator('[data-portfolio-calendar-popover]').innerText();
-  assert.match(hoverText, /当日盈亏/);
-  assert.match(hoverText, /当日收益率/);
-  assert.match(hoverText, /数据质量/);
-  assert.match(await cell.getAttribute('aria-label'), /当日盈亏/);
+  const readTooltipState = () => page.evaluate(() => {
+    const popover = document.querySelector('[data-portfolio-calendar-popover]');
+    const rect = popover?.getBoundingClientRect();
+    const pointer = window.__calendarPointerProbe;
+    const visible = Boolean(popover && !popover.hidden);
+    const horizontalGap = !rect || !pointer ? null : pointer.clientX < rect.left ? rect.left - pointer.clientX : pointer.clientX > rect.right ? pointer.clientX - rect.right : 0;
+    const verticalGap = !rect || !pointer ? null : pointer.clientY < rect.top ? rect.top - pointer.clientY : pointer.clientY > rect.bottom ? pointer.clientY - rect.bottom : 0;
+    return {
+      visible,
+      pointer,
+      rect: rect ? { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom } : null,
+      viewport: { width: window.innerWidth, height: window.innerHeight },
+      horizontalGap,
+      verticalGap,
+      date: document.querySelector('[data-calendar-popover-date]')?.textContent || '',
+      amount: document.querySelector('[data-calendar-popover-amount]')?.textContent || '',
+      returnText: document.querySelector('[data-calendar-popover-return]')?.textContent || '',
+      popoverCount: document.querySelectorAll('[data-portfolio-calendar-popover]').length
+    };
+  });
+  const waitForPopover = async (visible, label) => {
+    try {
+      await page.waitForFunction(expected => {
+        const popover = document.querySelector('[data-portfolio-calendar-popover]');
+        return Boolean(popover && !popover.hidden) === expected;
+      }, visible, { timeout: 5_000 });
+    } catch (error) {
+      throw new Error(`${label}: ${error.message}; ${JSON.stringify(await readTooltipState())}`);
+    }
+  };
+  const moveToCell = async (target, xRatio = 0.35, yRatio = 0.45, label = 'cell') => {
+    const box = await target.boundingBox();
+    assert.ok(box);
+    const point = { clientX: box.x + box.width * xRatio, clientY: box.y + box.height * yRatio };
+    await page.mouse.move(point.clientX, point.clientY);
+    await waitForPopover(true, `show tooltip ${label}`);
+    await page.waitForTimeout(40);
+    return readTooltipState();
+  };
+  const assertTooltipBounds = (state, label = 'tooltip') => {
+    assert.equal(state.visible, true, label);
+    assert.ok(state.pointer, label);
+    assert.ok(state.rect, label);
+    assert.ok(state.rect.left >= 12 - 0.5, `${label}: ${JSON.stringify(state)}`);
+    assert.ok(state.rect.top >= 12 - 0.5, `${label}: ${JSON.stringify(state)}`);
+    assert.ok(state.rect.right <= state.viewport.width - 12 + 0.5, `${label}: ${JSON.stringify(state)}`);
+    assert.ok(state.rect.bottom <= state.viewport.height - 12 + 0.5, `${label}: ${JSON.stringify(state)}`);
+    assert.ok(state.horizontalGap < 60, `${label}: horizontalGap=${state.horizontalGap}`);
+    assert.ok(state.verticalGap < 60, `${label}: verticalGap=${state.verticalGap}`);
+  };
+  const firstState = await moveToCell(cell, 0.3, 0.45);
+  assertTooltipBounds(firstState, 'first');
+  assert.ok(firstState.rect.top >= 10);
+  assert.equal(firstState.amount, await cell.getAttribute('data-calendar-full'));
+  assert.match(firstState.returnText, /%/);
+  assert.equal(firstState.popoverCount, 1);
   assert.equal(await cell.getAttribute('aria-expanded'), 'true');
   await page.mouse.move(5, 5);
-  await page.waitForFunction(() => Boolean(document.querySelector('[data-portfolio-calendar-popover]')?.hidden));
+  await waitForPopover(false, 'hide first tooltip');
   assert.equal(await calendarPopoverVisible(page), false);
+  const secondState = await moveToCell(secondCell, 0.75, 0.55);
+  assertTooltipBounds(secondState, 'second');
+  assert.notEqual(secondState.date, firstState.date);
+  assert.ok(Math.abs(secondState.rect.left - firstState.rect.left) + Math.abs(secondState.rect.top - firstState.rect.top) > 0);
+  assert.equal(secondState.popoverCount, 1);
+  await page.mouse.move(5, 5);
+  await waitForPopover(false, 'hide second tooltip');
   await cell.focus();
   assert.equal(await calendarPopoverVisible(page), true);
+  const keyboardState = await readTooltipState();
+  assert.equal(keyboardState.popoverCount, 1);
   await page.keyboard.press('Escape');
   assert.equal(await calendarPopoverVisible(page), false);
+  const runEdgeProbe = async (clientX, clientY, label) => {
+    await page.evaluate(({ x, y }) => {
+      const cell = document.querySelector('[data-portfolio-calendar-cell]');
+      const eventInit = { bubbles: true, clientX: x, clientY: y, pointerType: 'mouse' };
+      cell.dispatchEvent(new PointerEvent('pointerenter', eventInit));
+      cell.dispatchEvent(new PointerEvent('pointermove', eventInit));
+    }, { x: clientX, y: clientY });
+    await waitForPopover(true, `show ${label}`);
+    const state = await readTooltipState();
+    assertTooltipBounds(state, label);
+    await page.evaluate(({ x, y }) => {
+      const cell = document.querySelector('[data-portfolio-calendar-cell]');
+      cell.dispatchEvent(new PointerEvent('pointerleave', { bubbles: true, clientX: x, clientY: y, pointerType: 'mouse' }));
+    }, { x: clientX, y: clientY });
+    await waitForPopover(false, `hide ${label}`);
+    return state;
+  };
+  const viewport = await page.evaluate(() => ({ width: window.innerWidth, height: window.innerHeight }));
+  await runEdgeProbe(12, Math.round(viewport.height / 2), 'left edge');
+  await runEdgeProbe(viewport.width - 12, Math.round(viewport.height / 2), 'right edge');
+  await runEdgeProbe(Math.round(viewport.width / 2), viewport.height - 12, 'bottom edge');
+  await page.evaluate(scrollY => window.scrollTo(0, scrollY), before.scrollY);
+  await page.waitForFunction(scrollY => Math.round(window.scrollY) === Math.round(scrollY), before.scrollY);
   const after = await page.evaluate(() => ({
     hash: window.location.hash,
     scrollY: Math.round(window.scrollY),
@@ -154,7 +241,7 @@ async function testDesktopCalendar(page, requestCounts) {
   }));
   assert.deepEqual(after, { ...before, overflow: false });
   assert.deepEqual(mapObject(requestCounts), requestSnapshot);
-  return { hover: true, mouseLeave: true, keyboardFocus: true, keyboardEscape: true, requestDelta: 0, overflow: false };
+  return { hover: true, pointerFollow: true, crossCell: true, viewportCollision: true, mouseLeave: true, keyboardFocus: true, keyboardEscape: true, requestDelta: 0, overflow: false };
 }
 
 async function testKeyboardAndCriticalPath(page) {

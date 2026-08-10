@@ -1747,10 +1747,16 @@ function bindPortfolioCalendarEvents() {
   const cells = [...document.querySelectorAll('[data-portfolio-calendar-cell]')];
   const popover = document.querySelector('[data-portfolio-calendar-popover]');
   if (!cells.length || !popover) return;
+  const popoverOrigin = popover.parentNode;
+  const popoverOriginNext = popover.nextSibling;
+  document.body.appendChild(popover);
   const closeButton = popover.querySelector('[data-portfolio-calendar-close]');
   let activeCell = null;
-  let pinned = false;
+  let interactionMode = '';
   let lastPointerType = '';
+  let pointerFrame = 0;
+  let pointerClientX = null;
+  let pointerClientY = null;
   const listeners = [];
   const listen = (target, type, handler, options) => {
     target.addEventListener(type, handler, options);
@@ -1768,39 +1774,87 @@ function bindPortfolioCalendarEvents() {
       if (full.textContent !== compact.textContent && amount.scrollWidth > amount.clientWidth + 1) amount.dataset.display = 'compact';
     });
   };
-  const reposition = () => {
+  const clampPosition = (left, top) => {
+    const popup = popover.getBoundingClientRect();
+    const margin = 12;
+    const viewportWidth = document.documentElement.clientWidth || window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    const maxLeft = Math.max(margin, viewportWidth - popup.width - margin);
+    const maxTop = Math.max(margin, viewportHeight - popup.height - margin);
+    return {
+      left: Math.min(maxLeft, Math.max(margin, left)),
+      top: Math.min(maxTop, Math.max(margin, top))
+    };
+  };
+  const writePosition = (left, top, placement) => {
+    const position = clampPosition(left, top);
+    popover.style.left = `${Math.round(position.left)}px`;
+    popover.style.top = `${Math.round(position.top)}px`;
+    popover.dataset.placement = placement;
+  };
+  const positionPopoverAtCell = () => {
     if (!activeCell || popover.hidden) return;
     const anchor = activeCell.getBoundingClientRect();
     const popup = popover.getBoundingClientRect();
     const margin = 12;
-    const gap = 8;
-    const viewportWidth = document.documentElement.clientWidth || window.innerWidth;
+    const gap = 14;
     const viewportHeight = window.innerHeight;
     const above = anchor.top - popup.height - gap;
     const below = anchor.bottom + gap;
-    const top = above >= margin || below + popup.height > viewportHeight
-      ? Math.max(margin, above)
-      : below;
-    const left = Math.max(margin, Math.min(viewportWidth - popup.width - margin, anchor.left + (anchor.width - popup.width) / 2));
-    popover.style.left = `${Math.round(left)}px`;
-    popover.style.top = `${Math.round(Math.min(top, viewportHeight - popup.height - margin))}px`;
-    popover.dataset.placement = above >= margin ? 'top' : 'bottom';
+    const placeAbove = above >= margin || below + popup.height > viewportHeight;
+    const top = placeAbove ? above : below;
+    const left = anchor.left + (anchor.width - popup.width) / 2;
+    writePosition(left, top, placeAbove ? 'top' : 'bottom');
   };
-  const onScroll = () => reposition();
+  const positionTooltipAtPointer = () => {
+    if (!activeCell || popover.hidden || !Number.isFinite(pointerClientX) || !Number.isFinite(pointerClientY)) return;
+    const popup = popover.getBoundingClientRect();
+    const margin = 12;
+    const gap = 14;
+    const viewportWidth = document.documentElement.clientWidth || window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    const placeRight = pointerClientX + gap + popup.width <= viewportWidth - margin;
+    const placeBelow = pointerClientY + gap + popup.height <= viewportHeight - margin;
+    const left = placeRight ? pointerClientX + gap : pointerClientX - popup.width - gap;
+    const top = placeBelow ? pointerClientY + gap : pointerClientY - popup.height - gap;
+    writePosition(left, top, placeBelow ? 'bottom' : 'top');
+  };
+  const reposition = () => {
+    if (interactionMode === 'tooltip') positionTooltipAtPointer();
+    else positionPopoverAtCell();
+  };
+  const queuePointerPosition = event => {
+    pointerClientX = event.clientX;
+    pointerClientY = event.clientY;
+    if (pointerFrame) return;
+    pointerFrame = window.requestAnimationFrame(() => {
+      pointerFrame = 0;
+      if (interactionMode === 'tooltip' && activeCell && !popover.hidden) positionTooltipAtPointer();
+    });
+  };
+  const onScroll = () => { if (interactionMode !== 'tooltip') positionPopoverAtCell(); };
   const hide = () => {
+    if (pointerFrame) window.cancelAnimationFrame(pointerFrame);
+    pointerFrame = 0;
     setExpanded(activeCell, false);
     activeCell = null;
-    pinned = false;
+    interactionMode = '';
+    pointerClientX = null;
+    pointerClientY = null;
     popover.hidden = true;
     delete popover.dataset.mode;
     delete popover.dataset.placement;
   };
-  const show = (cell, shouldPin) => {
+  const show = (cell, mode, clientX = null, clientY = null) => {
+    if (pointerFrame) window.cancelAnimationFrame(pointerFrame);
+    pointerFrame = 0;
     if (activeCell && activeCell !== cell) setExpanded(activeCell, false);
     activeCell = cell;
-    pinned = shouldPin;
+    interactionMode = mode;
+    pointerClientX = clientX;
+    pointerClientY = clientY;
     setExpanded(cell, true);
-    popover.dataset.mode = shouldPin ? 'popover' : 'tooltip';
+    popover.dataset.mode = mode === 'popover' ? 'popover' : mode;
     popover.querySelector('[data-calendar-popover-date]').textContent = window.PortfolioCalendar.formatDate(cell.dataset.calendarDate || '—');
     popover.querySelector('[data-calendar-popover-amount]').textContent = cell.dataset.calendarFull || '暂不可用';
     popover.querySelector('[data-calendar-popover-return]').textContent = cell.dataset.calendarReturn || '暂不可用';
@@ -1810,17 +1864,18 @@ function bindPortfolioCalendarEvents() {
   };
   cells.forEach(cell => {
     listen(cell, 'pointerdown', event => { lastPointerType = event.pointerType || ''; });
-    listen(cell, 'pointerenter', event => { if (event.pointerType !== 'touch') show(cell, false); });
+    listen(cell, 'pointerenter', event => { if (event.pointerType !== 'touch') show(cell, 'tooltip', event.clientX, event.clientY); });
+    listen(cell, 'pointermove', event => { if (event.pointerType !== 'touch') queuePointerPosition(event); });
     listen(cell, 'pointerleave', event => { if (event.pointerType !== 'touch') hide(); });
-    listen(cell, 'focus', () => { if (lastPointerType !== 'touch') show(cell, false); });
-    listen(cell, 'blur', () => { if (!pinned) hide(); });
+    listen(cell, 'focus', () => { if (lastPointerType !== 'touch') show(cell, 'keyboard'); });
+    listen(cell, 'blur', () => { if (interactionMode === 'keyboard') hide(); });
     listen(cell, 'click', event => {
       const isTouch = lastPointerType === 'touch';
       lastPointerType = '';
       if (!isTouch) return;
       event.preventDefault();
-      if (activeCell === cell && !popover.hidden) hide();
-      else show(cell, true);
+      if (activeCell === cell && interactionMode === 'popover' && !popover.hidden) hide();
+      else show(cell, 'popover');
     });
   });
   listen(closeButton, 'click', event => { event.preventDefault(); hide(); });
@@ -1833,13 +1888,16 @@ function bindPortfolioCalendarEvents() {
     event.preventDefault();
     hide();
   });
-  listen(window, 'resize', fitAmounts);
-  listen(window, 'resize', reposition);
+  listen(window, 'resize', () => { fitAmounts(); reposition(); });
   listen(window, 'scroll', onScroll, { passive: true });
   fitAmounts();
   portfolioCalendarCleanup = () => {
     hide();
     listeners.forEach(({ target, type, handler, options }) => target.removeEventListener(type, handler, options));
+    if (popover.parentNode === document.body) {
+      if (popoverOrigin?.isConnected) popoverOrigin.insertBefore(popover, popoverOriginNext && popoverOriginNext.parentNode === popoverOrigin ? popoverOriginNext : null);
+      else popover.remove();
+    }
   };
 }
 

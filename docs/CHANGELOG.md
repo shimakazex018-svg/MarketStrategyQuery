@@ -1,5 +1,9 @@
 # 变更日志
 
+## 2026-08-10 - Portfolio calendar pointer-follow tooltip
+
+- Desktop daily-return Tooltip now follows the real pointer with requestAnimationFrame-throttled fixed positioning and viewport collision clamping. Keyboard focus and iPad/iPhone tap remain cell-anchored; portfolio data, API, Flex, SQLite, and return calculations were unchanged.
+
 ## 2026-08-10 - Portfolio asset cache bust
 
 - Formal 48101 returned the current app, styles, and portfolio-calendar bytes; public HTML now uses the deployed commit identifier as the asset query version so clients do not reuse the previous feature-query cache. No portfolio logic or server restart was changed.

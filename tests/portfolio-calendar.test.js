@@ -50,6 +50,13 @@ test('calendar UI uses one shared popover and presentation-only formatting', asy
   assert.match(app, /data-calendar-return/);
   assert.match(app, /formatCompactAmount/);
   assert.match(app, /portfolioCalendarCleanup/);
+  assert.match(app, /positionTooltipAtPointer/);
+  assert.match(app, /positionPopoverAtCell/);
+  assert.match(app, /pointermove/);
+  assert.match(app, /clientX/);
+  assert.match(app, /clientY/);
+  assert.match(app, /requestAnimationFrame/);
   assert.match(css, /\.portfolio-calendar-popover/);
+  assert.match(css, /pointer-events: none/);
   assert.match(css, /font-variant-numeric: tabular-nums/);
 });

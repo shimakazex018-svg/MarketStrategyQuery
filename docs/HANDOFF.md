@@ -1,5 +1,9 @@
 # 最新交接
 
+## 2026-08-10 Portfolio calendar pointer-follow tooltip
+
+- Desktop Tooltip uses pointer client coordinates with one shared `pointer-events: none` DOM node, rAF position updates, 12px viewport margins, and right/bottom collision handling. Keyboard and touch continue to use cell-anchor positioning; no portfolio data path changed.
+
 ## 2026-08-10 Portfolio asset cache bust
 
 - Formal 48101 returned byte-identical current app/styles/calendar assets and the production authenticated DOM showed the shared calendar popover. Public HTML now uses commit-versioned query strings for the three current assets; no Flex, portfolio service, or restart change was made.
