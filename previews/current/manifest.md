@@ -1,7 +1,7 @@
 # Current Visual Review
 
-- Commit: 4b44705fa510e13b86fcb21ce80d2a86ae4cd9d3
-- Generated at: 2026-08-10T06:17:07.878Z
+- Commit: 19571ae2d675da38f60bc15d9c6607c1c1bb9176
+- Generated at: 2026-08-10T14:52:04.410Z
 - Application version: 0.5.0-dev
 - Route: #/portfolio-analysis
 - Viewports: 1440x900, 768x1024, 390x844
