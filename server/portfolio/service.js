@@ -7,7 +7,7 @@ const { PortfolioAuth } = require('./auth');
 const { loadPortfolioConfig } = require('./config');
 const { FlexClient, loadFlexCredentials } = require('./flex-client');
 const { seedSyntheticPortfolio } = require('./fixture');
-const { aggregatePerformance, calculateDailyPerformance, finite, maskAccountId, monthlyPerformance, normalizeFlowType, normalizeSignedFlow, productReturn } = require('./performance');
+const { aggregatePerformance, calculateDailyPerformance, classifyCashActivity, finite, maskAccountId, monthlyPerformance, normalizeSignedFlow, productReturn } = require('./performance');
 const { atomicBackup, closePortfolioDatabase, openPortfolioDatabase, withTransaction } = require('./sqlite');
 
 const RANGE_KEYS = Object.freeze(['1D', 'MTD', '3M', '6M', 'YTD', '1Y', 'ALL', 'CUSTOM']);
@@ -56,8 +56,9 @@ function combinePerformanceRows(rows) {
       totalCash: sumKnown('total_cash'),
       grossPositionValue: sumKnown('gross_position_value'),
       reconciliationDifference: sumKnown('reconciliation_difference'),
-      qualityStatus: items.some(item => item.quality_status === 'warning') ? 'warning' : items.some(item => item.quality_status === 'incomplete') ? 'incomplete' : 'reconciled',
-      calculationMethod: items.some(item => item.calculation_method === 'ibkr_reported') ? 'ibkr_reported' : 'modified_dietz_daily',
+      qualityStatus: items.some(item => item.quality_status === 'warning') ? 'warning' : items.some(item => item.quality_status === 'incomplete') ? 'incomplete' : items.some(item => item.quality_status === 'computed') ? 'computed' : 'reconciled',
+      reconciliationStatus: items.some(item => item.reconciliation_status === 'outlier') ? 'outlier' : items.some(item => item.reconciliation_status === 'incomplete') ? 'incomplete' : items.some(item => item.reconciliation_status === 'not_available') ? 'not_available' : 'within_tolerance',
+      calculationMethod: items.some(item => item.calculation_method === 'ibkr_reported') ? 'ibkr_reported' : 'daily_flow_adjusted_return',
       flowCount: items.reduce((total, item) => total + Number(item.flow_count || 0), 0)
     };
   });
@@ -225,11 +226,26 @@ class PortfolioService {
     return destination;
   }
 
-  importReport(report) {
+  importReport(report, { replaceSource = false } = {}) {
     const importedAt = isoNow(this.now);
-    const counts = { accounts: 0, snapshots: 0, cashFlows: 0, trades: 0, positions: 0, incomeEvents: 0, performance: 0 };
+    const counts = {
+      accounts: 0, snapshots: 0, cashFlows: 0, trades: 0, positions: 0, incomeEvents: 0, performance: 0,
+      cashTransactions: 0,
+      cashActivityCounts: { externalDeposits: 0, externalWithdrawals: 0, internalTransfers: 0, dividends: 0, interest: 0, taxes: 0, fees: 0, otherActivities: 0 }
+    };
     const reportRowsByAccount = new Map();
     const accountKeys = new Set();
+    const replacedAccounts = new Set();
+    const recordCashActivity = type => {
+      if (type === 'deposit') counts.cashActivityCounts.externalDeposits += 1;
+      else if (type === 'withdrawal') counts.cashActivityCounts.externalWithdrawals += 1;
+      else if (type === 'internal_transfer') counts.cashActivityCounts.internalTransfers += 1;
+      else if (type === 'dividend') counts.cashActivityCounts.dividends += 1;
+      else if (type === 'interest') counts.cashActivityCounts.interest += 1;
+      else if (type === 'withholding_tax') counts.cashActivityCounts.taxes += 1;
+      else if (type === 'fee') counts.cashActivityCounts.fees += 1;
+      else counts.cashActivityCounts.otherActivities += 1;
+    };
     withTransaction(this.db, () => {
       for (const statement of report.statements || []) {
         if (!statement.accountId) throw Object.assign(new Error('Flex statement has no account identifier'), { category: 'schema_error', stage: 'import_database' });
@@ -244,6 +260,10 @@ class PortfolioService {
         this.db.prepare(`INSERT INTO portfolio_accounts(account_key,account_id,masked_account_label,base_currency,first_seen,last_seen,created_at,updated_at)
           VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(account_key) DO UPDATE SET account_id=excluded.account_id, masked_account_label=excluded.masked_account_label, base_currency=excluded.base_currency, first_seen=COALESCE(portfolio_accounts.first_seen,excluded.first_seen), last_seen=MAX(portfolio_accounts.last_seen,excluded.last_seen), updated_at=excluded.updated_at`).run(accountKey, statement.accountId, maskAccountId(statement.accountId), baseCurrency, firstSeen, lastSeen, importedAt, importedAt);
         counts.accounts += existing ? 0 : 1;
+        if (replaceSource && !replacedAccounts.has(accountKey)) {
+          for (const table of ['account_daily_snapshots', 'cash_flows', 'trades', 'positions_daily', 'income_events']) this.db.prepare(`DELETE FROM ${table} WHERE account_key=? AND source=?`).run(accountKey, 'ibkr-flex');
+          replacedAccounts.add(accountKey);
+        }
         const snapshotByDate = new Map();
         for (const row of statement.snapshots) {
           if (!validDate(row.date)) continue;
@@ -254,13 +274,24 @@ class PortfolioService {
         const snapshotInsert = this.db.prepare(`INSERT INTO account_daily_snapshots(account_key,date,base_currency,net_liquidation,total_cash,gross_position_value,stock_market_value,option_market_value,other_market_value,accrued_cash,source,imported_at)
           VALUES(?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(account_key,date) DO UPDATE SET base_currency=excluded.base_currency, net_liquidation=COALESCE(excluded.net_liquidation,account_daily_snapshots.net_liquidation), total_cash=COALESCE(excluded.total_cash,account_daily_snapshots.total_cash), gross_position_value=COALESCE(excluded.gross_position_value,account_daily_snapshots.gross_position_value), stock_market_value=COALESCE(excluded.stock_market_value,account_daily_snapshots.stock_market_value), option_market_value=COALESCE(excluded.option_market_value,account_daily_snapshots.option_market_value), other_market_value=COALESCE(excluded.other_market_value,account_daily_snapshots.other_market_value), accrued_cash=COALESCE(excluded.accrued_cash,account_daily_snapshots.accrued_cash), source=excluded.source, imported_at=excluded.imported_at`);
         for (const row of snapshotByDate.values()) { snapshotInsert.run(accountKey, row.date, row.baseCurrency, row.netLiquidation ?? null, row.totalCash ?? null, row.grossPositionValue ?? null, row.stockMarketValue ?? null, row.optionMarketValue ?? null, row.otherMarketValue ?? null, row.accruedCash ?? null, 'ibkr-flex', importedAt); counts.snapshots += 1; }
-        const flowInsert = this.db.prepare('INSERT OR REPLACE INTO cash_flows(flow_id,account_key,occurred_at,date,type,amount,currency,base_amount,exchange_rate,description,source_id,source,imported_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)');
+        const flowInsert = this.db.prepare('INSERT OR REPLACE INTO cash_flows(flow_id,account_key,occurred_at,date,type,amount,currency,base_amount,exchange_rate,description,raw_type,raw_category,raw_subcategory,raw_code,source_id,source,imported_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
+        const incomeInsert = this.db.prepare('INSERT OR REPLACE INTO income_events(event_id,account_key,date,occurred_at,type,symbol,amount,currency,base_amount,exchange_rate,description,raw_type,raw_category,raw_subcategory,raw_code,source_id,source,imported_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
         for (const row of statement.cashFlows) {
           if (!validDate(row.date) || finite(row.amount ?? row.baseAmount) === null) continue;
-          const type = normalizeFlowType(row.type, row.amount);
-          const amount = normalizeSignedFlow(type, row.baseAmount ?? row.amount);
+          counts.cashTransactions += 1;
+          const classification = classifyCashActivity(row);
+          recordCashActivity(classification.type);
+          const rawAmount = finite(row.baseAmount) ?? finite(row.amount);
+          const amount = classification.external ? normalizeSignedFlow(classification.type, rawAmount) : rawAmount;
+          const rawType = row.rawType || row.type || row.section || null;
           const sourceId = row.sourceId || hashKey('cash', accountKey, JSON.stringify(row));
-          flowInsert.run(sourceId, accountKey, row.occurredAt, row.date, type, amount, row.currency || baseCurrency, finite(row.baseAmount) ?? amount, finite(row.exchangeRate), row.description, sourceId, 'ibkr-flex', importedAt); counts.cashFlows += 1;
+          if (classification.storage === 'income') {
+            incomeInsert.run(sourceId, accountKey, row.date, row.occurredAt, classification.type, row.symbol, amount, row.currency || baseCurrency, amount, finite(row.exchangeRate), row.description, rawType, row.rawCategory || null, row.rawSubCategory || null, row.rawCode || null, sourceId, 'ibkr-flex', importedAt);
+            counts.incomeEvents += 1;
+          } else {
+            flowInsert.run(sourceId, accountKey, row.occurredAt, row.date, classification.type, amount, row.currency || baseCurrency, amount, finite(row.exchangeRate), row.description, rawType, row.rawCategory || null, row.rawSubCategory || null, row.rawCode || null, sourceId, 'ibkr-flex', importedAt);
+            counts.cashFlows += 1;
+          }
         }
         const tradeInsert = this.db.prepare('INSERT OR REPLACE INTO trades(execution_id,account_key,symbol,conid,security_type,currency,occurred_at,date,side,quantity,price,proceeds,commission,realized_pnl,source_id,source,imported_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
         for (const row of statement.trades) {
@@ -274,24 +305,23 @@ class PortfolioService {
           const positionKey = hashKey('position', accountKey, row.date, row.conid || '', row.symbol || '', row.currency || '');
           positionInsert.run(positionKey, accountKey, row.date, row.conid, row.symbol, row.securityType, row.currency || baseCurrency, finite(row.quantity), finite(row.marketPrice ?? row.price), finite(row.marketValue), finite(row.costBasis), finite(row.unrealizedPnl), finite(row.realizedPnl), row.sourceId || positionKey, 'ibkr-flex', importedAt); counts.positions += 1;
         }
-        const incomeInsert = this.db.prepare('INSERT OR REPLACE INTO income_events(event_id,account_key,date,occurred_at,type,symbol,amount,currency,base_amount,exchange_rate,description,source_id,source,imported_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
         for (const row of statement.incomeEvents) {
           if (!validDate(row.date) || finite(row.amount ?? row.baseAmount) === null) continue;
+          const classification = classifyCashActivity(row);
           const eventId = row.sourceId || hashKey('income', accountKey, JSON.stringify(row));
-          const typeText = String(row.type || row.section || 'other_income_expense').toLowerCase();
-          const type = /dividend/.test(typeText) ? 'dividend' : /interest/.test(typeText) ? 'interest' : /withhold|tax/.test(typeText) ? 'withholding_tax' : /fee|commission/.test(typeText) ? 'fee' : 'other_income_expense';
           const amount = finite(row.baseAmount) ?? finite(row.amount);
-          incomeInsert.run(eventId, accountKey, row.date, row.occurredAt, type, row.symbol, amount, row.currency || baseCurrency, amount, finite(row.exchangeRate), row.description, eventId, 'ibkr-flex', importedAt); counts.incomeEvents += 1;
+          incomeInsert.run(eventId, accountKey, row.date, row.occurredAt, classification.type, row.symbol, amount, row.currency || baseCurrency, amount, finite(row.exchangeRate), row.description, row.rawType || row.type || row.section || null, row.rawCategory || null, row.rawSubCategory || null, row.rawCode || null, eventId, 'ibkr-flex', importedAt);
+          counts.incomeEvents += 1;
         }
         reportRowsByAccount.set(accountKey, statement.reportedPerformance || []);
       }
       for (const accountKey of accountKeys) {
         const snapshots = this.db.prepare('SELECT date,net_liquidation AS netLiquidation,total_cash AS totalCash,gross_position_value AS grossPositionValue,base_currency AS baseCurrency,imported_at AS importedAt FROM account_daily_snapshots WHERE account_key=? ORDER BY date').all(accountKey);
-        const flows = this.db.prepare('SELECT date,amount,base_amount AS baseAmount FROM cash_flows WHERE account_key=? ORDER BY date').all(accountKey);
+        const flows = this.db.prepare('SELECT date,type,amount,base_amount AS baseAmount FROM cash_flows WHERE account_key=? ORDER BY date').all(accountKey);
         const rows = calculateDailyPerformance(snapshots, flows, reportRowsByAccount.get(accountKey) || []);
         this.db.prepare('DELETE FROM daily_performance WHERE account_key=?').run(accountKey);
-        const performanceInsert = this.db.prepare('INSERT INTO daily_performance(account_key,date,begin_nav,end_nav,external_net_flow,pnl_amount,daily_return,cumulative_return,calculation_method,quality_status,reconciliation_difference,reported_pnl,reported_return,imported_at,total_cash,gross_position_value,flow_count) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
-        for (const row of rows) { performanceInsert.run(accountKey, row.date, row.beginNav, row.endNav, row.externalNetFlow, row.pnlAmount, row.dailyReturn, row.cumulativeReturn, row.calculationMethod, row.qualityStatus, row.reconciliationDifference, row.reportedPnl, row.reportedReturn, importedAt, row.totalCash, row.grossPositionValue, row.flowCount); counts.performance += 1; }
+        const performanceInsert = this.db.prepare('INSERT INTO daily_performance(account_key,date,begin_nav,end_nav,external_net_flow,pnl_amount,daily_return,cumulative_return,calculation_method,quality_status,reconciliation_status,reconciliation_difference,reported_pnl,reported_return,imported_at,total_cash,gross_position_value,flow_count) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
+        for (const row of rows) { performanceInsert.run(accountKey, row.date, row.beginNav, row.endNav, row.externalNetFlow, row.pnlAmount, row.dailyReturn, row.cumulativeReturn, row.calculationMethod, row.qualityStatus, row.reconciliationStatus, row.reconciliationDifference, row.reportedPnl, row.reportedReturn, importedAt, row.totalCash, row.grossPositionValue, row.flowCount); counts.performance += 1; }
       }
     });
     return counts;
@@ -336,7 +366,7 @@ class PortfolioService {
   }
 
   combinedPerformance() {
-    const rows = this.db.prepare('SELECT date,begin_nav,end_nav,external_net_flow,pnl_amount,daily_return,cumulative_return,total_cash,gross_position_value,quality_status,calculation_method,reconciliation_difference,flow_count FROM daily_performance ORDER BY date').all();
+    const rows = this.db.prepare('SELECT date,begin_nav,end_nav,external_net_flow,pnl_amount,daily_return,cumulative_return,total_cash,gross_position_value,quality_status,reconciliation_status,calculation_method,reconciliation_difference,flow_count FROM daily_performance ORDER BY date').all();
     return combinePerformanceRows(rows);
   }
 
@@ -368,7 +398,40 @@ class PortfolioService {
     const resolved = this.resolveRange(range, customStart, customEnd);
     const summary = aggregatePerformance(resolved.rows);
     const latest = resolved.rows.at(-1) || null;
-    return { range: resolved.range, startDate: resolved.startDate, endDate: resolved.endDate, historyCoverage: { startDate: resolved.firstDate || null, endDate: resolved.lastDate || null }, summary: { ...summary, currentNav: latest?.endNav ?? null, currentCash: latest?.totalCash ?? null, currentGrossPositionValue: latest?.grossPositionValue ?? null, todayPnl: latest?.pnlAmount ?? null, todayReturn: latest?.dailyReturn ?? null, baseCurrency: this.db.prepare('SELECT base_currency AS baseCurrency FROM portfolio_accounts ORDER BY updated_at DESC LIMIT 1').get()?.baseCurrency || null, accountCount: this.databaseCounts().accounts }, dataQuality: { statuses: [...new Set(resolved.rows.map(row => row.qualityStatus))], calculationMethods: [...new Set(resolved.rows.map(row => row.calculationMethod))] } };
+    return { range: resolved.range, startDate: resolved.startDate, endDate: resolved.endDate, historyCoverage: { startDate: resolved.firstDate || null, endDate: resolved.lastDate || null }, summary: { ...summary, currentNav: latest?.endNav ?? null, currentCash: latest?.totalCash ?? null, currentGrossPositionValue: latest?.grossPositionValue ?? null, todayPnl: latest?.pnlAmount ?? null, todayReturn: latest?.dailyReturn ?? null, baseCurrency: this.db.prepare('SELECT base_currency AS baseCurrency FROM portfolio_accounts ORDER BY updated_at DESC LIMIT 1').get()?.baseCurrency || null, accountCount: this.databaseCounts().accounts }, dataQuality: { statuses: [...new Set(resolved.rows.map(row => row.qualityStatus))], reconciliationStatuses: [...new Set(resolved.rows.map(row => row.reconciliationStatus))], calculationMethods: [...new Set(resolved.rows.map(row => row.calculationMethod))] } };
+  }
+
+  importBenchmarkHistories(histories = {}, { source = 'existing-local-history' } = {}) {
+    const definitions = [
+      ['nasdaq100', histories.nasdaq100],
+      ['sp500', histories.sp500],
+      ['soxx', histories.soxx]
+    ];
+    const portfolioDates = new Set(this.db.prepare('SELECT DISTINCT date FROM account_daily_snapshots WHERE date IS NOT NULL').all().map(row => row.date));
+    const counts = {};
+    const importedAt = isoNow(this.now);
+    withTransaction(this.db, () => {
+      for (const [benchmarkId, history] of definitions) {
+        const byDate = new Map();
+        for (const row of Array.isArray(history) ? history : []) {
+          const value = finite(row?.value);
+          if (validDate(row?.date) && portfolioDates.has(row.date) && value !== null && value > 0) byDate.set(row.date, value);
+        }
+        const rows = [...byDate.entries()].sort(([left], [right]) => left.localeCompare(right));
+        this.db.prepare('DELETE FROM benchmark_daily WHERE benchmark_id=?').run(benchmarkId);
+        const insert = this.db.prepare('INSERT INTO benchmark_daily(benchmark_id,date,value,daily_return,cumulative_return,source,imported_at) VALUES(?,?,?,?,?,?,?)');
+        let previous = null;
+        let cumulativeFactor = 1;
+        for (const [date, value] of rows) {
+          const dailyReturn = previous === null ? null : value / previous - 1;
+          if (dailyReturn !== null && dailyReturn > -1) cumulativeFactor *= 1 + dailyReturn;
+          insert.run(benchmarkId, date, value, dailyReturn, previous === null ? 0 : cumulativeFactor - 1, source, importedAt);
+          previous = value;
+        }
+        counts[benchmarkId] = rows.length;
+      }
+    });
+    return counts;
   }
 
   benchmarkSeries(startDate, endDate) {
@@ -389,7 +452,7 @@ class PortfolioService {
     const series = rows.map(row => {
       const dailyReturn = finite(row.dailyReturn);
       if (dailyReturn !== null && dailyReturn > -1) factor *= 1 + dailyReturn;
-      return { date: row.date, pnlAmount: row.pnlAmount, cumulativeReturn: dailyReturn === null ? null : factor - 1, endNav: row.endNav, totalCash: row.totalCash, grossPositionValue: row.grossPositionValue, externalNetFlow: row.externalNetFlow, dailyReturn: row.dailyReturn, qualityStatus: row.qualityStatus, calculationMethod: row.calculationMethod, reconciliationDifference: row.reconciliationDifference, flowCount: row.flowCount };
+      return { date: row.date, pnlAmount: row.pnlAmount, cumulativeReturn: dailyReturn === null ? null : factor - 1, endNav: row.endNav, totalCash: row.totalCash, grossPositionValue: row.grossPositionValue, externalNetFlow: row.externalNetFlow, dailyReturn: row.dailyReturn, qualityStatus: row.qualityStatus, reconciliationStatus: row.reconciliationStatus, calculationMethod: row.calculationMethod, reconciliationDifference: row.reconciliationDifference, flowCount: row.flowCount };
     });
     return { range: resolved.range, startDate: resolved.startDate, endDate: resolved.endDate, historyCoverage: { startDate: resolved.firstDate || null, endDate: resolved.lastDate || null }, series, benchmarks: this.benchmarkSeries(resolved.startDate, resolved.endDate), monthly: monthlyPerformance(resolved.rows).slice(-24) };
   }

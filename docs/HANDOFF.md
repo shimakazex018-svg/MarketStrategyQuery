@@ -1,5 +1,12 @@
 # 最新交接
 
+
+## 2026-08-10 Offline portfolio performance calibration
+
+- The existing ignored Flex XML and SQLite were recalibrated offline; no new Flex request was made and no secret, account identifier, amount, holding, or raw activity description entered Git.
+- Cash activity now separates external capital flow from internal transfer and income/expense events. The date-only performance method is `daily_flow_adjusted_return`; the raw source fields remain runtime-only for audit.
+- Local Nasdaq-100, S&P 500, and SOXX histories are aligned only on valid portfolio dates. Use `npm.cmd run portfolio:replay` for a future offline replay; do not use `portfolio:sync` for this calibration boundary.
+
 ## 2026-08-10 IBKR Flex real-response calibration
 
 - The controlled read-only Flex request chain reached HTTP 200 XML for both request stages; no IBKR error code was returned. The raw response and structural capability audit remain in ignored runtime data only.

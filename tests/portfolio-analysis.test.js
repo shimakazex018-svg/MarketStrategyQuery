@@ -10,6 +10,7 @@ const { loadPortfolioConfig } = require('../server/portfolio/config');
 const { buildFlexCapabilityAudit, inspectFlexResponse, normalizeFlexReport, validateFlexCore } = require('../server/portfolio/flex-parser');
 const { FLEX_USER_AGENT, FlexClient, isAllowedRedirect } = require('../server/portfolio/flex-client');
 const { PortfolioService } = require('../server/portfolio/service');
+const { calculateDailyPerformance, classifyCashActivity } = require('../server/portfolio/performance');
 const { writePasswordFile } = require('../server/portfolio/auth');
 const { inspectContent } = require('../scripts/privacy/check-public-repo');
 
@@ -98,6 +99,63 @@ test('synthetic-review-fixture maps official core EquitySummary fields', () => {
   assert.equal(report.statements[0].snapshots.length, 1);
   assert.equal(report.statements[0].snapshots[0].netLiquidation, 100000);
   assert.equal(report.statements[0].cashFlows.length, 1);
+});
+
+test('cash activity classification keeps investment activity outside external flow', () => {
+  const rows = [
+    { type: 'Deposits/Withdrawals', amount: 100, description: 'Synthetic external contribution' },
+    { type: 'Deposits/Withdrawals', amount: 50, description: 'Synthetic internal transfer' },
+    { type: 'Deposits/Withdrawals', amount: -40, description: 'Synthetic external withdrawal' },
+    { type: 'Dividends', amount: 12 },
+    { type: 'Broker Interest Received', amount: 3 },
+    { type: 'Other Fees', amount: -2 },
+    { type: 'Withholding Tax', amount: -1 }
+  ];
+  assert.deepEqual(rows.map(row => classifyCashActivity(row).type), ['deposit', 'internal_transfer', 'withdrawal', 'dividend', 'interest', 'fee', 'withholding_tax']);
+  const performance = calculateDailyPerformance([
+    { date: '2026-01-01', netLiquidation: 1000 },
+    { date: '2026-01-02', netLiquidation: 1120 },
+    { date: '2026-01-03', netLiquidation: 1115 }
+  ], [
+    { date: '2026-01-02', type: 'deposit', amount: 100 },
+    { date: '2026-01-02', type: 'dividend', amount: 20 },
+    { date: '2026-01-02', type: 'internal_transfer', amount: 50 },
+    { date: '2026-01-03', type: 'fee', amount: -5 }
+  ]);
+  assert.equal(performance[1].externalNetFlow, 100);
+  assert.equal(performance[1].pnlAmount, 20);
+  assert.equal(performance[1].calculationMethod, 'daily_flow_adjusted_return');
+  assert.equal(performance[1].qualityStatus, 'computed');
+  assert.equal(performance[2].pnlAmount, -5);
+  assert.equal(performance[0].qualityStatus, 'incomplete');
+});
+
+test('synthetic CashTransactions split into cash flows and income events with local benchmark alignment', async t => {
+  const runtimeRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'portfolio-cash-activity-test-'));
+  t.after(() => fs.rm(runtimeRoot, { recursive: true, force: true }));
+  const service = await new PortfolioService({ rootDir, config: testConfig(runtimeRoot), now: () => new Date('2026-08-08T00:00:00Z') }).init();
+  t.after(() => service.close());
+  const xml = `<FlexQueryResponse><FlexStatements><FlexStatement accountId="SIM000001" baseCurrency="USD"><AccountInformation><NetLiquidation value="1000" date="2026-01-01"/><NetLiquidation value="1120" date="2026-01-02"/><NetLiquidation value="1115" date="2026-01-03"/></AccountInformation><CashTransactions><CashTransaction transactionId="SYNTH-DEPOSIT" date="2026-01-02" type="Deposits/Withdrawals" amount="100" description="Synthetic external contribution" category="External" subCategory="Deposit" code="SYNTH"/><CashTransaction transactionId="SYNTH-TRANSFER" date="2026-01-02" type="Deposits/Withdrawals" amount="50" description="Synthetic internal transfer" category="Internal" subCategory="Transfer" code="SYNTH"/><CashTransaction transactionId="SYNTH-DIVIDEND" date="2026-01-02" type="Dividends" amount="20" symbol="SIMETF"/><CashTransaction transactionId="SYNTH-INTEREST" date="2026-01-03" type="Broker Interest Received" amount="3"/><CashTransaction transactionId="SYNTH-FEE" date="2026-01-03" type="Other Fees" amount="-5"/><CashTransaction transactionId="SYNTH-TAX" date="2026-01-03" type="Withholding Tax" amount="-1"/></CashTransactions></FlexStatement></FlexStatements></FlexQueryResponse>`;
+  const report = normalizeFlexReport(xml);
+  service.importReport(report);
+  service.importReport(report);
+  assert.equal(service.databaseCounts().cashFlows, 2);
+  assert.equal(service.databaseCounts().incomeEvents, 4);
+  assert.deepEqual(service.db.prepare('SELECT type,COUNT(*) AS count FROM cash_flows GROUP BY type ORDER BY type').all().map(row => ({ ...row })), [{ type: 'deposit', count: 1 }, { type: 'internal_transfer', count: 1 }]);
+  assert.deepEqual(service.db.prepare('SELECT type,COUNT(*) AS count FROM income_events GROUP BY type ORDER BY type').all().map(row => ({ ...row })), [{ type: 'fee', count: 1 }, { type: 'interest', count: 1 }, { type: 'dividend', count: 1 }, { type: 'withholding_tax', count: 1 }].sort((a, b) => a.type.localeCompare(b.type)));
+  const raw = service.db.prepare("SELECT raw_type,raw_category,raw_subcategory,raw_code FROM income_events WHERE type='dividend'").get();
+  assert.deepEqual({ ...raw }, { raw_type: 'Dividends', raw_category: null, raw_subcategory: null, raw_code: null });
+  const rawTransfer = service.db.prepare("SELECT raw_type,raw_category,raw_subcategory,raw_code FROM cash_flows WHERE type='internal_transfer'").get();
+  assert.deepEqual({ ...rawTransfer }, { raw_type: 'Deposits/Withdrawals', raw_category: 'Internal', raw_subcategory: 'Transfer', raw_code: 'SYNTH' });
+  const day = service.db.prepare("SELECT external_net_flow,pnl_amount,calculation_method,quality_status FROM daily_performance WHERE date='2026-01-02'").get();
+  assert.deepEqual({ ...day }, { external_net_flow: 100, pnl_amount: 20, calculation_method: 'daily_flow_adjusted_return', quality_status: 'computed' });
+  const benchmarks = service.importBenchmarkHistories({
+    nasdaq100: [{ date: '2026-01-01', value: 100 }, { date: '2026-01-02', value: 101 }, { date: '2026-01-03', value: 102 }],
+    sp500: [{ date: '2026-01-01', value: 200 }, { date: '2026-01-02', value: 201 }, { date: '2026-01-03', value: 202 }],
+    soxx: [{ date: '2026-01-01', value: 50 }, { date: '2026-01-02', value: 51 }, { date: '2026-01-03', value: 52 }]
+  });
+  assert.deepEqual(benchmarks, { nasdaq100: 3, sp500: 3, soxx: 3 });
+  assert.deepEqual(service.benchmarkSeries('2026-01-01', '2026-01-03').map(item => item.series[0].value), [0, 0, 0]);
 });
 
 test('portfolio scheduler does not retry a failed attempt on the same local day', () => {
@@ -199,7 +257,7 @@ test('sync persists safe diagnostics and schema migration fields', async t => {
   assert.equal(run.ibkrErrorCode, '1014');
   assert.equal(run.stage, 'parse_response');
   assert.equal(run.diagnostics[0].responseFormat, 'xml');
-  assert.equal(service.db.prepare('PRAGMA user_version').get().user_version, 3);
+  assert.equal(service.db.prepare('PRAGMA user_version').get().user_version, 4);
   assert.doesNotMatch(JSON.stringify(run), /TEST_TOKEN|TEST_QUERY_ID|Query is invalid/);
 });
 

@@ -4,7 +4,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const { DatabaseSync } = require('node:sqlite');
 
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
 
 const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS portfolio_meta (
@@ -53,6 +53,10 @@ CREATE TABLE IF NOT EXISTS cash_flows (
   base_amount REAL,
   exchange_rate REAL,
   description TEXT,
+  raw_type TEXT,
+  raw_category TEXT,
+  raw_subcategory TEXT,
+  raw_code TEXT,
   source_id TEXT,
   source TEXT NOT NULL,
   imported_at TEXT NOT NULL,
@@ -119,6 +123,10 @@ CREATE TABLE IF NOT EXISTS income_events (
   base_amount REAL,
   exchange_rate REAL,
   description TEXT,
+  raw_type TEXT,
+  raw_category TEXT,
+  raw_subcategory TEXT,
+  raw_code TEXT,
   source_id TEXT,
   source TEXT NOT NULL,
   imported_at TEXT NOT NULL,
@@ -138,6 +146,7 @@ CREATE TABLE IF NOT EXISTS daily_performance (
   cumulative_return REAL,
   calculation_method TEXT,
   quality_status TEXT NOT NULL,
+  reconciliation_status TEXT,
   reconciliation_difference REAL,
   reported_pnl REAL,
   reported_return REAL,
@@ -200,6 +209,21 @@ async function openPortfolioDatabase(databasePath) {
     if (!columns.has('ibkr_error_code')) db.exec('ALTER TABLE portfolio_sync_runs ADD COLUMN ibkr_error_code TEXT');
     if (!columns.has('diagnostics_json')) db.exec("ALTER TABLE portfolio_sync_runs ADD COLUMN diagnostics_json TEXT NOT NULL DEFAULT '[]'");
     db.exec('PRAGMA user_version=3');
+  }
+  if (current < 4) {
+    const cashFlowColumns = new Set(db.prepare('PRAGMA table_info(cash_flows)').all().map(row => row.name));
+    if (!cashFlowColumns.has('raw_type')) db.exec('ALTER TABLE cash_flows ADD COLUMN raw_type TEXT');
+    if (!cashFlowColumns.has('raw_category')) db.exec('ALTER TABLE cash_flows ADD COLUMN raw_category TEXT');
+    if (!cashFlowColumns.has('raw_subcategory')) db.exec('ALTER TABLE cash_flows ADD COLUMN raw_subcategory TEXT');
+    if (!cashFlowColumns.has('raw_code')) db.exec('ALTER TABLE cash_flows ADD COLUMN raw_code TEXT');
+    const incomeColumns = new Set(db.prepare('PRAGMA table_info(income_events)').all().map(row => row.name));
+    if (!incomeColumns.has('raw_type')) db.exec('ALTER TABLE income_events ADD COLUMN raw_type TEXT');
+    if (!incomeColumns.has('raw_category')) db.exec('ALTER TABLE income_events ADD COLUMN raw_category TEXT');
+    if (!incomeColumns.has('raw_subcategory')) db.exec('ALTER TABLE income_events ADD COLUMN raw_subcategory TEXT');
+    if (!incomeColumns.has('raw_code')) db.exec('ALTER TABLE income_events ADD COLUMN raw_code TEXT');
+    const performanceColumns = new Set(db.prepare('PRAGMA table_info(daily_performance)').all().map(row => row.name));
+    if (!performanceColumns.has('reconciliation_status')) db.exec('ALTER TABLE daily_performance ADD COLUMN reconciliation_status TEXT');
+    db.exec('PRAGMA user_version=4');
   }
   const quickCheck = db.prepare('PRAGMA quick_check').get().quick_check;
   if (quickCheck !== 'ok') {

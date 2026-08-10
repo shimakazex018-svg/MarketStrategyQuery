@@ -1,5 +1,12 @@
 # 变更日志
 
+
+## 2026-08-10 - Offline portfolio performance calibration
+
+- Added the offline `portfolio:replay` path. It backs up ignored SQLite, reparses the latest ignored Flex XML, replaces only the `ibkr-flex` source rows, and performs no Flex request.
+- Split CashTransactions into external deposits/withdrawals, displayable internal transfers, and income events for dividends, interest, withholding tax, fees, and other internal activity. Date-only performance now uses `daily_flow_adjusted_return`; reconciliation status is separate from computed/reconciled/warning/incomplete quality.
+- Added raw source-field retention inside ignored SQLite, local-history benchmark intersection import, schema version 4, and synthetic regression coverage. No real response data or runtime files are public fixtures.
+
 ## 2026-08-10 - IBKR Flex real-response calibration
 
 - Added safe Flex request/parse/validation/import diagnostics, dynamic Node User-Agent coverage, official v3 request-shape checks, controlled redirect validation, and schema version 3 persistence for stage and IBKR error code.

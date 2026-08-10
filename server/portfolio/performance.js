@@ -17,11 +17,16 @@ function productReturn(values) {
   return count ? factor - 1 : null;
 }
 
+function isExternalCashFlow(flow) {
+  if (flow?.external === true) return true;
+  return ['deposit', 'withdrawal'].includes(String(flow?.type || '').toLowerCase());
+}
+
 function calculateDailyPerformance(snapshots, cashFlows = [], reported = []) {
   const ordered = [...snapshots].filter(item => item?.date && finite(item.netLiquidation) !== null).sort((a, b) => a.date.localeCompare(b.date));
   const flowsByDate = new Map();
   for (const flow of cashFlows) {
-    if (!flow?.date) continue;
+    if (!flow?.date || !isExternalCashFlow(flow)) continue;
     const current = flowsByDate.get(flow.date) || { amount: 0, count: 0 };
     const amount = finite(flow.baseAmount ?? flow.amount) ?? 0;
     current.amount += amount;
@@ -42,7 +47,23 @@ function calculateDailyPerformance(snapshots, cashFlows = [], reported = []) {
     const reportedPnl = finite(reportedRow?.realizedPnl ?? reportedRow?.pnlAmount);
     const reportedReturn = finite(reportedRow?.dailyReturn);
     const reconciliationDifference = pnl === null || reportedPnl === null ? null : pnl - reportedPnl;
-    const qualityStatus = beginNav === null ? 'incomplete' : reconciliationDifference !== null && Math.abs(reconciliationDifference) > Math.max(1, Math.abs(pnl || 0) * 0.02) ? 'warning' : 'reconciled';
+    const hasIndependentResult = reportedPnl !== null || reportedReturn !== null;
+    const pnlOutlier = reconciliationDifference !== null && Math.abs(reconciliationDifference) > Math.max(1, Math.abs(pnl || 0) * 0.02);
+    const returnOutlier = reportedReturn !== null && dailyReturn !== null && Math.abs(dailyReturn - reportedReturn) > 0.0005;
+    const qualityStatus = beginNav === null || endNav === null
+      ? 'incomplete'
+      : !hasIndependentResult
+        ? 'computed'
+        : pnlOutlier || returnOutlier
+          ? 'warning'
+          : 'reconciled';
+    const reconciliationStatus = beginNav === null || endNav === null
+      ? 'incomplete'
+      : !hasIndependentResult
+        ? 'not_available'
+        : pnlOutlier || returnOutlier
+          ? 'outlier'
+          : 'within_tolerance';
     previous = endNav;
     return {
       date: snapshot.date,
@@ -52,8 +73,9 @@ function calculateDailyPerformance(snapshots, cashFlows = [], reported = []) {
       pnlAmount: pnl,
       dailyReturn,
       cumulativeReturn: dailyReturn === null ? null : cumulativeFactor - 1,
-      calculationMethod: reportedReturn !== null ? 'ibkr_reported' : 'modified_dietz_daily',
+      calculationMethod: hasIndependentResult ? 'ibkr_reported' : 'daily_flow_adjusted_return',
       qualityStatus,
+      reconciliationStatus,
       reconciliationDifference,
       reportedPnl,
       reportedReturn,
@@ -69,7 +91,7 @@ function calculateDailyPerformance(snapshots, cashFlows = [], reported = []) {
 
 function aggregatePerformance(rows) {
   const ordered = [...rows].sort((a, b) => a.date.localeCompare(b.date));
-  if (!ordered.length) return { startDate: null, endDate: null, startNav: null, endNav: null, externalNetFlow: 0, pnlAmount: null, cumulativeReturn: null, reconciliationDifference: null, qualityStatus: 'incomplete', pointCount: 0 };
+  if (!ordered.length) return { startDate: null, endDate: null, startNav: null, endNav: null, externalNetFlow: 0, pnlAmount: null, cumulativeReturn: null, reconciliationDifference: null, qualityStatus: 'incomplete', reconciliationStatus: 'incomplete', pointCount: 0 };
   const sum = field => ordered.reduce((total, row) => total + (finite(row[field]) ?? 0), 0);
   return {
     startDate: ordered[0].date,
@@ -80,7 +102,8 @@ function aggregatePerformance(rows) {
     pnlAmount: ordered.some(row => finite(row.pnlAmount) !== null) ? sum('pnlAmount') : null,
     cumulativeReturn: productReturn(ordered.map(row => row.dailyReturn)),
     reconciliationDifference: ordered.some(row => finite(row.reconciliationDifference) !== null) ? sum('reconciliationDifference') : null,
-    qualityStatus: ordered.some(row => row.qualityStatus === 'warning') ? 'warning' : ordered.some(row => row.qualityStatus === 'incomplete') ? 'incomplete' : 'reconciled',
+    qualityStatus: ordered.some(row => row.qualityStatus === 'warning') ? 'warning' : ordered.some(row => row.qualityStatus === 'incomplete') ? 'incomplete' : ordered.some(row => row.qualityStatus === 'computed') ? 'computed' : 'reconciled',
+    reconciliationStatus: ordered.some(row => row.reconciliationStatus === 'outlier') ? 'outlier' : ordered.some(row => row.reconciliationStatus === 'incomplete') ? 'incomplete' : ordered.some(row => row.reconciliationStatus === 'not_available') ? 'not_available' : 'within_tolerance',
     pointCount: ordered.length,
     profitableDays: ordered.filter(row => finite(row.pnlAmount) > 0).length,
     losingDays: ordered.filter(row => finite(row.pnlAmount) < 0).length,
@@ -105,17 +128,37 @@ function maskAccountId(accountId) {
   return value.length <= 4 ? '****' : `****${value.slice(-4)}`;
 }
 
+function sourceText(row) {
+  return [row?.rawType, row?.rawCategory, row?.rawSubCategory, row?.type, row?.section, row?.description]
+    .filter(value => value !== null && value !== undefined)
+    .join(' ')
+    .toLowerCase();
+}
+
+function classifyCashActivity(row = {}) {
+  const text = sourceText(row);
+  const amount = finite(row.baseAmount ?? row.amount);
+  if (/withhold|withholding|tax/.test(text)) return { type: 'withholding_tax', storage: 'income', external: false };
+  if (/commission|fee|fees|charge|expense/.test(text)) return { type: 'fee', storage: 'income', external: false };
+  if (/dividend/.test(text)) return { type: 'dividend', storage: 'income', external: false };
+  if (/interest/.test(text)) return { type: 'interest', storage: 'income', external: false };
+  if (/internal|transfer|sweep|currency|conversion|foreign exchange|corporate action/.test(text)) return { type: 'internal_transfer', storage: 'cash_flow', external: false };
+  if (/deposits?\s*\/\s*withdrawals?/.test(text)) {
+    if (amount !== null && amount < 0) return { type: 'withdrawal', storage: 'cash_flow', external: true };
+    if (amount !== null && amount > 0) return { type: 'deposit', storage: 'cash_flow', external: true };
+  }
+  if (/withdraw|outgoing|debit|出金/.test(text)) return { type: 'withdrawal', storage: 'cash_flow', external: true };
+  if (/deposit|incoming|credit|入金/.test(text)) return { type: 'deposit', storage: 'cash_flow', external: true };
+  return { type: 'other_income_expense', storage: 'income', external: false };
+}
+
 function normalizeFlowType(value, amount) {
-  const text = String(value || '').toLowerCase();
-  if (/withdraw|outgoing|出金/.test(text)) return 'withdrawal';
-  if (/deposit|incoming|入金/.test(text)) return 'deposit';
-  if (/internal|transfer|内部/.test(text)) return 'internal_transfer';
-  return 'other_external_flow';
+  return classifyCashActivity({ type: value, amount }).type;
 }
 
 function normalizeSignedFlow(type, amount) {
   const value = Math.abs(finite(amount) ?? 0);
-  return type === 'withdrawal' ? -value : type === 'internal_transfer' ? 0 : value;
+  return type === 'withdrawal' ? -value : type === 'deposit' ? value : finite(amount) ?? 0;
 }
 
-module.exports = { aggregatePerformance, calculateDailyPerformance, finite, maskAccountId, monthlyPerformance, normalizeFlowType, normalizeSignedFlow, productReturn };
+module.exports = { aggregatePerformance, calculateDailyPerformance, classifyCashActivity, finite, isExternalCashFlow, maskAccountId, monthlyPerformance, normalizeFlowType, normalizeSignedFlow, productReturn };

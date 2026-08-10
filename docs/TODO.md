@@ -2,6 +2,12 @@
 
 本文件只记录任务状态，不记录详细实现过程。排除项不等同于缺陷。
 
+
+## 2026-08-10 Portfolio performance calibration checkpoint
+
+- [x] Reprocess the existing ignored Flex XML offline with a SQLite backup, external-flow classification, date-level performance semantics, and local benchmark alignment.
+- [x] Keep Flex requests at zero for the calibration replay; preserve raw response material and real audit results in ignored runtime data only.
+
 ## High Priority
 
 - [x] 将六类辅助指标说明合并到首页卡片原位 Dialog

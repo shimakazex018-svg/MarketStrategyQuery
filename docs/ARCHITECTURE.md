@@ -6,6 +6,11 @@
 
 The portfolio scheduler treats a same-day failed attempt as consumed, so an upstream or schema failure cannot create a minute-by-minute external request loop. Manual retry remains explicit and read-only.
 
+
+## Portfolio performance calibration boundary
+
+The offline replay reads ignored Flex XML, classifies CashTransactions, stores external deposits/withdrawals in `cash_flows`, stores internal income/expense events in `income_events`, and calculates `daily_flow_adjusted_return` from NAV plus external flow only. Existing local market histories are intersected with portfolio dates before rows are written to `benchmark_daily`; no replay path calls a provider.
+
 ## 整体结构
 
 ```text

@@ -1,5 +1,12 @@
 # 项目当前上下文
 
+
+## Portfolio real-response calibration boundary (2026-08-10)
+
+- The local ignored runtime may contain a user-configured, read-only IBKR Flex response and SQLite cache. This does not mean credentials, account identifiers, amounts, holdings, raw XML, or audit results are present in Git.
+- The approved recalibration path is offline `npm.cmd run portfolio:replay`: it backs up ignored SQLite, reparses ignored raw XML, separates external capital flow from internal activity, recalculates `daily_flow_adjusted_return`, and aligns only existing local benchmark histories.
+- This boundary does not enable trading, add a market-data Provider, change the Flex secret or Query, or expand the portfolio UI. Public fixtures remain synthetic-only.
+
 ## 项目名称与用途
 
 - 名称：Market Cycle Strategy。

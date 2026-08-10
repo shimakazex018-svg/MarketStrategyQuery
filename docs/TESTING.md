@@ -6,6 +6,11 @@ The real-response path is read-only and must be run only as a bounded manual syn
 
 Synthetic tests cover v3 parameters, dynamic User-Agent, XML/CSV precedence, error-code persistence, official core-field mapping, date-range selection, and same-day scheduler retry prevention. Public fixtures use only `synthetic-review-fixture` data.
 
+
+## Offline portfolio calibration
+
+`npm.cmd run portfolio:replay` is the offline real-response calibration path. It reads ignored raw Flex XML, creates an ignored SQLite backup, reimports the report, recalculates `daily_flow_adjusted_return`, and aligns benchmarks from existing local histories. It must not call `portfolio:sync` or any external Flex/market-data endpoint. Public tests continue to use synthetic fixtures only.
+
 ## 环境要求
 
 - Windows PowerShell。

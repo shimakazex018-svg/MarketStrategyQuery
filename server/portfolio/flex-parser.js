@@ -43,6 +43,10 @@ const REQUIRED_FIELD_ALIASES = Object.freeze({
   baseAmount: ['baseamount', 'baseamountvalue', 'basevalue', 'amountbase'],
   exchangeRate: ['exchangerate', 'fxrate', 'rate'],
   description: ['description', 'details', 'memo', 'name'],
+  rawType: ['type'],
+  rawCategory: ['category'],
+  rawSubCategory: ['subcategory', 'subtype'],
+  rawCode: ['code', 'transactioncode', 'activitycode'],
   sourceId: ['sourceid', 'transactionid', 'tradeid', 'executionid', 'activityid', 'id'],
   symbol: ['symbol', 'ticker', 'asset', 'underlying'],
   conid: ['conid', 'contractid'],
@@ -240,7 +244,7 @@ function canonicalRecord(node, kind, context) {
     }
     if (['date'].includes(field)) result[field] = dateOrNull(raw);
     else if (['occurredAt'].includes(field)) result[field] = raw || null;
-    else if (['symbol', 'conid', 'securityType', 'currency', 'baseCurrency', 'type', 'side', 'description', 'sourceId'].includes(field)) result[field] = raw || null;
+    else if (['symbol', 'conid', 'securityType', 'currency', 'baseCurrency', 'type', 'side', 'description', 'rawType', 'rawCategory', 'rawSubCategory', 'rawCode', 'sourceId'].includes(field)) result[field] = raw || null;
     else result[field] = numberOrNull(raw);
   }
   result.date = result.date || context.reportDate || null;
