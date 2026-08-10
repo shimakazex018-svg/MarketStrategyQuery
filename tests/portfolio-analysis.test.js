@@ -224,7 +224,6 @@ test('successful cached portfolio data remains usable after a later failed attem
   const service = await new PortfolioService({ rootDir, config: testConfig(runtimeRoot), now: () => new Date('2026-08-08T00:00:00Z') }).init();
   t.after(() => service.close());
   service.importReport(normalizeFlexReport(flexXml));
-  service.state.lastSuccessfulAt = '2026-08-08T00:00:00.000Z';
   const run = service.createRun('scheduled_daily');
   service.finishRun(run, 'failed', { errorCategory: 'network_error', stage: 'send_request', externalRequestCount: 1 });
   assert.equal(service.getStatus().status, 'ready');
