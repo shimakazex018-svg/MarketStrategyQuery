@@ -307,6 +307,8 @@ Interaction Review 验证：
 - route stability；
 - request-loop detection。
 
+收益日历交互回归还必须覆盖：金额的正负号与 Base Currency 小数格式、K/M 仅作为格内 presentation、Tooltip/Popover 完整金额和 4 位收益率、桌面 hover/keyboard focus/blur、768×1024 与390×844 tap、日期切换、再次点击关闭、外部区域关闭、Escape、非交易日不弹、Hash/scroll 稳定、无额外 portfolio API/外部请求、无横向溢出和零 console error。日历只读取现有 API 结果，不在前端重算 P&L 或收益率。
+
 以下 UI 修改必须运行 `npm.cmd run test:interaction`：
 
 - navigation；

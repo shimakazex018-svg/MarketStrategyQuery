@@ -1083,13 +1083,36 @@ figure[data-chart-type="normalized"] .drawdown-chart-marker.primary { fill: var(
 .portfolio-two-column { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; }
 .portfolio-month-nav { display: flex; align-items: center; gap: 8px; color: var(--text-soft); }
 .portfolio-month-nav .icon-button { width: 34px; height: 34px; border-radius: 10px; }
+.portfolio-calendar-shell { position: relative; min-width: 0; }
 .portfolio-calendar-weekdays, .portfolio-calendar-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }
 .portfolio-calendar-weekdays { margin-bottom: 6px; color: var(--text-soft); font-size: 10px; font-weight: 800; text-align: center; }
-.portfolio-calendar-cell { min-height: 70px; padding: 8px; overflow: hidden; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-muted); }
+.portfolio-calendar-cell { box-sizing: border-box; min-width: 0; min-height: 70px; padding: 8px; overflow: hidden; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-muted); }
+.portfolio-calendar-cell--interactive { width: 100%; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.portfolio-calendar-cell--interactive:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .portfolio-calendar-cell.empty { border-color: transparent; background: transparent; }
 .portfolio-calendar-cell span, .portfolio-calendar-cell strong, .portfolio-calendar-cell small { display: block; }
-.portfolio-calendar-cell span { color: var(--text-soft); font-size: 10px; }.portfolio-calendar-cell strong { margin-top: 5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }.portfolio-calendar-cell small { margin-top: 2px; color: var(--text-soft); font-size: 10px; }
+.portfolio-calendar-cell span.portfolio-calendar-day { color: var(--text-soft); font-size: 10px; }
+.portfolio-calendar-cell strong.portfolio-calendar-amount { min-width: 0; max-width: 100%; margin-top: 5px; overflow: hidden; white-space: nowrap; font-size: clamp(8px, 1.05vw, 12px); font-variant-numeric: tabular-nums; letter-spacing: -.025em; }
+.portfolio-calendar-amount [data-calendar-amount-full], .portfolio-calendar-amount [data-calendar-amount-compact] { display: inline; color: inherit; font-size: inherit; font-variant-numeric: tabular-nums; }
+.portfolio-calendar-amount [data-calendar-amount-compact] { display: none; }
+.portfolio-calendar-amount[data-display="compact"] [data-calendar-amount-full] { display: none; }
+.portfolio-calendar-amount[data-display="compact"] [data-calendar-amount-compact] { display: inline; }
+.portfolio-calendar-amount-empty { min-height: 1em; }
+.portfolio-calendar-cell.positive .portfolio-calendar-amount { color: var(--positive); }
+.portfolio-calendar-cell.negative .portfolio-calendar-amount { color: var(--danger); }
 .portfolio-calendar-cell.positive { border-color: color-mix(in srgb, var(--positive) 30%, var(--line)); background: var(--positive-soft); }.portfolio-calendar-cell.negative { border-color: color-mix(in srgb, var(--danger) 30%, var(--line)); background: var(--danger-soft); }.portfolio-calendar-cell.flat { background: var(--surface-muted); }.portfolio-calendar-cell.unknown { opacity: .7; }
+.portfolio-calendar-popover { position: fixed; z-index: 40; display: grid; gap: 10px; width: min(280px, calc(100vw - 24px)); box-sizing: border-box; padding: 12px 14px; border: 1px solid var(--line-strong); border-radius: 11px; background: var(--surface-strong); box-shadow: var(--shadow); color: var(--text); pointer-events: none; }
+.portfolio-calendar-popover[data-mode="popover"] { pointer-events: auto; }
+.portfolio-calendar-popover-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.portfolio-calendar-popover-header strong { color: var(--text); font-size: 12px; }
+.portfolio-calendar-popover-close { display: none; flex: 0 0 auto; width: 26px; height: 26px; border: 0; border-radius: 7px; background: transparent; color: var(--text-soft); cursor: pointer; font-size: 18px; line-height: 1; }
+.portfolio-calendar-popover[data-mode="popover"] .portfolio-calendar-popover-close { display: inline-grid; place-items: center; }
+.portfolio-calendar-popover dl { display: grid; gap: 8px; margin: 0; }
+.portfolio-calendar-popover dl > div { display: grid; grid-template-columns: 1fr auto; align-items: baseline; gap: 12px; }
+.portfolio-calendar-popover dt { color: var(--text-soft); font-size: 10px; }
+.portfolio-calendar-popover dd { margin: 0; color: var(--accent-strong); font-size: 12px; font-variant-numeric: tabular-nums; font-weight: 800; text-align: right; white-space: nowrap; }
+.portfolio-calendar-popover dl > div:nth-child(2) dd { color: var(--text); }
+.portfolio-calendar-popover dl > div:nth-child(3) dd { color: var(--text-soft); font-size: 11px; }
 .portfolio-monthly-list { display: grid; gap: 2px; max-height: 410px; overflow: auto; }
 .portfolio-month-row { display: grid; grid-template-columns: 74px minmax(90px, 1fr) 78px 86px; align-items: center; gap: 10px; padding: 10px 8px; border-bottom: 1px solid var(--line); font-size: 12px; }.portfolio-month-row:last-child { border-bottom: 0; }.portfolio-month-row > span:last-of-type, .portfolio-month-row small { color: var(--text-soft); text-align: right; }.portfolio-month-row small { font-size: 10px; }
 .portfolio-contribution-list { display: grid; gap: 10px; }.portfolio-contribution-list article { padding: 12px; border-radius: 13px; background: var(--surface-muted); }.portfolio-contribution-list article > div, .portfolio-contribution-list article { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 8px; }.portfolio-contribution-list article small { display: block; color: var(--text-soft); font-size: 10px; }.portfolio-contribution-list dl { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 5px 0 0; }.portfolio-contribution-list dl div { min-width: 0; }.portfolio-contribution-list dt { color: var(--text-soft); font-size: 10px; }.portfolio-contribution-list dd { margin: 3px 0 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
@@ -1227,7 +1250,7 @@ figure[data-chart-type="normalized"] .drawdown-chart-marker.primary { fill: var(
   .portfolio-two-column { grid-template-columns: 1fr; }
   .portfolio-connection-note { align-items: flex-start; flex-direction: column; }
   .portfolio-calendar-cell { min-height: 62px; padding: 6px; }
-  .portfolio-calendar-cell strong { font-size: 10px; }
+  .portfolio-calendar-cell strong.portfolio-calendar-amount { margin-top: 4px; font-size: clamp(8px, 1.55vw, 11px); }
   .portfolio-bridge { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .portfolio-bridge > i { display: none; }
   .portfolio-bridge-item.final { grid-column: 1 / -1; }
@@ -1239,8 +1262,7 @@ figure[data-chart-type="normalized"] .drawdown-chart-marker.primary { fill: var(
   .portfolio-metric-grid strong { font-size: 18px; }
   .portfolio-calendar-weekdays, .portfolio-calendar-grid { gap: 3px; }
   .portfolio-calendar-cell { min-height: 54px; padding: 4px; border-radius: 8px; }
-  .portfolio-calendar-cell strong { margin-top: 2px; font-size: 9px; }
-  .portfolio-calendar-cell small { font-size: 9px; }
+  .portfolio-calendar-cell strong.portfolio-calendar-amount { margin-top: 2px; font-size: 8px; letter-spacing: -.045em; }
   .portfolio-month-row { grid-template-columns: 58px minmax(70px, 1fr) 64px; }.portfolio-month-row small { display: none; }
   .portfolio-contribution-list dl { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }

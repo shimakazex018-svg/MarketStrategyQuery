@@ -1,5 +1,9 @@
 # 最新交接
 
+## 2026-08-10 Portfolio daily return calendar
+
+- The calendar now formats signed base-currency P&L values for full display when the cell fits and compact K/M values only when it does not; the full amount is retained in the shared Tooltip/Popover.
+- Desktop hover/focus, iPad/iPhone tap, date switching, outside close, Escape, Hash/scroll stability, request stability, overflow, synthetic formatter tests, and visual review passed. No Flex, portfolio service, SQLite schema, CashTransactions classification, return algorithm, benchmark, or sync code changed.
 
 ## 2026-08-10 Offline portfolio performance calibration
 

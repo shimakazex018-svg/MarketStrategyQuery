@@ -88,6 +88,7 @@ const indicatorDialogState = {
   inertNodes: []
 };
 const marketDataControllers = new Map();
+let portfolioCalendarCleanup = null;
 let externalPEController = null;
 const drawdownControllers = new Map();
 let activeDrawdownChartView = null;
@@ -1498,14 +1499,28 @@ function portfolioCalendarMarkup(calendar) {
   const totalDays = new Date(Date.UTC(year, month, 0)).getUTCDate();
   const leading = (new Date(Date.UTC(year, month - 1, 1)).getUTCDay() + 6) % 7;
   const entries = new Map((calendar.entries || []).map(entry => [entry.date, entry]));
+  const formatter = window.PortfolioCalendar;
+  const currency = state.portfolio.summary?.summary?.baseCurrency || 'USD';
+  const displayAmount = (value, compact = false) => state.portfolio.amountsVisible
+    ? (compact ? formatter.formatCompactAmount(value, currency) : formatter.formatFullAmount(value, currency))
+    : '••••••';
   const cells = [];
   for (let index = 0; index < leading; index += 1) cells.push('<div class="portfolio-calendar-cell empty" aria-hidden="true"></div>');
   for (let day = 1; day <= totalDays; day += 1) {
     const date = `${calendar.month}-${String(day).padStart(2, '0')}`; const entry = entries.get(date); const pnl = entry?.pnlAmount;
     const tone = hasFiniteValue(pnl) ? Number(pnl) > 0 ? 'positive' : Number(pnl) < 0 ? 'negative' : 'flat' : 'unknown';
-    cells.push(`<div class="portfolio-calendar-cell ${tone}" title="${escapeHtml(date)} · ${escapeHtml(hasFiniteValue(pnl) ? portfolioAmount(pnl) : '暂不可用')}"><span>${day}</span><strong>${hasFiniteValue(pnl) ? escapeHtml(portfolioAmount(pnl)) : '—'}</strong><small>${hasFiniteValue(entry?.dailyReturn) ? escapeHtml(portfolioPercent(entry.dailyReturn)) : '—'}</small></div>`);
+    if (!hasFiniteValue(pnl)) {
+      cells.push(`<div class="portfolio-calendar-cell ${tone}"><span class="portfolio-calendar-day">${day}</span><strong class="portfolio-calendar-amount portfolio-calendar-amount-empty" aria-hidden="true"></strong></div>`);
+      continue;
+    }
+    const fullAmount = displayAmount(pnl);
+    const compactAmount = displayAmount(pnl, true);
+    const returnValue = hasFiniteValue(entry?.dailyReturn) ? formatter.formatReturn(entry.dailyReturn) : '暂不可用';
+    const quality = formatter.qualityLabel(entry?.qualityStatus);
+    const ariaLabel = `${formatter.formatDate(date)}，当日盈亏 ${fullAmount}，当日收益率 ${returnValue}，数据质量 ${quality}`;
+    cells.push(`<button type="button" class="portfolio-calendar-cell portfolio-calendar-cell--interactive ${tone}" data-portfolio-calendar-cell data-calendar-date="${escapeHtml(date)}" data-calendar-full="${escapeHtml(fullAmount)}" data-calendar-compact="${escapeHtml(compactAmount)}" data-calendar-return="${escapeHtml(returnValue)}" data-calendar-quality="${escapeHtml(quality)}" aria-label="${escapeHtml(ariaLabel)}" aria-expanded="false" aria-describedby="portfolio-calendar-popover"><span class="portfolio-calendar-day">${day}</span><strong class="portfolio-calendar-amount" data-calendar-amount data-display="full"><span data-calendar-amount-full>${escapeHtml(fullAmount)}</span><span data-calendar-amount-compact aria-hidden="true">${escapeHtml(compactAmount)}</span></strong></button>`);
   }
-  return `<div class="portfolio-calendar-weekdays">${['一', '二', '三', '四', '五', '六', '日'].map(day => `<span>${day}</span>`).join('')}</div><div class="portfolio-calendar-grid">${cells.join('')}</div>`;
+  return `<div class="portfolio-calendar-shell"><div class="portfolio-calendar-weekdays">${['一', '二', '三', '四', '五', '六', '日'].map(day => `<span>${day}</span>`).join('')}</div><div class="portfolio-calendar-grid">${cells.join('')}</div><div id="portfolio-calendar-popover" class="portfolio-calendar-popover" data-portfolio-calendar-popover hidden role="dialog" aria-modal="false" aria-label="每日收益详情"><div class="portfolio-calendar-popover-header"><strong data-calendar-popover-date></strong><button type="button" class="portfolio-calendar-popover-close" data-portfolio-calendar-close aria-label="关闭每日收益详情">×</button></div><dl><div><dt>当日盈亏</dt><dd data-calendar-popover-amount></dd></div><div><dt>当日收益率</dt><dd data-calendar-popover-return></dd></div><div><dt>数据质量</dt><dd data-calendar-popover-quality></dd></div></dl></div></div>`;
 }
 
 function portfolioMonthlyMarkup(monthly = []) {
@@ -1722,8 +1737,115 @@ function destroyIndicatorDialog() {
   indicatorDialogState.queued = null;
 }
 
+function destroyPortfolioCalendarInteraction() {
+  if (portfolioCalendarCleanup) portfolioCalendarCleanup();
+  portfolioCalendarCleanup = null;
+}
+
+function bindPortfolioCalendarEvents() {
+  destroyPortfolioCalendarInteraction();
+  const cells = [...document.querySelectorAll('[data-portfolio-calendar-cell]')];
+  const popover = document.querySelector('[data-portfolio-calendar-popover]');
+  if (!cells.length || !popover) return;
+  const closeButton = popover.querySelector('[data-portfolio-calendar-close]');
+  let activeCell = null;
+  let pinned = false;
+  let lastPointerType = '';
+  const listeners = [];
+  const listen = (target, type, handler, options) => {
+    target.addEventListener(type, handler, options);
+    listeners.push({ target, type, handler, options });
+  };
+  const setExpanded = (cell, expanded) => {
+    if (cell) cell.setAttribute('aria-expanded', String(expanded));
+  };
+  const fitAmounts = () => {
+    document.querySelectorAll('[data-calendar-amount]').forEach(amount => {
+      const full = amount.querySelector('[data-calendar-amount-full]');
+      const compact = amount.querySelector('[data-calendar-amount-compact]');
+      if (!full || !compact) return;
+      amount.dataset.display = 'full';
+      if (full.textContent !== compact.textContent && amount.scrollWidth > amount.clientWidth + 1) amount.dataset.display = 'compact';
+    });
+  };
+  const reposition = () => {
+    if (!activeCell || popover.hidden) return;
+    const anchor = activeCell.getBoundingClientRect();
+    const popup = popover.getBoundingClientRect();
+    const margin = 12;
+    const gap = 8;
+    const viewportWidth = document.documentElement.clientWidth || window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    const above = anchor.top - popup.height - gap;
+    const below = anchor.bottom + gap;
+    const top = above >= margin || below + popup.height > viewportHeight
+      ? Math.max(margin, above)
+      : below;
+    const left = Math.max(margin, Math.min(viewportWidth - popup.width - margin, anchor.left + (anchor.width - popup.width) / 2));
+    popover.style.left = `${Math.round(left)}px`;
+    popover.style.top = `${Math.round(Math.min(top, viewportHeight - popup.height - margin))}px`;
+    popover.dataset.placement = above >= margin ? 'top' : 'bottom';
+  };
+  const onScroll = () => reposition();
+  const hide = () => {
+    setExpanded(activeCell, false);
+    activeCell = null;
+    pinned = false;
+    popover.hidden = true;
+    delete popover.dataset.mode;
+    delete popover.dataset.placement;
+  };
+  const show = (cell, shouldPin) => {
+    if (activeCell && activeCell !== cell) setExpanded(activeCell, false);
+    activeCell = cell;
+    pinned = shouldPin;
+    setExpanded(cell, true);
+    popover.dataset.mode = shouldPin ? 'popover' : 'tooltip';
+    popover.querySelector('[data-calendar-popover-date]').textContent = window.PortfolioCalendar.formatDate(cell.dataset.calendarDate || '—');
+    popover.querySelector('[data-calendar-popover-amount]').textContent = cell.dataset.calendarFull || '暂不可用';
+    popover.querySelector('[data-calendar-popover-return]').textContent = cell.dataset.calendarReturn || '暂不可用';
+    popover.querySelector('[data-calendar-popover-quality]').textContent = cell.dataset.calendarQuality || '—';
+    popover.hidden = false;
+    reposition();
+  };
+  cells.forEach(cell => {
+    listen(cell, 'pointerdown', event => { lastPointerType = event.pointerType || ''; });
+    listen(cell, 'pointerenter', event => { if (event.pointerType !== 'touch') show(cell, false); });
+    listen(cell, 'pointerleave', event => { if (event.pointerType !== 'touch') hide(); });
+    listen(cell, 'focus', () => { if (lastPointerType !== 'touch') show(cell, false); });
+    listen(cell, 'blur', () => { if (!pinned) hide(); });
+    listen(cell, 'click', event => {
+      const isTouch = lastPointerType === 'touch';
+      lastPointerType = '';
+      if (!isTouch) return;
+      event.preventDefault();
+      if (activeCell === cell && !popover.hidden) hide();
+      else show(cell, true);
+    });
+  });
+  listen(closeButton, 'click', event => { event.preventDefault(); hide(); });
+  listen(document, 'pointerdown', event => {
+    if (!activeCell || activeCell.contains(event.target) || popover.contains(event.target)) return;
+    hide();
+  });
+  listen(document, 'keydown', event => {
+    if (event.key !== 'Escape' || !activeCell) return;
+    event.preventDefault();
+    hide();
+  });
+  listen(window, 'resize', fitAmounts);
+  listen(window, 'resize', reposition);
+  listen(window, 'scroll', onScroll, { passive: true });
+  fitAmounts();
+  portfolioCalendarCleanup = () => {
+    hide();
+    listeners.forEach(({ target, type, handler, options }) => target.removeEventListener(type, handler, options));
+  };
+}
+
 function bindCommonEvents() {
   bindSettingsRunToggle();
+  bindPortfolioCalendarEvents();
   document.querySelector('[data-settings-refresh]')?.addEventListener('click', () => void loadSettingsStatus());
   document.querySelector('[data-portfolio-login]')?.addEventListener('submit', async event => {
     event.preventDefault();
@@ -2024,6 +2146,7 @@ function parseRoute() {
 
 function render({ preserveScroll = false } = {}) {
   const route = parseRoute();
+  if (route !== '/portfolio-analysis') destroyPortfolioCalendarInteraction();
   if (route === '/indicators' || route.startsWith('/indicators/')) {
     history.replaceState(null, '', `${location.pathname}${location.search}#/`);
     render();

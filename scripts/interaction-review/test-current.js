@@ -110,6 +110,53 @@ async function typeInto(page, selector, value) {
   await page.keyboard.type(value);
 }
 
+async function loginSynthetic(page) {
+  await page.locator('#portfolioPassword').fill(syntheticPassword);
+  await page.locator('[data-portfolio-login] button[type="submit"]').click();
+  await page.waitForSelector('.portfolio-calendar-shell');
+  await page.waitForSelector('[data-portfolio-calendar-cell]');
+}
+
+async function calendarPopoverVisible(page) {
+  return page.evaluate(() => {
+    const popover = document.querySelector('[data-portfolio-calendar-popover]');
+    return Boolean(popover && !popover.hidden);
+  });
+}
+
+async function testDesktopCalendar(page, requestCounts) {
+  const cell = page.locator('[data-portfolio-calendar-cell]').first();
+  await cell.scrollIntoViewIfNeeded();
+  const before = await page.evaluate(() => ({ hash: window.location.hash, scrollY: Math.round(window.scrollY) }));
+  const requestSnapshot = mapObject(requestCounts);
+  await cell.hover();
+  await page.waitForFunction(() => {
+    const popover = document.querySelector('[data-portfolio-calendar-popover]');
+    return Boolean(popover && !popover.hidden);
+  });
+  const hoverText = await page.locator('[data-portfolio-calendar-popover]').innerText();
+  assert.match(hoverText, /当日盈亏/);
+  assert.match(hoverText, /当日收益率/);
+  assert.match(hoverText, /数据质量/);
+  assert.match(await cell.getAttribute('aria-label'), /当日盈亏/);
+  assert.equal(await cell.getAttribute('aria-expanded'), 'true');
+  await page.mouse.move(5, 5);
+  await page.waitForFunction(() => Boolean(document.querySelector('[data-portfolio-calendar-popover]')?.hidden));
+  assert.equal(await calendarPopoverVisible(page), false);
+  await cell.focus();
+  assert.equal(await calendarPopoverVisible(page), true);
+  await page.keyboard.press('Escape');
+  assert.equal(await calendarPopoverVisible(page), false);
+  const after = await page.evaluate(() => ({
+    hash: window.location.hash,
+    scrollY: Math.round(window.scrollY),
+    overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth
+  }));
+  assert.deepEqual(after, { ...before, overflow: false });
+  assert.deepEqual(mapObject(requestCounts), requestSnapshot);
+  return { hover: true, mouseLeave: true, keyboardFocus: true, keyboardEscape: true, requestDelta: 0, overflow: false };
+}
+
 async function testKeyboardAndCriticalPath(page) {
   await page.locator('a.brand[href="#/"]').click();
   await waitForHash(page, '#/');
@@ -164,6 +211,14 @@ async function testKeyboardAndCriticalPath(page) {
 
 async function testTouchViewport(browser, baseUrl, label, viewport) {
   const page = await browser.newPage({ viewport, deviceScaleFactor: 1, isMobile: true, hasTouch: true });
+  const localRequests = new Map();
+  const externalRequests = new Set();
+  page.on('request', request => {
+    const url = request.url();
+    const pathname = pathnameOf(url);
+    if (pathname.startsWith('/api/portfolio/')) increment(localRequests, pathname);
+    if (!url.startsWith(baseUrl + '/')) externalRequests.add(url);
+  });
   try {
     await page.goto(`${baseUrl}/#/`, { waitUntil: 'domcontentloaded' });
     await page.waitForSelector('.metric-grid');
@@ -179,7 +234,44 @@ async function testTouchViewport(browser, baseUrl, label, viewport) {
     }
     await waitForHash(page, '#/portfolio-analysis');
     await page.waitForSelector('form[data-portfolio-login]');
-    return { label, viewport: `${viewport.width}x${viewport.height}`, menuOpened, touchPortfolioLogin: true };
+    await loginSynthetic(page);
+    const cell = page.locator('[data-portfolio-calendar-cell]').first();
+    const secondCell = page.locator('[data-portfolio-calendar-cell]').nth(1);
+    await cell.scrollIntoViewIfNeeded();
+    const before = await page.evaluate(() => ({ hash: window.location.hash, scrollY: Math.round(window.scrollY) }));
+    const requestSnapshot = mapObject(localRequests);
+    await cell.tap();
+    await page.waitForFunction(() => {
+      const popover = document.querySelector('[data-portfolio-calendar-popover]');
+      return Boolean(popover && !popover.hidden);
+    });
+    const firstDate = await page.locator('[data-calendar-popover-date]').innerText();
+    const firstText = await page.locator('[data-portfolio-calendar-popover]').innerText();
+    assert.match(firstText, /\$/);
+    assert.match(firstText, /当日收益率/);
+    await cell.tap();
+    await page.waitForFunction(() => Boolean(document.querySelector('[data-portfolio-calendar-popover]')?.hidden));
+    await secondCell.tap();
+    await page.waitForFunction(() => {
+      const popover = document.querySelector('[data-portfolio-calendar-popover]');
+      return Boolean(popover && !popover.hidden);
+    });
+    const secondDate = await page.locator('[data-calendar-popover-date]').innerText();
+    assert.notEqual(secondDate, firstDate);
+    await page.mouse.click(5, 5);
+    await page.waitForFunction(() => Boolean(document.querySelector('[data-portfolio-calendar-popover]')?.hidden));
+    await cell.tap();
+    await page.keyboard.press('Escape');
+    await page.waitForFunction(() => Boolean(document.querySelector('[data-portfolio-calendar-popover]')?.hidden));
+    const after = await page.evaluate(() => ({
+      hash: window.location.hash,
+      scrollY: Math.round(window.scrollY),
+      overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth
+    }));
+    assert.deepEqual(after, { ...before, overflow: false });
+    assert.deepEqual(mapObject(localRequests), requestSnapshot);
+    assert.equal(externalRequests.size, 0);
+    return { label, viewport: viewport.width + 'x' + viewport.height, menuOpened, touchPortfolioLogin: true, calendarTap: true, switchDate: true, outsideClose: true, escapeClose: true, requestDelta: 0, externalRequests: 0, overflow: false };
   } finally {
     await page.close();
   }
@@ -214,6 +306,7 @@ async function main() {
   let idleMetrics;
   let criticalPath;
   let touchResults;
+  let calendarDesktop;
   try {
     await page.goto(`${baseUrl}/#/`, { waitUntil: 'domcontentloaded' });
     await page.waitForSelector('.metric-grid');
@@ -277,6 +370,7 @@ async function main() {
     await page.mouse.move(portfolioPointerBox.x + portfolioPointerBox.width * 0.25, portfolioPointerBox.y + portfolioPointerBox.height * 0.45);
     await portfolioPointer.focus();
     await page.keyboard.press('ArrowLeft');
+    calendarDesktop = await testDesktopCalendar(page, requestCounts);
 
     await page.locator('[data-portfolio-logout]').click();
     await page.waitForSelector('form[data-portfolio-login]');
@@ -317,6 +411,7 @@ async function main() {
       expectedAuth401ConsoleErrors,
       consoleWarnings,
       pageErrors,
+      calendarDesktop,
       criticalPath,
       touchResults,
       result: 'REAL INTERACTION SMOKE PASSED'

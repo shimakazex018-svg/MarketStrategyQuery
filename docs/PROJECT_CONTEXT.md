@@ -34,6 +34,7 @@
 - 六张正式指标卡：Nasdaq-100 PE、S&P 500 PE、VIX、VXN、Nasdaq-100指数和S&P 500指数；支持七个时间范围、状态元数据和真实历史/快照结构。
 - 首页指标状态支持 `loading`、`fresh`、`stale`、`error`、`demo`、`unavailable`、`provisional`、`insufficient_coverage` 和 `manual`，并可独立显示 `quality_warning`。
 - 深浅主题、Hash Router、键盘/触摸交互和响应式布局。
+- 每日收益日历只对现有 pnlAmount、dailyReturn 和 qualityStatus 做前端展示格式化；共享 Tooltip/Popover 不重算数据、不改变路由/滚动，也不追加 portfolio API 请求。
 - `#/settings` 只读展示当前正式数据源、采集状态、计划任务和有限审计记录；它只请求本站内部状态 API，不触发第三方采集。
 - `#/portfolio-analysis` 是受本机密码保护的只读投资组合分析页；只读取本地 IBKR Flex v3 导入结果，不提供下单、撤单、调仓、自动投资或交易接口。
 - 投资组合运行数据固定在 `runtime-data/portfolio-analysis/`，包括 SQLite、WAL/SHM、原始 Flex、导入、备份、审计、状态、日志和本机密码目录；整棵目录被 Git 忽略。

@@ -5,6 +5,7 @@
 
 ## 2026-08-10 Portfolio performance calibration checkpoint
 
+- [x] Improve the existing daily return calendar presentation and interaction without historical backfill or changes to portfolio calculations.
 - [x] Reprocess the existing ignored Flex XML offline with a SQLite backup, external-flow classification, date-level performance semantics, and local benchmark alignment.
 - [x] Keep Flex requests at zero for the calibration replay; preserve raw response material and real audit results in ignored runtime data only.
 

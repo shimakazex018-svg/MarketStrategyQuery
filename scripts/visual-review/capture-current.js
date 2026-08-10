@@ -70,7 +70,11 @@ async function capture(browser, target, externalRequests, consoleErrors) {
       const debug = await page.evaluate(() => ({ url: location.href, text: document.body.innerText.slice(0, 260), chart: Boolean(document.querySelector('.portfolio-chart')), mode: document.querySelector('.portfolio-hero')?.innerText.slice(0, 180) }));
       throw new Error(`${error.message} (${JSON.stringify(debug)})`);
     }
-    if (target.scrollPortfolio === 'calendar') await page.locator('.portfolio-calendar-grid').scrollIntoViewIfNeeded();
+    if (target.scrollPortfolio === 'calendar') {
+      await page.locator('.portfolio-calendar-grid').scrollIntoViewIfNeeded();
+      await page.locator('[data-portfolio-calendar-cell]').first().hover();
+      await page.waitForSelector('[data-portfolio-calendar-popover]:not([hidden])');
+    }
     if (target.scrollPortfolio === 'performance') await page.locator('.portfolio-chart-card').scrollIntoViewIfNeeded();
   }
   if (target.scrollHome) await page.locator('.metric-grid').scrollIntoViewIfNeeded();

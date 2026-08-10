@@ -1,5 +1,9 @@
 # 变更日志
 
+## 2026-08-10 - Portfolio daily return calendar presentation
+
+- Improved the daily return calendar with signed base-currency amounts, width-aware full/compact K/M presentation, and one shared date/P&L/return/quality Tooltip/Popover.
+- Added synthetic formatter and browser interaction coverage for desktop hover, keyboard focus/Escape, iPad/iPhone tap switching, outside close, route/scroll stability, no extra API requests, and no horizontal overflow. Flex, portfolio calculations, SQLite, and sync paths were unchanged.
 
 ## 2026-08-10 - Offline portfolio performance calibration
 
