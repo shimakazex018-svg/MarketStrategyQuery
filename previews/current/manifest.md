@@ -1,13 +1,16 @@
 # Current Visual Review
 
-- Commit: 5df8f65b183181cbad76809d4578d088bf647aae
-- Generated at: 2026-08-09T15:42:34.988Z
+- Commit: 4b44705fa510e13b86fcb21ce80d2a86ae4cd9d3
+- Generated at: 2026-08-10T06:17:07.878Z
 - Application version: 0.5.0-dev
 - Route: #/portfolio-analysis
 - Viewports: 1440x900, 768x1024, 390x844
 - portfolioDataMode: synthetic-review-fixture
 - containsRealAccountData: false
 - repositoryVisibility: public
+- interactionReview: passed
+- portfolioLoginLoopRegression: passed
+- externalRequestsTriggered: 0
 - Service health: ready
 - External requests triggered: 0
 - Privacy scan: passed

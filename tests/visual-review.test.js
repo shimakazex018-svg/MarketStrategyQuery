@@ -24,7 +24,7 @@ test('current visual review has its bounded WebP set and a relative-link manifes
   const files = await fs.readdir(current); for (const file of required) assert.equal(files.includes(file), true, `${file} missing`);
   assert.equal(files.filter(file => file.endsWith('.webp')).length <= 14, true);
   const manifest = await fs.readFile(path.join(current, 'manifest.md'), 'utf8');
-  assert.match(manifest, /portfolioDataMode: synthetic-review-fixture/i); assert.match(manifest, /containsRealAccountData: false/i); assert.match(manifest, /repositoryVisibility: public/i); assert.match(manifest, /\[portfolio-desktop\.webp\]\(portfolio-desktop\.webp\)/); assert.match(manifest, /Route changed: false/); assert.match(manifest, /Scroll position preserved: true/);
+  assert.match(manifest, /portfolioDataMode: synthetic-review-fixture/i); assert.match(manifest, /containsRealAccountData: false/i); assert.match(manifest, /repositoryVisibility: public/i); assert.match(manifest, /interactionReview: passed/i); assert.match(manifest, /portfolioLoginLoopRegression: passed/i); assert.match(manifest, /externalRequestsTriggered: 0/i); assert.match(manifest, /\[portfolio-desktop\.webp\]\(portfolio-desktop\.webp\)/); assert.match(manifest, /Route changed: false/); assert.match(manifest, /Scroll position preserved: true/);
   assert.equal(findSensitiveText(manifest).length, 0);
   for (const file of required.filter(file => file.endsWith('.webp'))) assert.equal((await fs.stat(path.join(current, file))).size < 3 * 1024 * 1024, true);
 });

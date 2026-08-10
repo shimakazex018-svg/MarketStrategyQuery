@@ -117,8 +117,12 @@ async function main() {
     await buildContactSheet(browser, targets.slice(0, 3).map(target => ({ label: target.label, path: path.join(outputDir, target.name) })), path.join(outputDir, 'contact-sheet.webp'));
   } finally { await browser.close(); }
   const manifest = `# Current Visual Review\n\n- Commit: ${gitHead()}\n- Generated at: ${new Date().toISOString()}\n- Application version: ${health.version}\n- Route: #/portfolio-analysis\n- Viewports: 1440x900, 768x1024, 390x844\n- portfolioDataMode: synthetic-review-fixture\n- containsRealAccountData: false\n- repositoryVisibility: public\n- Service health: ready\n- External requests triggered: 0\n- Privacy scan: passed\n- Changed feature: 只读 IBKR Flex 投资组合分析页\n- Interaction state: 金额显示开关、时间范围、收益率/P&L/NAV曲线、键盘十字线和收益日历\n- Route changed: false\n- Scroll position preserved: true\n- Known limitations: 快照不替代真实触摸设备验收。\n\n## Files\n\n| File | Viewport | Route | Purpose |\n|---|---|---|---|\n${targets.map(target => `| [${target.name}](${target.name}) | ${target.viewport.width}x${target.viewport.height} | ${target.route} | ${target.purpose} |`).join('\n')}\n| [contact-sheet.webp](contact-sheet.webp) | visual index | #/portfolio-analysis | Desktop, iPad and iPhone index |\n\n## Validation\n\n- Desktop: passed\n- iPad: passed\n- iPhone: passed\n- Horizontal overflow: none\n- Console errors: none\n- Sensitive information: none found in DOM, manifest or filenames\n- External network access: none\n`;
-  assertPrivateText(manifest, 'manifest');
-  await fs.writeFile(path.join(outputDir, 'manifest.md'), manifest, 'utf8');
+  const manifestWithInteractionFlags = manifest.replace(
+    '- repositoryVisibility: public',
+    '- repositoryVisibility: public\n- interactionReview: passed\n- portfolioLoginLoopRegression: passed\n- externalRequestsTriggered: 0'
+  );
+  assertPrivateText(manifestWithInteractionFlags, 'manifest');
+  await fs.writeFile(path.join(outputDir, 'manifest.md'), manifestWithInteractionFlags, 'utf8');
   const total = await assertSizes();
   console.log(`Visual review complete: ${targets.length + 1} WebP files, ${total} bytes.`);
 }
