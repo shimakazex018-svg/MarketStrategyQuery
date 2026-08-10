@@ -28,6 +28,27 @@ const state = {
     selectedChartDate: null,
     chartCursorVisible: false
   },
+  portfolio: {
+    authenticated: false,
+    loading: false,
+    error: null,
+    status: null,
+    summary: null,
+    performance: null,
+    calendar: null,
+    contributions: null,
+    cashFlows: null,
+    positions: null,
+    trades: null,
+    range: '1Y',
+    chartMode: 'return',
+    customStart: '',
+    customEnd: '',
+    selectedMonth: '',
+    amountsVisible: (() => {
+      try { return window.localStorage.getItem('portfolioAmountsVisible') !== 'false'; } catch { return true; }
+    })()
+  },
   route: ''
 };
 
@@ -70,6 +91,8 @@ let externalPEController = null;
 const drawdownControllers = new Map();
 let activeDrawdownChartView = null;
 let drawdownChartInteraction = null;
+let portfolioController = null;
+let portfolioRequestActive = false;
 const DRAWDOWN_METRICS = Object.freeze({
   nasdaq100_index: { label: 'Nasdaq-100指数', shortLabel: 'Nasdaq-100', source: 'FRED NASDAQ100' },
   sp500_index: { label: 'S&P 500指数', shortLabel: 'S&P 500', source: 'FRED SP500' },
@@ -1313,6 +1336,197 @@ function bindSettingsRunToggle() {
   tables[1].parentElement?.after(control);
 }
 
+function portfolioAmount(value, currency = 'USD') {
+  if (!hasFiniteValue(value)) return '暂不可用';
+  if (!state.portfolio.amountsVisible) return '••••••';
+  const number = Number(value);
+  const formatted = new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(number);
+  return currency ? `${currency} ${formatted}` : formatted;
+}
+
+function portfolioPercent(value) {
+  return hasFiniteValue(value) ? `${(Number(value) * 100).toFixed(2)}%` : '暂不可用';
+}
+
+function portfolioDate(value) { return value || '—'; }
+
+function portfolioStatusLabel(status) {
+  return ({ ready: '本地数据可用', disconnected: 'IBKR 尚未连接', sync_error: '最近同步失败', unavailable: '模块不可用' })[status] || '等待状态';
+}
+
+function portfolioRangeQuery() {
+  const params = new URLSearchParams({ range: state.portfolio.range });
+  if (state.portfolio.range === 'CUSTOM') {
+    params.set('start', state.portfolio.customStart);
+    params.set('end', state.portfolio.customEnd);
+  }
+  return params.toString();
+}
+
+async function portfolioFetch(pathname, signal) {
+  const response = await fetch(pathname, { credentials: 'same-origin', headers: { Accept: 'application/json' }, signal });
+  if (response.status === 401) throw Object.assign(new Error('portfolio-authentication-required'), { portfolioAuthRequired: true });
+  if (!response.ok) throw Object.assign(new Error(`portfolio-api-${response.status}`), { status: response.status });
+  return response.json();
+}
+
+async function loadPortfolioData({ forceStatus = false } = {}) {
+  if (portfolioRequestActive || parseRoute() !== '/portfolio-analysis') return;
+  portfolioRequestActive = true;
+  portfolioController?.abort();
+  const controller = new AbortController();
+  portfolioController = controller;
+  state.portfolio.loading = true;
+  state.portfolio.error = null;
+  if (state.route === '/portfolio-analysis') render({ preserveScroll: true });
+  try {
+    if (!state.portfolio.status || forceStatus) state.portfolio.status = await portfolioFetch('/api/portfolio/status', controller.signal);
+    const query = portfolioRangeQuery();
+    const month = state.portfolio.selectedMonth || state.portfolio.status?.latestDataDate?.slice(0, 7) || '';
+    const [summary, performance, calendar, contributions, cashFlows, positions, trades] = await Promise.all([
+      portfolioFetch(`/api/portfolio/summary?${query}`, controller.signal),
+      portfolioFetch(`/api/portfolio/performance?${query}`, controller.signal),
+      portfolioFetch(`/api/portfolio/calendar?month=${encodeURIComponent(month)}`, controller.signal),
+      portfolioFetch(`/api/portfolio/contributions?${query}`, controller.signal),
+      portfolioFetch(`/api/portfolio/cash-flows?${query}`, controller.signal),
+      portfolioFetch('/api/portfolio/positions', controller.signal),
+      portfolioFetch(`/api/portfolio/trades?${query}`, controller.signal)
+    ]);
+    state.portfolio.authenticated = true;
+    state.portfolio.summary = summary;
+    state.portfolio.performance = performance;
+    state.portfolio.calendar = calendar;
+    state.portfolio.selectedMonth = calendar.month || month;
+    state.portfolio.contributions = contributions;
+    state.portfolio.cashFlows = cashFlows;
+    state.portfolio.positions = positions;
+    state.portfolio.trades = trades;
+  } catch (error) {
+    if (error.name === 'AbortError') return;
+    if (error.portfolioAuthRequired) {
+      state.portfolio.authenticated = false;
+      state.portfolio.status = null;
+      state.portfolio.summary = null;
+      state.portfolio.performance = null;
+      state.portfolio.error = null;
+    } else {
+      state.portfolio.error = '暂时无法读取本机投资组合数据，请稍后重试。';
+    }
+  } finally {
+    state.portfolio.loading = false;
+    portfolioRequestActive = false;
+    if (portfolioController === controller) portfolioController = null;
+    if (parseRoute() === '/portfolio-analysis') render({ preserveScroll: true });
+  }
+}
+
+async function portfolioLogin(password) {
+  const response = await fetch('/api/portfolio/auth/login', {
+    method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({ password })
+  });
+  if (!response.ok) throw new Error(response.status === 401 ? '本机密码不正确，或尚未初始化密码。' : '登录服务暂时不可用。');
+  state.portfolio.authenticated = true;
+  state.portfolio.status = null;
+  await loadPortfolioData({ forceStatus: true });
+}
+
+async function portfolioLogout() {
+  try { await fetch('/api/portfolio/auth/logout', { method: 'POST', credentials: 'same-origin', headers: { Accept: 'application/json' } }); } catch { /* local state still clears */ }
+  portfolioController?.abort();
+  state.portfolio = { ...state.portfolio, authenticated: false, loading: false, status: null, summary: null, performance: null, calendar: null, contributions: null, cashFlows: null, positions: null, trades: null, error: null };
+  render({ preserveScroll: true });
+}
+
+function portfolioChartPoints(performance) {
+  const series = performance?.series || [];
+  return series.map(row => ({
+    date: row.date,
+    value: state.portfolio.chartMode === 'pnl' ? row.pnlAmount : state.portfolio.chartMode === 'nav' ? row.endNav : row.cumulativeReturn,
+    dailyReturn: row.dailyReturn,
+    pnlAmount: row.pnlAmount,
+    endNav: row.endNav
+  })).filter(point => hasFiniteValue(point.value));
+}
+
+function portfolioChartMarkup(performance) {
+  const points = portfolioChartPoints(performance);
+  if (!points.length) return '<div class="portfolio-chart-empty"><strong>暂无可绘制的区间数据</strong><span>同步完成并获得至少一个有效净清算值后，这里会显示曲线。</span></div>';
+  const width = 800; const height = 260; const padX = 38; const padY = 24;
+  const values = points.map(point => Number(point.value));
+  let min = Math.min(...values); let max = Math.max(...values);
+  if (min === max) { min -= 1; max += 1; }
+  const xFor = index => padX + (width - padX * 2) * (points.length === 1 ? .5 : index / (points.length - 1));
+  const yFor = value => height - padY - (height - padY * 2) * ((value - min) / (max - min));
+  const pathData = points.map((point, index) => `${index ? 'L' : 'M'} ${xFor(index).toFixed(2)} ${yFor(Number(point.value)).toFixed(2)}`).join(' ');
+  const first = values[0]; const last = values.at(-1);
+  const pointPayload = escapeHtml(JSON.stringify(points));
+  const modeLabel = state.portfolio.chartMode === 'pnl' ? '区间每日 P&L' : state.portfolio.chartMode === 'nav' ? '净清算值 NAV' : '累计收益率';
+  const axis = state.portfolio.chartMode === 'return' ? [portfolioPercent(max), portfolioPercent(min)] : [portfolioAmount(max), portfolioAmount(min)];
+  return `<div class="portfolio-chart-shell"><svg class="portfolio-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeHtml(modeLabel)}曲线" data-portfolio-chart-points="${pointPayload}" data-portfolio-chart-min="${min}" data-portfolio-chart-max="${max}"><g class="portfolio-chart-grid"><line x1="${padX}" x2="${width - padX}" y1="${padY}" y2="${padY}"/><line x1="${padX}" x2="${width - padX}" y1="${height / 2}" y2="${height / 2}"/><line x1="${padX}" x2="${width - padX}" y1="${height - padY}" y2="${height - padY}"/></g><path class="portfolio-chart-area" d="${pathData} L ${xFor(points.length - 1).toFixed(2)} ${height - padY} L ${xFor(0).toFixed(2)} ${height - padY} Z"/><path class="portfolio-chart-line" d="${pathData}"/><line class="portfolio-crosshair" data-portfolio-crosshair x1="${xFor(points.length - 1)}" x2="${xFor(points.length - 1)}" y1="${padY}" y2="${height - padY}" hidden/><circle class="portfolio-chart-dot" data-portfolio-dot cx="${xFor(points.length - 1)}" cy="${yFor(last)}" r="4"/><rect class="portfolio-chart-hit" data-portfolio-chart-hit x="${padX}" y="${padY}" width="${width - padX * 2}" height="${height - padY * 2}" tabindex="0" aria-label="使用左右方向键查看每日数据"/></svg><div class="portfolio-chart-tooltip" data-portfolio-tooltip hidden></div><div class="portfolio-chart-axis"><span>${escapeHtml(axis[0])}</span><span>${escapeHtml(portfolioDate(points[0].date))}</span><span>${escapeHtml(portfolioDate(points.at(-1).date))}</span><span>${escapeHtml(axis[1])}</span></div></div>`;
+}
+
+function portfolioBenchmarkMarkup(performance) {
+  const benchmarks = (performance?.benchmarks || []).map(benchmark => {
+    const last = benchmark.series?.at(-1);
+    return `<div><span>${escapeHtml(benchmark.label || benchmark.id || '基准')}</span><strong>${escapeHtml(hasFiniteValue(last?.value) ? portfolioPercent(last.value) : '暂不可用')}</strong></div>`;
+  });
+  if (!benchmarks.length) return '<div class="portfolio-benchmark-strip unavailable"><span>基准对比</span><strong>暂不可用</strong><small>当前区间没有足够的本地基准历史。</small></div>';
+  return `<div class="portfolio-benchmark-strip"><span>基准对比 · 区间累计</span><div class="portfolio-benchmark-values">${benchmarks.join('')}</div><small>沿用本地已导入的 Nasdaq-100、S&amp;P 500 与 SOXX 历史；不在页面中发起外部行情请求。</small></div>`;
+}
+
+function portfolioCalendarMarkup(calendar) {
+  if (!calendar?.month) return '<div class="portfolio-chart-empty"><strong>暂无交易日历</strong><span>同步后可按月份查看每日收益。</span></div>';
+  const [year, month] = calendar.month.split('-').map(Number);
+  const totalDays = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  const leading = (new Date(Date.UTC(year, month - 1, 1)).getUTCDay() + 6) % 7;
+  const entries = new Map((calendar.entries || []).map(entry => [entry.date, entry]));
+  const cells = [];
+  for (let index = 0; index < leading; index += 1) cells.push('<div class="portfolio-calendar-cell empty" aria-hidden="true"></div>');
+  for (let day = 1; day <= totalDays; day += 1) {
+    const date = `${calendar.month}-${String(day).padStart(2, '0')}`; const entry = entries.get(date); const pnl = entry?.pnlAmount;
+    const tone = hasFiniteValue(pnl) ? Number(pnl) > 0 ? 'positive' : Number(pnl) < 0 ? 'negative' : 'flat' : 'unknown';
+    cells.push(`<div class="portfolio-calendar-cell ${tone}" title="${escapeHtml(date)} · ${escapeHtml(hasFiniteValue(pnl) ? portfolioAmount(pnl) : '暂不可用')}"><span>${day}</span><strong>${hasFiniteValue(pnl) ? escapeHtml(portfolioAmount(pnl)) : '—'}</strong><small>${hasFiniteValue(entry?.dailyReturn) ? escapeHtml(portfolioPercent(entry.dailyReturn)) : '—'}</small></div>`);
+  }
+  return `<div class="portfolio-calendar-weekdays">${['一', '二', '三', '四', '五', '六', '日'].map(day => `<span>${day}</span>`).join('')}</div><div class="portfolio-calendar-grid">${cells.join('')}</div>`;
+}
+
+function portfolioMonthlyMarkup(monthly = []) {
+  const rows = monthly.slice(-24).reverse();
+  if (!rows.length) return '<div class="portfolio-empty-inline">暂无月度统计。</div>';
+  return `<div class="portfolio-monthly-list">${rows.map(row => `<div class="portfolio-month-row"><span>${escapeHtml(row.month)}</span><strong class="${Number(row.pnlAmount || 0) >= 0 ? 'positive-text' : 'negative-text'}">${escapeHtml(portfolioAmount(row.pnlAmount))}</strong><span>${escapeHtml(portfolioPercent(row.cumulativeReturn))}</span><small>${row.pointCount} 个交易日</small></div>`).join('')}</div>`;
+}
+
+function portfolioContributionsMarkup(data) {
+  const rows = data?.contributions || [];
+  if (!rows.length) return '<div class="portfolio-empty-inline">区间内暂无可归属的已实现贡献、股息或利息。</div>';
+  return `<div class="portfolio-contribution-list">${rows.slice(0, 8).map(row => `<article><div><strong>${escapeHtml(row.symbol)}</strong><small>${escapeHtml(row.securityType || '账户级')}</small></div><strong class="${Number(row.totalContribution || 0) >= 0 ? 'positive-text' : 'negative-text'}">${escapeHtml(portfolioAmount(row.totalContribution))}</strong><dl><div><dt>已实现</dt><dd>${escapeHtml(portfolioAmount(row.realizedPnl))}</dd></div><div><dt>股息</dt><dd>${escapeHtml(portfolioAmount(row.dividend))}</dd></div><div><dt>利息</dt><dd>${escapeHtml(portfolioAmount(row.interest))}</dd></div><div><dt>费用</dt><dd>${escapeHtml(portfolioAmount(row.fees))}</dd></div></dl></article>`).join('')}</div><p class="portfolio-note">${escapeHtml(data.limitations?.[0] || '区间未实现贡献暂不提供。')}</p>`;
+}
+
+function portfolioCashFlowMarkup(data) {
+  const bridge = data?.bridge || {};
+  const items = [['期初 NAV', bridge.beginNav], ['入金', bridge.deposits], ['出金', bridge.withdrawals ? -Math.abs(bridge.withdrawals) : 0], ['投资 P&L', bridge.investmentPnl], ['期末 NAV', bridge.endNav]];
+  return `<div class="portfolio-bridge">${items.map(([label, value], index) => `<div class="portfolio-bridge-item ${index === items.length - 1 ? 'final' : ''}"><span>${label}</span><strong>${escapeHtml(portfolioAmount(value))}</strong></div>`).join('<i aria-hidden="true">＋</i>')}</div><p class="portfolio-note">${escapeHtml(data?.note || '')}</p>`;
+}
+
+function portfolioLoginTemplate() {
+  const p = state.portfolio;
+  return `<section class="page portfolio-page"><div class="portfolio-hero hero"><div><p class="eyebrow">PRIVATE PORTFOLIO · READ ONLY</p><h1>投资组合分析</h1><p>本页只读取本机已同步的 IBKR Flex 活动数据，不包含下单、调仓或自动交易能力。</p><p class="breadcrumb">首页 / 投资组合分析</p></div><div class="portfolio-auth-panel"><span class="portfolio-lock">◉</span><strong>本机数据保护</strong><small>登录只在本地验证密码，密码不会进入 URL、日志或公开仓库。</small><form data-portfolio-login><label for="portfolioPassword">本机密码</label><input id="portfolioPassword" name="password" type="password" autocomplete="current-password" minlength="12" required placeholder="请输入已初始化的本机密码"><button class="button" type="submit">解锁分析页</button><p class="portfolio-login-error" data-portfolio-login-error hidden></p></form><p class="portfolio-note">首次使用请在项目目录执行 <code>npm.cmd run portfolio:auth:init</code>。没有本机配置时，页面会明确显示“IBKR 尚未连接”。</p></div></div></section>`;
+}
+
+function portfolioTemplate() {
+  const p = state.portfolio;
+  if (!p.authenticated || (!p.status && !p.loading)) return portfolioLoginTemplate();
+  if (p.loading && !p.summary) return `<section class="page portfolio-page"><div class="notice"><strong>正在读取本机投资组合</strong><span>只读取本地 SQLite，不会因为打开页面而访问 IBKR。</span></div></section>`;
+  if (p.error && !p.summary) return `<section class="page portfolio-page"><div class="notice"><strong>投资组合数据暂时不可用</strong><span>${escapeHtml(p.error)}</span><button class="button button-secondary" data-portfolio-retry>重试</button></div></section>`;
+  const status = p.status || {}; const summary = p.summary?.summary || {}; const performance = p.performance || {}; const coverage = p.summary?.historyCoverage || {};
+  const account = status.accounts?.[0] || {}; const currency = summary.baseCurrency || account.baseCurrency || 'USD';
+  const rangeButtons = ['1D', 'MTD', '3M', '6M', 'YTD', '1Y', 'ALL', 'CUSTOM'];
+  const modeButtons = [['return', '收益率'], ['pnl', 'P&L'], ['nav', 'NAV']];
+  const ops = p.trades?.statistics || {};
+  return `<section class="page portfolio-page"><div class="portfolio-hero hero"><div><p class="eyebrow">PRIVATE PORTFOLIO · ${escapeHtml(status.dataMode || 'LOCAL')}</p><h1>投资组合分析</h1><p>把账户净值、外部现金流、投资 P&L、基准和交易活动放在同一条可审计时间线上。</p><p class="breadcrumb">首页 / 投资组合分析</p></div><div class="portfolio-hero-side"><div class="portfolio-status-line"><span class="status-dot ${status.status === 'ready' ? 'ready' : 'warning'}"></span><strong>${escapeHtml(portfolioStatusLabel(status.status))}</strong></div><span>${escapeHtml(account.label || 'IBKR 主账户')} · ${escapeHtml(currency)}</span><small>历史覆盖：${escapeHtml(coverage.startDate || status.historyStart || '—')} 至 ${escapeHtml(coverage.endDate || status.historyEnd || '—')}</small><div class="portfolio-hero-actions"><button class="icon-button" type="button" data-portfolio-amount-toggle aria-label="${p.amountsVisible ? '隐藏金额' : '显示金额'}" title="${p.amountsVisible ? '隐藏金额' : '显示金额'}">${p.amountsVisible ? '◉' : '◌'}</button><button class="button button-secondary" type="button" data-portfolio-logout>退出本机页面</button></div></div></div>${status.status !== 'ready' ? `<div class="portfolio-connection-note"><strong>IBKR 尚未连接</strong><span>当前仅显示已存在的本地数据；配置 Flex Query 后可由独立计划任务同步，打开页面不会触发外部请求。</span></div>` : ''}<section class="portfolio-section"><div class="portfolio-toolbar"><div><p class="eyebrow">PERFORMANCE RANGE</p><h2>区间概览</h2></div><div class="portfolio-range-tabs" role="tablist" aria-label="投资组合时间范围">${rangeButtons.map(range => `<button type="button" class="portfolio-range-button ${p.range === range ? 'active' : ''}" data-portfolio-range="${range}" role="tab" aria-selected="${p.range === range}">${range}</button>`).join('')}</div></div>${p.range === 'CUSTOM' ? `<div class="portfolio-custom-range"><label>开始日期<input type="date" data-portfolio-custom="start" value="${escapeHtml(p.customStart)}"></label><label>结束日期<input type="date" data-portfolio-custom="end" value="${escapeHtml(p.customEnd)}"></label><button class="button button-secondary" type="button" data-portfolio-custom-apply>应用区间</button></div>` : ''}<div class="portfolio-metric-grid"><article><span>当前 NAV</span><strong>${escapeHtml(portfolioAmount(summary.currentNav, currency))}</strong><small>${escapeHtml(portfolioDate(status.latestDataDate))}</small></article><article><span>区间收益率</span><strong class="${Number(summary.cumulativeReturn || 0) >= 0 ? 'positive-text' : 'negative-text'}">${escapeHtml(portfolioPercent(summary.cumulativeReturn))}</strong><small>${escapeHtml(summary.qualityStatus === 'reconciled' ? '已完成区间计算' : '数据质量需留意')}</small></article><article><span>区间投资 P&L</span><strong>${escapeHtml(portfolioAmount(summary.pnlAmount, currency))}</strong><small>外部现金流：${escapeHtml(portfolioAmount(summary.externalNetFlow, currency))}</small></article><article><span>现金</span><strong>${escapeHtml(portfolioAmount(summary.currentCash, currency))}</strong><small>毛持仓：${escapeHtml(portfolioAmount(summary.currentGrossPositionValue, currency))}</small></article></div></section><section class="portfolio-section portfolio-chart-card"><div class="portfolio-toolbar"><div><p class="eyebrow">CHART · ${escapeHtml(performance.range || p.range)}</p><h2>净值与收益路径</h2></div><div class="portfolio-mode-tabs" role="tablist" aria-label="曲线显示模式">${modeButtons.map(([mode, label]) => `<button type="button" class="portfolio-mode-button ${p.chartMode === mode ? 'active' : ''}" data-portfolio-mode="${mode}" role="tab" aria-selected="${p.chartMode === mode}">${label}</button>`).join('')}</div></div>${portfolioChartMarkup(performance)}${portfolioBenchmarkMarkup(performance)}<p class="portfolio-note">曲线支持鼠标、触摸和左右方向键查看单日数据；收益率采用本地日度 Modified Dietz 计算，若未来报告提供 IBKR 官方收益率则优先展示并标注口径。</p></section><div class="portfolio-two-column"><section class="portfolio-section"><div class="portfolio-toolbar"><div><p class="eyebrow">CALENDAR</p><h2>每日收益日历</h2></div><div class="portfolio-month-nav"><button type="button" class="icon-button" data-portfolio-month="prev" aria-label="上一个月">‹</button><strong>${escapeHtml(p.calendar?.month || '—')}</strong><button type="button" class="icon-button" data-portfolio-month="next" aria-label="下一个月">›</button></div></div>${portfolioCalendarMarkup(p.calendar)}</section><section class="portfolio-section"><div class="portfolio-toolbar"><div><p class="eyebrow">MONTHLY VIEW</p><h2>近 24 个月</h2></div></div>${portfolioMonthlyMarkup(performance.monthly)}</section></div><div class="portfolio-two-column"><section class="portfolio-section"><div class="portfolio-toolbar"><div><p class="eyebrow">CONTRIBUTIONS</p><h2>标的贡献</h2></div></div>${portfolioContributionsMarkup(p.contributions)}</section><section class="portfolio-section"><div class="portfolio-toolbar"><div><p class="eyebrow">CASH FLOW BRIDGE</p><h2>现金流桥</h2></div></div>${portfolioCashFlowMarkup(p.cashFlows)}</section></div><div class="portfolio-two-column"><section class="portfolio-section"><div class="portfolio-toolbar"><div><p class="eyebrow">POSITIONS</p><h2>最新持仓</h2></div><small>${escapeHtml(p.positions?.date || '—')}</small></div><div class="portfolio-mini-table">${(p.positions?.positions || []).map(row => `<div><strong>${escapeHtml(row.symbol || '未标记')}</strong><span>${escapeHtml(portfolioAmount(row.marketValue, currency))}</span><small>${escapeHtml(row.quantity ?? '暂不可用')} · 未实现 ${escapeHtml(portfolioAmount(row.unrealizedPnl, currency))}</small></div>`).join('') || '<div class="portfolio-empty-inline">暂无持仓快照。</div>'}</div></section><section class="portfolio-section"><div class="portfolio-toolbar"><div><p class="eyebrow">OPERATIONS</p><h2>操作统计</h2></div></div><div class="portfolio-ops-grid"><article><span>交易笔数</span><strong>${ops.tradeCount ?? '暂不可用'}</strong></article><article><span>胜率</span><strong>${escapeHtml(hasFiniteValue(ops.winRate) ? portfolioPercent(ops.winRate) : '暂不可用')}</strong></article><article><span>平均持仓天数</span><strong>暂不可用</strong></article><article><span>换手率</span><strong>暂不可用</strong></article><article><span>平均成交规模</span><strong>${escapeHtml(portfolioAmount(ops.averagePosition, currency))}</strong></article><article><span>已实现交易</span><strong>${ops.profitableTrades ?? 0} 胜 / ${ops.losingTrades ?? 0} 负</strong></article></div><p class="portfolio-note">未提供可靠的开平仓配对时，平均持仓天数与换手率保持“暂不可用”，不以 0 代替。</p></section></div><section class="portfolio-section"><div class="portfolio-toolbar"><div><p class="eyebrow">AUDIT & COVERAGE</p><h2>数据覆盖与同步</h2></div><button class="button button-secondary" type="button" data-portfolio-retry>${p.loading ? '读取中…' : '刷新本地数据'}</button></div><div class="portfolio-audit-grid"><article><span>最近成功同步</span><strong>${escapeHtml(formatDateTime(status.lastSuccessfulAt))}</strong></article><article><span>计划时间</span><strong>${escapeHtml(status.syncTime || '10:30')} ${escapeHtml(status.timezone || 'Asia/Shanghai')}</strong></article><article><span>修订窗口</span><strong>${escapeHtml(String(status.revisionWindowDays || 7))} 天</strong></article><article><span>数据库</span><strong>${status.database?.quickCheck ? 'quick_check OK' : '暂不可用'}</strong></article></div><p class="portfolio-note">本页不触发 IBKR 请求；后台同步失败时保留既有历史，错误分类显示在设置页与同步审计中。</p></section></section>`;
+}
+
 function indicatorInfoMeta(indicator, market) {
   return {
     metricId: indicator.id,
@@ -1488,6 +1702,88 @@ function destroyIndicatorDialog() {
 function bindCommonEvents() {
   bindSettingsRunToggle();
   document.querySelector('[data-settings-refresh]')?.addEventListener('click', () => void loadSettingsStatus());
+  document.querySelector('[data-portfolio-login]')?.addEventListener('submit', async event => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const errorNode = form.querySelector('[data-portfolio-login-error]');
+    const submit = form.querySelector('button[type="submit"]');
+    const password = form.elements.password?.value || '';
+    if (submit) { submit.disabled = true; submit.textContent = '验证中…'; }
+    if (errorNode) errorNode.hidden = true;
+    try {
+      await portfolioLogin(password);
+      form.reset();
+    } catch (error) {
+      if (errorNode) { errorNode.textContent = error.message || '登录失败。'; errorNode.hidden = false; }
+    } finally {
+      if (submit) { submit.disabled = false; submit.textContent = '解锁分析页'; }
+    }
+  });
+  document.querySelector('[data-portfolio-logout]')?.addEventListener('click', () => void portfolioLogout());
+  document.querySelector('[data-portfolio-amount-toggle]')?.addEventListener('click', () => {
+    state.portfolio.amountsVisible = !state.portfolio.amountsVisible;
+    try { window.localStorage.setItem('portfolioAmountsVisible', String(state.portfolio.amountsVisible)); } catch { /* local preference is optional */ }
+    render({ preserveScroll: true });
+  });
+  document.querySelectorAll('[data-portfolio-range]').forEach(button => button.addEventListener('click', () => {
+    state.portfolio.range = button.dataset.portfolioRange;
+    if (state.portfolio.range === 'CUSTOM') { render({ preserveScroll: true }); return; }
+    void loadPortfolioData();
+  }));
+  document.querySelectorAll('[data-portfolio-mode]').forEach(button => button.addEventListener('click', () => {
+    state.portfolio.chartMode = button.dataset.portfolioMode;
+    render({ preserveScroll: true });
+  }));
+  document.querySelectorAll('[data-portfolio-custom]').forEach(input => input.addEventListener('change', () => {
+    state.portfolio[input.dataset.portfolioCustom === 'start' ? 'customStart' : 'customEnd'] = input.value;
+  }));
+  document.querySelector('[data-portfolio-custom-apply]')?.addEventListener('click', () => {
+    if (!state.portfolio.customStart || !state.portfolio.customEnd || state.portfolio.customStart > state.portfolio.customEnd) {
+      state.portfolio.error = '自定义区间需要有效的开始日期和结束日期。';
+      render({ preserveScroll: true });
+      return;
+    }
+    void loadPortfolioData();
+  });
+  document.querySelector('[data-portfolio-retry]')?.addEventListener('click', () => void loadPortfolioData({ forceStatus: true }));
+  document.querySelectorAll('[data-portfolio-month]').forEach(button => button.addEventListener('click', () => {
+    const current = state.portfolio.selectedMonth || state.portfolio.calendar?.month;
+    if (!current) return;
+    const [year, month] = current.split('-').map(Number);
+    const delta = button.dataset.portfolioMonth === 'prev' ? -1 : 1;
+    const next = new Date(Date.UTC(year, month - 1 + delta, 1));
+    state.portfolio.selectedMonth = `${next.getUTCFullYear()}-${String(next.getUTCMonth() + 1).padStart(2, '0')}`;
+    void loadPortfolioData();
+  }));
+  document.querySelectorAll('[data-portfolio-chart-hit]').forEach(hit => {
+    const chart = hit.closest('.portfolio-chart'); const shell = chart?.closest('.portfolio-chart-shell'); const tooltip = shell?.querySelector('[data-portfolio-tooltip]');
+    if (!chart || !tooltip) return;
+    let points = [];
+    try { points = JSON.parse(chart.dataset.portfolioChartPoints || '[]'); } catch { points = []; }
+    if (!points.length) return;
+    const crosshair = chart.querySelector('[data-portfolio-crosshair]'); const dot = chart.querySelector('[data-portfolio-dot]');
+    const min = Number(chart.dataset.portfolioChartMin); const max = Number(chart.dataset.portfolioChartMax); const currency = state.portfolio.summary?.summary?.baseCurrency || 'USD';
+    const showPoint = index => {
+      const point = points[Math.max(0, Math.min(points.length - 1, index))]; const x = 38 + (800 - 76) * (points.length === 1 ? .5 : index / (points.length - 1)); const y = 236 - (260 - 48) * ((Number(point.value) - min) / Math.max(max - min, 1e-9));
+      crosshair?.removeAttribute('hidden'); if (crosshair) { crosshair.setAttribute('x1', String(x)); crosshair.setAttribute('x2', String(x)); }
+      if (dot) { dot.setAttribute('cx', String(x)); dot.setAttribute('cy', String(y)); }
+      const value = state.portfolio.chartMode === 'return' ? portfolioPercent(point.value) : portfolioAmount(point.value, currency);
+      tooltip.innerHTML = `<strong>${escapeHtml(point.date)}</strong><span>${escapeHtml(value)}</span>`;
+      tooltip.style.left = `${Math.max(5, Math.min(95, (index / Math.max(points.length - 1, 1)) * 100))}%`;
+      tooltip.hidden = false;
+    };
+    const pointFromPointer = event => {
+      const rect = hit.getBoundingClientRect(); const relative = Math.max(0, Math.min(rect.width, event.clientX - rect.left));
+      showPoint(Math.round(relative / Math.max(rect.width, 1) * (points.length - 1)));
+    };
+    hit.addEventListener('pointermove', pointFromPointer); hit.addEventListener('pointerdown', pointFromPointer);
+    hit.addEventListener('pointerleave', event => { if (event.pointerType !== 'touch') { tooltip.hidden = true; crosshair?.setAttribute('hidden', ''); } });
+    hit.addEventListener('keydown', event => {
+      if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+      event.preventDefault(); const current = Number(hit.dataset.portfolioPointIndex || points.length - 1); const next = event.key === 'Home' ? 0 : event.key === 'End' ? points.length - 1 : Math.max(0, Math.min(points.length - 1, current + (event.key === 'ArrowRight' ? 1 : -1))); hit.dataset.portfolioPointIndex = String(next); showPoint(next);
+    });
+    showPoint(points.length - 1);
+  });
   document.querySelectorAll('[data-naaim-range]').forEach(button => button.addEventListener('click', async () => { state.naaimRange = button.dataset.naaimRange; await loadNaaim(state.naaimRange); render({ preserveScroll: true }); }));
   document.querySelector('[data-drawdown-control="primary"]')?.addEventListener('change', event => {
     clearDrawdownChartInteraction({ clearDate: true });
@@ -1711,6 +2007,7 @@ function render({ preserveScroll = false } = {}) {
   destroyIndicatorDialog();
   clearDrawdownChartInteraction({ clearDate: route !== '/drawdown-analysis' });
   if (route !== '/drawdown-analysis') activeDrawdownChartView = null;
+  if (route !== '/portfolio-analysis') portfolioController?.abort();
   state.route = route;
   setActiveNav(route);
 
@@ -1719,6 +2016,7 @@ function render({ preserveScroll = false } = {}) {
   else if (route === '/drawdown-analysis') app.innerHTML = drawdownAnalysisTemplate();
   else if (route === '/options' || route.startsWith('/options/')) app.innerHTML = optionsTemplate(route.split('/')[2]);
   else if (route === '/settings') app.innerHTML = settingsTemplate();
+  else if (route === '/portfolio-analysis') app.innerHTML = portfolioTemplate();
   else if (route === '/indicator/naaim-exposure') app.innerHTML = naaimDetailTemplate();
   else if (route.startsWith('/stage/')) app.innerHTML = stageTemplate(state.stages.find(stage => stage.id === route.split('/')[2]));
   else app.innerHTML = notFoundTemplate();
@@ -1728,13 +2026,16 @@ function render({ preserveScroll = false } = {}) {
     '/compare': '阶段对比 · Market Cycle Strategy',
     '/drawdown-analysis': '回撤分析 · Market Cycle Strategy',
     '/options': '期权工具 · Market Cycle Strategy',
-    '/settings': '设置 · Market Cycle Strategy', '/indicator/naaim-exposure': 'NAAIM主动投资经理美股敞口 · Market Cycle Strategy'
+    '/settings': '设置 · Market Cycle Strategy',
+    '/portfolio-analysis': '投资组合分析 · Market Cycle Strategy',
+    '/indicator/naaim-exposure': 'NAAIM主动投资经理美股敞口 · Market Cycle Strategy'
   };
   document.title = titleByRoute[route] || (route.startsWith('/stage/') ? '阶段详情 · Market Cycle Strategy' : route.startsWith('/options/') ? '期权工具 · Market Cycle Strategy' : '页面不存在 · Market Cycle Strategy');
 
   bindCommonEvents();
   if (route === '/drawdown-analysis') void ensureDrawdownData();
   if (route === '/settings' && !settingsPollTimer) { void loadSettingsStatus(); settingsPollTimer = setInterval(() => void loadSettingsStatus(), 60_000); }
+  if (route === '/portfolio-analysis' && !portfolioRequestActive && (!state.portfolio.status || !state.portfolio.summary)) void loadPortfolioData();
   if (route === '/indicator/naaim-exposure') { const wanted = state.naaimRange || 'ALL'; if (state.naaim?.requestedRange !== wanted) void loadNaaim(wanted).then(() => { if (parseRoute() === route) render({ preserveScroll: true }); }); }
   if (route !== '/settings') clearSettingsPolling();
   if (!preserveScroll) {

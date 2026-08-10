@@ -13,6 +13,9 @@ const { RequestLimiter } = require('./server/market-data/request-limiter');
 const { MarketDataScheduler } = require('./server/market-data/scheduler');
 const { MarketDataService } = require('./server/market-data/service');
 const { WorldPERatioProvider } = require('./server/data-sources/web-pages/worldperatio');
+const { handlePortfolioApi } = require('./server/portfolio/http-api');
+const { createPortfolioService } = require('./server/portfolio');
+const { PortfolioSyncScheduler } = require('./server/portfolio/scheduler');
 
 const HOST = process.env.HOST || '0.0.0.0';
 const PORT = Number(process.env.PORT || 48101);
@@ -72,16 +75,28 @@ function sendFile(res, filePath) {
   });
 }
 
-function createHttpServer(marketDataService, scheduler = null) {
+function createHttpServer(marketDataService, scheduler = null, portfolioService = null, portfolioScheduler = null) {
   return http.createServer(async (req, res) => {
     try {
     const requestUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
     if (requestUrl.pathname === '/api/health') {
-      sendJson(res, 200, { ok: true, version: packageJson.version, marketData: 'ready' });
+      const portfolioStatus = portfolioService?.getStatus?.(portfolioScheduler) || null;
+      sendJson(res, 200, {
+        ok: true,
+        version: packageJson.version,
+        marketData: 'ready',
+        portfolioModule: {
+          enabled: Boolean(portfolioService),
+          status: portfolioStatus?.status || 'unavailable',
+          readOnly: true,
+          automaticTrading: false
+        }
+      });
       return;
     }
 
     if (await handleMarketDataApi(req, res, requestUrl, marketDataService, scheduler)) return;
+    if (await handlePortfolioApi(req, res, requestUrl, portfolioService, portfolioScheduler)) return;
 
     const filePath = safeResolve(requestUrl.pathname);
     if (!filePath) {
@@ -120,10 +135,13 @@ async function createMarketDataService(rootDir = __dirname, options = {}) {
 async function start() {
   const marketDataService = await createMarketDataService();
   const scheduler = new MarketDataScheduler(marketDataService, { timezone: marketDataService.config.timezone });
-  const server = createHttpServer(marketDataService, scheduler);
+  const portfolioService = await createPortfolioService(__dirname, { marketDataService });
+  const portfolioScheduler = new PortfolioSyncScheduler(portfolioService, { timezone: portfolioService.config.timezone, time: portfolioService.config.syncTime });
+  const server = createHttpServer(marketDataService, scheduler, portfolioService, portfolioScheduler);
   scheduler.start();
+  portfolioScheduler.start();
 
-  server.on('close', () => scheduler.stop());
+  server.on('close', () => { scheduler.stop(); portfolioScheduler.stop(); void portfolioService.close(); });
   server.listen(PORT, HOST, () => {
     console.log(`Market Cycle Strategy v${packageJson.version} running on http://${HOST}:${PORT}`);
     console.log(`LAN: http://<lan-ip>:${PORT}`);
@@ -139,4 +157,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { createHttpServer, createMarketDataService, safeResolve, sendFile, start };
+module.exports = { createHttpServer, createMarketDataService, createPortfolioService, safeResolve, sendFile, start };

@@ -334,3 +334,45 @@ iShares产品页提供无需登录的公开数据下载，历史工作表字段�
 
 ### Status
 有效
+
+## DEC-024：IBKR 只读 Flex v3 与本机 SQLite
+
+### Decision
+投资组合分析只使用 IBKR 官方 Flex Web Service v3 的 `SendRequest` / `GetStatement` 两步报告流程；报告经 DOM-free 字段适配后写入 `runtime-data/portfolio-analysis/portfolio.sqlite`。不引入 TWS、IB Gateway、Client Portal Gateway、交易 API、网页抓取或浏览器 Cookie。
+
+### Reason
+Flex Activity Query 能提供账户活动和历史报表，适合低频、只读、本机分析；SQLite、WAL、版本化 migration、quick_check 和原子备份足以覆盖单用户每日数据规模，避免数据库服务器和额外运行依赖。
+
+### Impact
+账户原始标识和 Flex 原始响应只留在 Git 忽略的本机运行目录；API 只返回掩码账户和分析结果。缺失可选字段保持 `null`，不能阻塞其他字段或伪造为 0。真实 Flex Query 和本机凭据仍需用户人工配置。
+
+### Status
+有效
+
+## DEC-025：投资组合同步与市场调度独立
+
+### Decision
+投资组合默认在 `10:30 Asia/Shanghai` 运行独立计划任务，启动时检查漏采，使用持久化状态、文件锁、有限轮询和七天 revision window；页面永远不触发 IBKR 请求。
+
+### Reason
+市场数据 `07:30` 任务和 IBKR Activity Statement 的生成节奏不同。独立调度能控制外部请求、避免报告生成期间高频轮询，并允许同步失败时保留历史。
+
+### Impact
+同一自然日最多一次成功同步；失败只记录中性错误分类和最近运行，不清空数据库，不把 null 变成 0，不影响市场数据页面。
+
+### Status
+有效
+
+## DEC-026：公开仓库只允许合成组合夹具
+
+### Decision
+公开源码、自动测试、视觉快照和 manifest 只使用 `synthetic-review-fixture` 与 `SIM000001`；真实账户号、凭据、SQLite、WAL/SHM、原始 Flex、日志和路径由隐私扫描器阻止进入 Git 跟踪或暂存集合。
+
+### Reason
+组合数据包含个人金融信息和可重放的认证材料。公开仓库仍需能复现页面和测试，因此用内存 SQLite 的确定性合成夹具隔离展示与本机生产缓存。
+
+### Impact
+`npm.cmd run check` 包含公开仓库隐私扫描；视觉 manifest 必须声明 `portfolioDataMode: synthetic-review-fixture`、`containsRealAccountData: false` 和 `repositoryVisibility: public`。本地真实连接只能在 ignored runtime-data 中进行。
+
+### Status
+有效

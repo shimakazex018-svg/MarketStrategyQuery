@@ -8,6 +8,16 @@ node_modules/
 coverage/
 tmp/
 runtime-data/
+runtime-data/portfolio-analysis/
+runtime-data/portfolio-analysis/raw-flex/
+runtime-data/portfolio-analysis/secrets/
+runtime-data/portfolio-analysis/state/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+*.secret
+*.session
+*.session.json
 logs/
 cache/
 temporary/

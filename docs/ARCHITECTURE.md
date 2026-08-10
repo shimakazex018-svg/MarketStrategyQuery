@@ -10,6 +10,9 @@
        -> market data service
        -> schema / cache / limiter / scheduler / logger
        -> 已获批准的数据源适配器（当前默认全部禁用）
+  -> 本站 /api/portfolio/*（登录后只读）
+       -> portfolio auth / Flex client / XML field adapter
+       -> local SQLite + WAL / performance calculator / sync state
 
 Node.js 原生 HTTP 服务
   -> /api/health
@@ -19,7 +22,7 @@ Node.js 原生 HTTP 服务
 
 Windows 登录后由`MarketCycleStrategy-Autostart`启动隐藏PowerShell宿主；宿主只派生当前项目的Node进程、等待其退出并将退出码交给任务计划程序。PID文件、监听端口、Node路径和`server.js`命令行必须交叉匹配，未知进程永不被停止。
 
-项目没有前端框架、打包器、第三方运行依赖、数据库、登录系统或后台任务队列。当前固定数据规模较小，不需要分页、虚拟列表或集中式缓存。
+项目没有前端框架、打包器、数据库服务器或后台任务队列。投资组合模块使用 Node.js 22 内置 `node:sqlite`，并通过本机 scrypt 密码和内存会话保护只读 API；当前数据规模由每日快照、最多8000个图表点和交易表1000行 API 上限控制。
 
 ## 主要目录
 
@@ -36,18 +39,21 @@ public/                         # 浏览器可访问的源文件
 server.js                       # HTTP 服务组装、健康检查、静态文件
 config/
   market-data-providers.json    # 非敏感Provider合规登记与启用状态
+  ibkr-flex.example.json        # 只有占位符的Flex配置模板
 server/
   data-sources/                 # 外部来源下载和解析适配器
     web-pages/                  # 默认禁用的公开网页审计/低频采集边界
   market-data/                  # 市场数据服务模块
+  portfolio/                    # Flex v3只读客户端、解析器、SQLite、认证、同步、绩效和API
   imports/                      # 有界CSV、权重、价格和人工输入校验
   derived-indicators/           # SEC/PE、RV、分位、风险偏好和COT纯计算内核
 templates/imports/              # 仅含虚构数据的导入模板
-scripts/                        # 数据检查、启动和防火墙辅助脚本
+scripts/                        # 数据检查、启动、隐私扫描、组合密码初始化和同步脚本
 tests/                          # Node 自动测试与 UI 评审夹具服务
 tools/market-data-lab/
   core-data-acquisition/       # 九类核心数据的一次性隔离采集与本地报告；不进入正式服务
-runtime-data/market-data/       # 运行缓存、请求状态和日志；不进入 Git
+runtime-data/market-data/       # 市场运行缓存、请求状态和日志；不进入 Git
+runtime-data/portfolio-analysis/ # SQLite、WAL/SHM、raw-flex、备份、审计、状态和本机密钥；不进入 Git
 previews/                       # 经确认提交的产品评审截图
 docs/                           # 长期上下文与专项设计文档
 ```
@@ -55,7 +61,7 @@ docs/                           # 长期上下文与专项设计文档
 ## 前端模块
 
 - `public/app.js` 启动时并行加载阶段、期权、指标和周期图 JSON，随后按当前 Hash 渲染页面；`public/drawdown-analysis.js`提供可由浏览器和Node测试共同调用的纯回撤计算函数；`public/drawdown-chart-interactions.js`提供日期二分吸附、SVG坐标换算和日期到X坐标映射的纯函数。
-- 路由固定为 `#/`、`#/stage/:id`、`#/compare`、`#/drawdown-analysis`、`#/options`、`#/options/:id`、`#/indicators`；未知 Hash 显示前端 404。
+- 路由固定为 `#/`、`#/stage/:id`、`#/compare`、`#/drawdown-analysis`、`#/options`、`#/options/:id`、`#/portfolio-analysis` 和兼容的 `#/indicators` 重定向；未知 Hash 显示前端 404。
 - 阶段详情按概览、仓位、执行动作、资产逻辑、识别条件、期权和风险组织；动作和资产逻辑同一时间各显示一个面板。
 - 期权工具同一时间完整展示一个策略；最大收益、最大亏损、盈亏平衡和主要风险保持可见。
 - 周期图由 `cycle-shape.json` 驱动 SVG；它是静态示意，不是 QQQ 真实历史。
@@ -91,6 +97,11 @@ docs/                           # 长期上下文与专项设计文档
 - `http-api.js`：内部 API 路由、范围校验和可信网段手动刷新限制。
 - `acquisition-audit.js`：只保留采集元数据的有界审计文件；设置状态 API 只聚合现有 Provider、缓存、调度和审计状态，不触发采集。
 - `scripts/visual-review/`：开发期本地视觉审阅工具；只连接48101本机服务，输出受隐私扫描保护的`previews/current/` WebP快照，不进入正式服务路径。
+- `scripts/privacy/check-public-repo.js`：扫描 Git 已跟踪/已暂存文件，阻止 runtime-data、SQLite、原始 Flex、真实 IBKR 账户号和凭据进入公开仓库；已接入 `npm.cmd run check`。
+- `server/portfolio/config.js`：固定 `runtime-data/portfolio-analysis/` 目录、Flex endpoint、10:30 Asia/Shanghai 调度和有界请求参数；审查模式明确使用合成 SQLite。
+- `server/portfolio/flex-client.js` / `flex-parser.js`：只请求官方 Flex Web Service v3；两步 SendRequest/GetStatement、超时/大小/有限轮询、DOM-free XML 字段适配和错误分类。
+- `server/portfolio/sqlite.js` / `service.js`：版本化 schema、WAL、foreign keys、busy timeout、quick_check、原子备份、幂等导入、绩效计算和只读查询。
+- `server/portfolio/auth.js` / `http-api.js` / `scheduler.js`：scrypt 本机密码、HttpOnly SameSite Strict 会话、受保护 `/api/portfolio/*`、独立每日同步、启动补采和同步状态；没有交易路由。
 - `server/imports/`：最大2 MiB、10,000行的CSV解析，校验ticker、日期、权重、价格、来源和人工Forward PE，并生成SHA-256导入manifest。
 - `tools/market-data/import-soxx-history.js`：从`runtime-data/`内的官方SpreadsheetML或用户CSV离线、幂等、原子导入SOXX；必须显式声明`seriesType`和`adjustmentStatus`。
 - `server/derived-indicators/sec-facts.js`：可配置GAAP/IFRS字段优先级、修订去重、季度TTM和显式拆股口径调整。
@@ -114,10 +125,20 @@ docs/                           # 长期上下文与专项设计文档
 | `GET /api/market-data/providers/worldperatio/latest` | 读取最后标准化结果；不返回HTML、内容哈希或本地路径 |
 | `GET /api/market-data/providers/worldperatio/history` | 读取来源公开历史能力结论和本站去重快照序列 |
 | `GET /api/market-data/providers/worldperatio/statistics` | 读取当前参考PE与1/5/10/20年均值、标准差和估值标签 |
+| `POST /api/portfolio/auth/login` | 本机密码登录，成功后设置有界 HttpOnly 会话 |
+| `POST /api/portfolio/auth/logout` | 清除本机只读分析会话 |
+| `GET /api/portfolio/status` | 返回掩码账户、数据覆盖、数据库健康和同步状态；需要会话 |
+| `GET /api/portfolio/summary` | 返回 NAV、现金流、投资 P&L、区间收益和数据质量 |
+| `GET /api/portfolio/performance` | 返回有界日度系列、基准系列和最多24个月聚合 |
+| `GET /api/portfolio/calendar` | 返回指定月份的每日收益日历 |
+| `GET /api/portfolio/contributions` | 返回已实现/股息/利息/费用贡献；未实现区间贡献不可靠时明确限制 |
+| `GET /api/portfolio/cash-flows` | 返回现金流明细和期初 NAV 到期末 NAV 的桥接 |
+| `GET /api/portfolio/positions` / `trades` | 返回最新持仓和区间交易只读视图；不存在下单接口 |
+| `GET /api/portfolio/sync/status` | 返回最近同步运行和持久化错误分类 |
 
 页面访问和 GET 指标接口不会触发第三方抓取。外部访问只可能来自获批来源的启动过期检查、调度或受限手动刷新。
 
-`range=ALL`只扩展现有history读取路径。首页和指标详情继续使用固定七范围与最多240点响应；回撤分析读取`nasdaq100_index`、`sp500_index`和可选`soxx_price`，随后在浏览器内按日期、阈值和排序设置复用缓存，不建立平行数据服务。
+`range=ALL`只扩展现有history读取路径。首页和指标详情继续使用固定七范围与最多240点响应；回撤分析读取`nasdaq100_index`、`sp500_index`和可选`soxx_price`，随后在浏览器内按日期、阈值和排序设置复用缓存，不建立平行数据服务。投资组合 API 使用 `1D/MTD/3M/6M/YTD/1Y/ALL/CUSTOM`，服务端最多返回8000个点。
 
 WorldPEratio 不加入上述通用启动或定时刷新。经项目所有者有限风险接受后，只能通过独立维护入口执行；每次先检查30天条款复查状态和robots，每日一次正常目标请求，只有超时或5xx允许延迟重试一次，并在复查到期、403/429、登录、验证码、Cloudflare、robots禁止、目标/DOM/日期/数值冲突时停止。
 
@@ -137,6 +158,24 @@ WorldPEratio 不加入上述通用启动或定时刷新。经项目所有者有�
 ```
 
 统一页面模型允许`loading/fresh/stale/error/demo/unavailable/insufficient_coverage/manual/provisional/quality_warning`。`quality_warning`是与主状态并列的质量维度，允许与`provisional`同时存在。无数据使用`null`，不使用0或未标记模拟点。单指标失败不影响其他指标、健康检查或静态策略页面。
+
+## IBKR 投资组合只读数据流
+
+```text
+Client Portal 人工创建 Activity Flex Query
+  -> 本机 ignored secret / process environment
+  -> FlexClient: SendRequest(v=3)
+  -> bounded polling: GetStatement(v=3)
+  -> DOM-free XML field adapter
+  -> transaction + versioned SQLite schema
+  -> daily performance / Modified Dietz fallback / reconciliation metadata
+  -> protected internal API
+  -> #/portfolio-analysis
+```
+
+`PortfolioSyncScheduler` 不复用市场数据的 07:30 任务，默认在 `10:30 Asia/Shanghai` 工作日检查并做启动漏采；状态锁、持久化 state、同步运行表和 revision window 防止重复导入与高频请求。Flex 报告失败只写错误状态，不清空已有数据库。SQLite 开启 WAL、foreign keys、busy timeout 和 quick_check；成功更新前做原子备份。
+
+账户原始 ID 只留在本机数据库，API 只返回掩码标签。浏览器不接触 Flex token、Query ID、原始 XML、SQLite 路径或机器用户名。公开截图通过内存 SQLite 的 `synthetic-review-fixture` 模式生成，并在 manifest 中声明不含真实账户数据。
 
 ## 六指标正式数据流（v0.5）
 
@@ -210,9 +249,9 @@ QQQ PE派生结果同时保留原始与WMAD4稳健分母稳定性、价格/财�
 
 ## 不存在或不适用的模块
 
-- 数据库模块：不存在。
+- 数据库服务器、ORM和迁移框架：不存在；只读投资组合使用 Node 内置 `node:sqlite` 与版本化 SQL migration。
 - 缩略图生成、媒体上传、视频处理、HLS 和查重：不存在。
-- 登录、权限、多用户和会话：不存在。
-- IBKR正式连接、持仓读取、下单和交易队列：不存在；当前只有禁用的Provider登记和非敏感预检查文档。
+- 多用户、角色权限和后台编辑器：不存在；组合页只有单用户本机密码会话。
+- IBKR交易 API、下单、撤单、自动调仓和交易队列：不存在；Flex 仅用于只读报告获取。
 
-若未来引入上述模块，必须同时更新本文件、`PROJECT_CONTEXT.md`、`DECISIONS.md`、`TESTING.md` 和运行数据忽略/清理策略，不能沿用本节假设。
+若未来引入交易、媒体或多用户模块，必须同时更新本文件、`PROJECT_CONTEXT.md`、`DECISIONS.md`、`TESTING.md` 和运行数据忽略/清理策略，不能沿用本节假设。
