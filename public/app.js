@@ -29,6 +29,7 @@ const state = {
     chartCursorVisible: false
   },
   portfolio: {
+    authState: 'unknown',
     authenticated: false,
     loading: false,
     error: null,
@@ -93,6 +94,7 @@ let activeDrawdownChartView = null;
 let drawdownChartInteraction = null;
 let portfolioController = null;
 let portfolioRequestActive = false;
+let portfolioRequestGeneration = 0;
 const DRAWDOWN_METRICS = Object.freeze({
   nasdaq100_index: { label: 'Nasdaq-100指数', shortLabel: 'Nasdaq-100', source: 'FRED NASDAQ100' },
   sp500_index: { label: 'S&P 500指数', shortLabel: 'S&P 500', source: 'FRED SP500' },
@@ -1372,13 +1374,18 @@ async function portfolioFetch(pathname, signal) {
 
 async function loadPortfolioData({ forceStatus = false } = {}) {
   if (portfolioRequestActive || parseRoute() !== '/portfolio-analysis') return;
+  if (state.portfolio.authState === 'unauthenticated' && !forceStatus) return;
+  if (forceStatus && state.portfolio.authState === 'error') state.portfolio.authState = state.portfolio.authenticated ? 'authenticated' : 'checking';
+  const wasAuthenticated = state.portfolio.authenticated;
   portfolioRequestActive = true;
   portfolioController?.abort();
   const controller = new AbortController();
   portfolioController = controller;
+  const requestGeneration = ++portfolioRequestGeneration;
   state.portfolio.loading = true;
   state.portfolio.error = null;
-  if (state.route === '/portfolio-analysis') render({ preserveScroll: true });
+  if (!state.portfolio.authenticated) state.portfolio.authState = 'checking';
+  if (state.route === '/portfolio-analysis' && (wasAuthenticated || state.portfolio.status || state.portfolio.summary)) render({ preserveScroll: true });
   try {
     if (!state.portfolio.status || forceStatus) state.portfolio.status = await portfolioFetch('/api/portfolio/status', controller.signal);
     const query = portfolioRangeQuery();
@@ -1392,6 +1399,7 @@ async function loadPortfolioData({ forceStatus = false } = {}) {
       portfolioFetch('/api/portfolio/positions', controller.signal),
       portfolioFetch(`/api/portfolio/trades?${query}`, controller.signal)
     ]);
+    state.portfolio.authState = 'authenticated';
     state.portfolio.authenticated = true;
     state.portfolio.summary = summary;
     state.portfolio.performance = performance;
@@ -1404,28 +1412,34 @@ async function loadPortfolioData({ forceStatus = false } = {}) {
   } catch (error) {
     if (error.name === 'AbortError') return;
     if (error.portfolioAuthRequired) {
+      state.portfolio.authState = 'unauthenticated';
       state.portfolio.authenticated = false;
       state.portfolio.status = null;
       state.portfolio.summary = null;
       state.portfolio.performance = null;
       state.portfolio.error = null;
     } else {
+      state.portfolio.authState = 'error';
       state.portfolio.error = '暂时无法读取本机投资组合数据，请稍后重试。';
     }
   } finally {
     state.portfolio.loading = false;
-    portfolioRequestActive = false;
-    if (portfolioController === controller) portfolioController = null;
-    if (parseRoute() === '/portfolio-analysis') render({ preserveScroll: true });
+    if (portfolioController === controller) {
+      portfolioRequestActive = false;
+      portfolioController = null;
+    }
+    if (requestGeneration === portfolioRequestGeneration && parseRoute() === '/portfolio-analysis') render({ preserveScroll: true });
   }
 }
 
 async function portfolioLogin(password) {
+  state.portfolio.authState = 'authenticating';
   const response = await fetch('/api/portfolio/auth/login', {
     method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
     body: JSON.stringify({ password })
   });
   if (!response.ok) throw new Error(response.status === 401 ? '本机密码不正确，或尚未初始化密码。' : '登录服务暂时不可用。');
+  state.portfolio.authState = 'authenticated';
   state.portfolio.authenticated = true;
   state.portfolio.status = null;
   await loadPortfolioData({ forceStatus: true });
@@ -1433,8 +1447,11 @@ async function portfolioLogin(password) {
 
 async function portfolioLogout() {
   try { await fetch('/api/portfolio/auth/logout', { method: 'POST', credentials: 'same-origin', headers: { Accept: 'application/json' } }); } catch { /* local state still clears */ }
+  portfolioRequestGeneration += 1;
   portfolioController?.abort();
-  state.portfolio = { ...state.portfolio, authenticated: false, loading: false, status: null, summary: null, performance: null, calendar: null, contributions: null, cashFlows: null, positions: null, trades: null, error: null };
+  portfolioRequestActive = false;
+  portfolioController = null;
+  state.portfolio = { ...state.portfolio, authState: 'unauthenticated', authenticated: false, loading: false, status: null, summary: null, performance: null, calendar: null, contributions: null, cashFlows: null, positions: null, trades: null, error: null };
   render({ preserveScroll: true });
 }
 
@@ -1511,14 +1528,20 @@ function portfolioCashFlowMarkup(data) {
 
 function portfolioLoginTemplate() {
   const p = state.portfolio;
-  return `<section class="page portfolio-page"><div class="portfolio-hero hero"><div><p class="eyebrow">PRIVATE PORTFOLIO · READ ONLY</p><h1>投资组合分析</h1><p>本页只读取本机已同步的 IBKR Flex 活动数据，不包含下单、调仓或自动交易能力。</p><p class="breadcrumb">首页 / 投资组合分析</p></div><div class="portfolio-auth-panel"><span class="portfolio-lock">◉</span><strong>本机数据保护</strong><small>登录只在本地验证密码，密码不会进入 URL、日志或公开仓库。</small><form data-portfolio-login><label for="portfolioPassword">本机密码</label><input id="portfolioPassword" name="password" type="password" autocomplete="current-password" minlength="12" required placeholder="请输入已初始化的本机密码"><button class="button" type="submit">解锁分析页</button><p class="portfolio-login-error" data-portfolio-login-error hidden></p></form><p class="portfolio-note">首次使用请在项目目录执行 <code>npm.cmd run portfolio:auth:init</code>。没有本机配置时，页面会明确显示“IBKR 尚未连接”。</p></div></div></section>`;
+  const authenticating = p.authState === 'authenticating';
+  return `<section class="page portfolio-page"><div class="portfolio-hero hero"><div><p class="eyebrow">PRIVATE PORTFOLIO · READ ONLY</p><h1>投资组合分析</h1><p>本页只读取本机已同步的 IBKR Flex 活动数据，不包含下单、调仓或自动交易能力。</p><p class="breadcrumb">首页 / 投资组合分析</p></div><div class="portfolio-auth-panel"><span class="portfolio-lock">◉</span><strong>本机数据保护</strong><small>登录只在本地验证密码，密码不会进入 URL、日志或公开仓库。</small><form data-portfolio-login><label for="portfolioPassword">本机密码</label><input id="portfolioPassword" name="password" type="password" autocomplete="current-password" minlength="12" required placeholder="请输入已初始化的本机密码"><button class="button" type="submit"${authenticating ? ' disabled' : ''}>${authenticating ? '验证中…' : '解锁分析页'}</button><p class="portfolio-login-error" data-portfolio-login-error hidden></p></form><p class="portfolio-note">首次使用请在项目目录执行 <code>npm.cmd run portfolio:auth:init</code>。没有本机配置时，页面会明确显示“IBKR 尚未连接”。</p></div></div></section>`;
+}
+
+function portfolioAuthCheckingTemplate() {
+  return '<section class="portfolio-auth-checking" role="status" aria-live="polite"><div class="notice"><strong>正在检查本机连接状态</strong><span>只读取本地认证状态，不会因为打开页面而访问 IBKR。</span></div></section>';
 }
 
 function portfolioTemplate() {
   const p = state.portfolio;
-  if (!p.authenticated || (!p.status && !p.loading)) return portfolioLoginTemplate();
+  if (p.authState === 'unknown' || p.authState === 'checking') return portfolioAuthCheckingTemplate();
   if (p.loading && !p.summary) return `<section class="page portfolio-page"><div class="notice"><strong>正在读取本机投资组合</strong><span>只读取本地 SQLite，不会因为打开页面而访问 IBKR。</span></div></section>`;
   if (p.error && !p.summary) return `<section class="page portfolio-page"><div class="notice"><strong>投资组合数据暂时不可用</strong><span>${escapeHtml(p.error)}</span><button class="button button-secondary" data-portfolio-retry>重试</button></div></section>`;
+  if (p.authState === 'unauthenticated' || p.authState === 'authenticating' || !p.authenticated) return portfolioLoginTemplate();
   const status = p.status || {}; const summary = p.summary?.summary || {}; const performance = p.performance || {}; const coverage = p.summary?.historyCoverage || {};
   const account = status.accounts?.[0] || {}; const currency = summary.baseCurrency || account.baseCurrency || 'USD';
   const rangeButtons = ['1D', 'MTD', '3M', '6M', 'YTD', '1Y', 'ALL', 'CUSTOM'];
@@ -1714,6 +1737,8 @@ function bindCommonEvents() {
       await portfolioLogin(password);
       form.reset();
     } catch (error) {
+      state.portfolio.authState = 'unauthenticated';
+      state.portfolio.authenticated = false;
       if (errorNode) { errorNode.textContent = error.message || '登录失败。'; errorNode.hidden = false; }
     } finally {
       if (submit) { submit.disabled = false; submit.textContent = '解锁分析页'; }
@@ -2007,16 +2032,29 @@ function render({ preserveScroll = false } = {}) {
   destroyIndicatorDialog();
   clearDrawdownChartInteraction({ clearDate: route !== '/drawdown-analysis' });
   if (route !== '/drawdown-analysis') activeDrawdownChartView = null;
-  if (route !== '/portfolio-analysis') portfolioController?.abort();
+  const previousRoute = state.route;
+  if (route !== '/portfolio-analysis') {
+    portfolioRequestGeneration += 1;
+    portfolioController?.abort();
+    portfolioController = null;
+    portfolioRequestActive = false;
+  }
   state.route = route;
   setActiveNav(route);
 
+  let viewRebuilt = true;
   if (route === '/') app.innerHTML = homeTemplate();
   else if (route === '/compare') app.innerHTML = compareTemplate();
   else if (route === '/drawdown-analysis') app.innerHTML = drawdownAnalysisTemplate();
   else if (route === '/options' || route.startsWith('/options/')) app.innerHTML = optionsTemplate(route.split('/')[2]);
   else if (route === '/settings') app.innerHTML = settingsTemplate();
-  else if (route === '/portfolio-analysis') app.innerHTML = portfolioTemplate();
+  else if (route === '/portfolio-analysis') {
+    const keepStableLogin = previousRoute === route
+      && state.portfolio.authState === 'unauthenticated'
+      && app.querySelector('form[data-portfolio-login]');
+    if (keepStableLogin) viewRebuilt = false;
+    else app.innerHTML = portfolioTemplate();
+  }
   else if (route === '/indicator/naaim-exposure') app.innerHTML = naaimDetailTemplate();
   else if (route.startsWith('/stage/')) app.innerHTML = stageTemplate(state.stages.find(stage => stage.id === route.split('/')[2]));
   else app.innerHTML = notFoundTemplate();
@@ -2032,10 +2070,11 @@ function render({ preserveScroll = false } = {}) {
   };
   document.title = titleByRoute[route] || (route.startsWith('/stage/') ? '阶段详情 · Market Cycle Strategy' : route.startsWith('/options/') ? '期权工具 · Market Cycle Strategy' : '页面不存在 · Market Cycle Strategy');
 
-  bindCommonEvents();
+  if (viewRebuilt) bindCommonEvents();
   if (route === '/drawdown-analysis') void ensureDrawdownData();
   if (route === '/settings' && !settingsPollTimer) { void loadSettingsStatus(); settingsPollTimer = setInterval(() => void loadSettingsStatus(), 60_000); }
-  if (route === '/portfolio-analysis' && !portfolioRequestActive && (!state.portfolio.status || !state.portfolio.summary)) void loadPortfolioData();
+  const portfolioAuthNeedsInitialLoad = ['unknown', 'checking', 'authenticated'].includes(state.portfolio.authState);
+  if (route === '/portfolio-analysis' && !portfolioRequestActive && portfolioAuthNeedsInitialLoad && (!state.portfolio.status || !state.portfolio.summary)) void loadPortfolioData();
   if (route === '/indicator/naaim-exposure') { const wanted = state.naaimRange || 'ALL'; if (state.naaim?.requestedRange !== wanted) void loadNaaim(wanted).then(() => { if (parseRoute() === route) render({ preserveScroll: true }); }); }
   if (route !== '/settings') clearSettingsPolling();
   if (!preserveScroll) {
