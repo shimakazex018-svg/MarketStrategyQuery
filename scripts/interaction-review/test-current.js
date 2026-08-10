@@ -219,7 +219,7 @@ async function main() {
     await page.waitForSelector('.metric-grid');
     await page.waitForSelector('.naaim-observation');
     await page.waitForFunction(() => !document.querySelector('.metric-card[data-market-status="loading"]'));
-    await page.waitForTimeout(300);
+    await page.waitForTimeout(600);
     requestCounts.clear();
     responseCounts.clear();
     consoleErrors = 0;
