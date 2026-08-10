@@ -1,5 +1,9 @@
 # 最新交接
 
+## 2026-08-10 Portfolio asset cache bust
+
+- Formal 48101 returned byte-identical current app/styles/calendar assets and the production authenticated DOM showed the shared calendar popover. Public HTML now uses commit-versioned query strings for the three current assets; no Flex, portfolio service, or restart change was made.
+
 ## 2026-08-10 Portfolio daily return calendar
 
 - The calendar now formats signed base-currency P&L values for full display when the cell fits and compact K/M values only when it does not; the full amount is retained in the shared Tooltip/Popover.

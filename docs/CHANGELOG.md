@@ -1,5 +1,9 @@
 # 变更日志
 
+## 2026-08-10 - Portfolio asset cache bust
+
+- Formal 48101 returned the current app, styles, and portfolio-calendar bytes; public HTML now uses the deployed commit identifier as the asset query version so clients do not reuse the previous feature-query cache. No portfolio logic or server restart was changed.
+
 ## 2026-08-10 - Portfolio daily return calendar presentation
 
 - Improved the daily return calendar with signed base-currency amounts, width-aware full/compact K/M presentation, and one shared date/P&L/return/quality Tooltip/Popover.

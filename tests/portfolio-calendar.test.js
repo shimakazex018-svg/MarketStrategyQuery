@@ -42,7 +42,9 @@ test('calendar UI uses one shared popover and presentation-only formatting', asy
   const app = await fs.readFile(path.join(root, 'public', 'app.js'), 'utf8');
   const css = await fs.readFile(path.join(root, 'public', 'styles.css'), 'utf8');
   const index = await fs.readFile(path.join(root, 'public', 'index.html'), 'utf8');
-  assert.match(index, /portfolio-calendar\.js\?feature=portfolio-calendar-values/);
+  assert.match(index, /styles\.css\?v=[0-9a-f]{7,40}/);
+  assert.match(index, /portfolio-calendar\.js\?v=[0-9a-f]{7,40}/);
+  assert.match(index, /app\.js\?v=[0-9a-f]{7,40}/);
   assert.match(app, /data-portfolio-calendar-popover/);
   assert.match(app, /data-calendar-full/);
   assert.match(app, /data-calendar-return/);
