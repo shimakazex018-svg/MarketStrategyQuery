@@ -12,6 +12,7 @@ const state = {
   marketData: {},
   externalPE: { loaded: false, loading: false, status: null, latest: null, history: null, statistics: null, error: null },
   naaim: { status: 'loading', history: [] },
+  signals: { status: 'loading', available: false, indicators: [], groups: {}, input: null, message: '正在读取本地派生信号' },
   drawdown: {
     primaryId: 'nasdaq100_index',
     comparisonId: 'sp500_index',
@@ -65,7 +66,8 @@ const DATA_STATUS = Object.freeze({
   provisional: { label: '初步估算', tone: 'provisional' },
   insufficient_coverage: { label: '覆盖不足', tone: 'insufficient' },
   manual: { label: '人工录入', tone: 'manual' },
-  quality_warning: { label: '质量提示', tone: 'warning' }
+  quality_warning: { label: '质量提示', tone: 'warning' },
+  external_reference_only: { label: '仅来源参考', tone: 'reference' }
 });
 
 const app = document.getElementById('app');
@@ -463,6 +465,78 @@ function metricCard(indicator, index) {
     </article>`;
 }
 
+function signalValueLabel(model) {
+  if (model.signalState && model.unit === 'state') {
+    return { triggered: '触发证据', clear: '未触发', confirmed: '已确认', candidate_window: '候选窗口', candidate_window_pending: '候选窗口未开始', invalidated: '已失效', not_confirmed: '未确认', no_rally_attempt: '无候选', unavailable: '暂无' }[model.signalState] || model.signalState;
+  }
+  if (!hasFiniteValue(model.value)) return '—';
+  const suffix = model.unit === 'x' ? 'x' : model.unit === '%ile' ? '%ile' : model.unit === '%' ? '%' : '';
+  return `${Number(model.value).toFixed(2).replace(/\.00$/, '')}${suffix}`;
+}
+
+function signalDirectionLabel(model) {
+  if (model.signalState === 'triggered') return '证据出现';
+  if (model.signalState === 'clear') return '当前未触发';
+  if (model.signalState && model.unit === 'state') return '状态观察';
+  if (!hasFiniteValue(model.value)) return '等待数据';
+  return Number(model.value) > 0 ? '正向' : Number(model.value) < 0 ? '负向' : '中性';
+}
+
+function signalSourceLink(model) {
+  const url = Array.isArray(model.referenceUrls) && model.referenceUrls.length ? model.referenceUrls[0] : model.sourceUrl;
+  if (!/^https:\/\//i.test(url || '')) return '';
+  return `<a class="signal-source-link" href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">查看来源</a>`;
+}
+
+function signalCard(model, index) {
+  const statusMeta = DATA_STATUS[model.status] || DATA_STATUS.error;
+  const history = Array.isArray(model.history) ? model.history.map(point => Number(point.value)).filter(Number.isFinite) : [];
+  const chart = history.length > 1 ? seriesToPath(history, 360, 70, 4) : null;
+  const quality = model.qualityStatus === 'quality_warning' || model.qualityFlags?.length ? '质量提示' : '质量正常';
+  return `<article class="signal-card signal-card--${statusMeta.tone} reveal" data-signal-id="${escapeHtml(model.id)}" data-market-status="${escapeHtml(model.status)}" style="transition-delay:${index * 35}ms">
+    <header class="signal-card-header"><div><p class="signal-kicker">${escapeHtml(model.provider || 'Local calculation')}</p><h3>${escapeHtml(model.displayName || model.id)}</h3></div><span class="metric-status" data-status="${statusMeta.tone}">${statusMeta.label}</span></header>
+    <div class="signal-value-row"><strong>${escapeHtml(signalValueLabel(model))}</strong><span>${escapeHtml(signalDirectionLabel(model))}</span></div>
+    ${chart ? `<svg class="signal-chart" viewBox="0 0 360 70" preserveAspectRatio="none" aria-label="${escapeHtml(model.displayName || model.id)}历史"><path class="line" d="${chart.line}"></path></svg>` : '<div class="signal-chart-empty">暂无足够历史曲线</div>'}
+    <dl class="signal-meta"><div><dt>数据日期</dt><dd>${escapeHtml(model.asOf || '—')}</dd></div><div><dt>数据来源</dt><dd>${escapeHtml(model.source || '—')}</dd></div><div><dt>数据质量</dt><dd>${escapeHtml(quality)}</dd></div><div><dt>触发条件</dt><dd>${escapeHtml(model.trigger || '描述性指标，暂无触发条件')}</dd></div></dl>
+    <p class="signal-evidence"><strong>证据</strong><span>${escapeHtml(model.evidence || model.statusMessage || '暂无补充证据')}</span></p>
+    ${signalSourceLink(model) ? `<p class="signal-source">${signalSourceLink(model)}</p>` : ''}
+  </article>`;
+}
+
+function signalReferenceCard(reference, index) {
+  const statusMeta = DATA_STATUS.external_reference_only;
+  return `<article class="signal-card signal-reference-card signal-card--${statusMeta.tone} reveal" data-signal-id="${escapeHtml(reference.id)}" data-market-status="${escapeHtml(reference.status)}" style="transition-delay:${index * 35}ms">
+    <header class="signal-card-header"><div><p class="signal-kicker">${escapeHtml(reference.provider || 'External reference')}</p><h3>${escapeHtml(reference.displayName || reference.id)}</h3></div><span class="metric-status" data-status="${statusMeta.tone}">${statusMeta.label}</span></header>
+    <p class="signal-reference-note">只登记来源页面，不采集、缓存或展示该指标数值。</p>
+    <dl class="signal-meta"><div><dt>来源状态</dt><dd>未通过 Provider / 许可门禁</dd></div><div><dt>数据日期</dt><dd>—</dd></div><div><dt>数据质量</dt><dd>不可用</dd></div><div><dt>数据需求</dt><dd>${escapeHtml((reference.dataNeeds || []).join('、') || '待来源审查')}</dd></div></dl>
+    <p class="signal-evidence"><strong>阻塞原因</strong><span>${escapeHtml(reference.evidence || reference.statusMessage || '来源尚未批准。')}</span></p>
+    ${signalSourceLink(reference) ? `<p class="signal-source">${signalSourceLink(reference)}</p>` : ''}
+  </article>`;
+}
+
+function marketSignalsTemplate() {
+  const groups = [
+    ['valuation', '估值'],
+    ['trend_momentum', '趋势动量'],
+    ['fear_positioning', '恐慌仓位'],
+    ['macro_credit', '宏观信用'],
+    ['semiconductor', '半导体']
+  ];
+  const byGroup = state.signals?.groups || {};
+  const total = Number(state.signals?.indicators?.length || 0);
+  const referenceTotal = Number(state.signals?.references?.length || 0);
+  const groupMarkup = groups.map(([id, label]) => {
+    const items = Array.isArray(byGroup[id]) ? byGroup[id] : [];
+    const models = items.filter(item => item.displayMode !== 'external_reference');
+    const references = items.filter(item => item.displayMode === 'external_reference');
+    const content = `${models.length ? `<div class="signal-grid">${models.map((model, index) => signalCard(model, index)).join('')}</div>` : ''}${references.length ? `<div class="signal-reference-list">${references.map((reference, index) => signalReferenceCard(reference, index)).join('')}</div>` : ''}${!models.length && !references.length ? '<div class="signal-empty">暂无数据；不会用 0 或演示值补齐。</div>' : ''}`;
+    const groupNote = models.length ? (references.length ? '显示已有可靠指标摘要，并保留已登记的来源链接。' : '显示已有可靠内部指标或本地派生指标。') : references.length ? '本组暂无指标数值，仅保留已登记的公开来源链接。' : '本组当前没有可靠可展示数据。';
+    return `<section class="signal-group"><div class="section-heading compact"><div><h3>${label}</h3><p>${groupNote}</p></div></div>${content}</section>`;
+  }).join('');
+  const statusLabel = total ? `${total} 项可用${referenceTotal ? ` · ${referenceTotal} 个来源` : ''}` : referenceTotal ? `${referenceTotal} 个来源，等待数据` : '等待本地输入';
+  return `<section class="market-signals section reveal"><div class="section-heading"><div><p class="eyebrow">MARKET SIGNAL MONITOR</p><h2>市场信号监控</h2><p>统一读取本站内部 API；已有正式指标以摘要方式复用，本地 OHLCV 派生指标按数据质量显示，已登记的 external 项目只提供来源入口；不自动判断九阶段，也不产生仓位建议。</p></div><span class="metric-status" data-status="${total ? 'fresh' : referenceTotal ? 'reference' : 'unavailable'}">${statusLabel}</span></div>${groupMarkup}<p class="cycle-disclaimer">${escapeHtml(state.signals?.message || '没有可靠内部或本地派生信号时保持为空。')}</p></section>`;
+}
+
 function homeTemplate() {
   const active = state.stages.find(stage => stage.id === state.activeStageId);
   const previewStage = active || state.stages[0];
@@ -509,6 +583,7 @@ function homeTemplate() {
           <div><h2>辅助指标仪表盘</h2><p>页面只读取本站内部API。正式来源未通过许可门槛时明确显示不可用或演示数据，不用伪造值补齐。</p></div>
         </div>
         <div class="metric-grid">${state.indicators.map(metricCard).join('')}</div>
+        ${marketSignalsTemplate()}
         ${naaimObservationTemplate()}
         <p class="cycle-disclaimer">数据仅用于本人投资研究。初步估算表示部分成分数据缺失或日期并非完全一致；覆盖不足时不输出正式数值。所有指标均不能单独用于判断市场阶段或形成自动仓位建议。</p>
       </section>
@@ -1243,6 +1318,17 @@ async function loadIndicatorRange(id, range) {
 async function loadNaaim(range = '1Y') {
   try { const [summaryResponse, historyResponse] = await Promise.all([fetch('/api/market-data/metrics/naaim_exposure', { headers: { Accept: 'application/json' } }), fetch(`/api/market-data/metrics/naaim_exposure/history?range=${encodeURIComponent(range)}`, { headers: { Accept: 'application/json' } })]); if (!summaryResponse.ok || !historyResponse.ok) throw new Error(`NAAIM API ${summaryResponse.status}/${historyResponse.status}`); const [summary, history] = await Promise.all([summaryResponse.json(), historyResponse.json()]); state.naaim = { ...summary, history: history.history || [], requestedRange: range }; }
   catch { state.naaim = { status: 'unavailable', history: [], statusMessage: '本地NAAIM数据暂不可用' }; }
+}
+
+async function loadMarketSignals() {
+  try {
+    const response = await fetch('/api/market-data/signals', { headers: { Accept: 'application/json' } });
+    if (!response.ok) throw new Error(`Market signals API ${response.status}`);
+    state.signals = await response.json();
+  } catch (error) {
+    console.error('Market signals API:', error);
+    state.signals = { status: 'unavailable', available: false, indicators: [], groups: {}, input: null, message: '本地派生信号 API 暂时不可用' };
+  }
 }
 
 async function loadDrawdownDataset(id, { force = false } = {}) {
@@ -2350,7 +2436,7 @@ async function loadData() {
   try {
     await loadData();
     render();
-    await Promise.all([loadMarketData('1Y'), loadNaaim('1Y')]);
+    await Promise.all([loadMarketData('1Y'), loadNaaim('1Y'), loadMarketSignals()]);
     render({ preserveScroll: true });
   } catch (error) {
     console.error(error);

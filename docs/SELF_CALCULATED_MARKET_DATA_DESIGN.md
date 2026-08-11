@@ -1,5 +1,11 @@
 # 自计算市场指标数据设计
 
+## 2026-08-10 指标目录与 OHLCV 第一批
+
+The version-controlled indicator registry is `config/indicator-catalog.json`; it records existing implementations before adding new formulas. The local price contract is `OHLCV-LOCAL-CSV-v1` and accepts QQQ, SOXX, SOXL, TQQQ, and SPY in ignored runtime input. The first formula versions are EMA, Wilder RSI, MACD 12/26/9, relative volume, 25-trading-day return, drawdown, SOXX/QQQ relative strength, configurable Follow-Through Day evidence, and provisional top/bottom signals.
+
+Thresholds are in `config/market-signal-rules.json` and remain owner-defined/provisional. They are descriptive evidence only: this layer does not infer the nine market stages, recommend positions, or reproduce third-party fear/credit/options indices. External items with audited stable public pages are cataloged as `link_only`; items without such a page are `external_reference_only`. Neither status fetches, caches, or fabricates values.
+
 ## 路线
 
 v0.4 当前阶段不继续 IBKR、Twelve Data 或 Alpha Vantage。系统改用“用户本地导入 + 官方公共财务/持仓数据 + 可审计派生计算”。本设计不授权自动交易、账户读取、网页抓取或第三方专有指标复制。

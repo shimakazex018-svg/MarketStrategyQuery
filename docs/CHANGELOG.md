@@ -4,6 +4,11 @@
 
 - Desktop daily-return Tooltip now records pointer versus keyboard input, hides immediately on cell/calendar leave or window blur, and cancels pending pointer-position frames. Touch pinned Popover and keyboard cell-anchor behavior remain unchanged; no portfolio data, API, Flex, SQLite, or return calculations changed.
 
+## 2026-08-10 - Indicator monitor reference semantics
+
+- Split external catalog entries into `link_only` (stable audited HTTPS source page) and `external_reference_only` (no stable public page). The latter remains non-fetching, non-caching, and valueless; the former exposes only a read-only source link.
+- Updated `/api/market-data/signals` to summarize eligible existing PE, index, VIX/VXN, NAAIM, and SOXX models while keeping local OHLCV-derived signals separate and unavailable without input. No formulas, thresholds, providers, core cards, stages, positions, or option strategies changed.
+
 ## 2026-08-10 - Portfolio calendar pointer-follow tooltip
 
 - Desktop daily-return Tooltip now follows the real pointer with requestAnimationFrame-throttled fixed positioning and viewport collision clamping. Keyboard focus and iPad/iPhone tap remain cell-anchored; portfolio data, API, Flex, SQLite, and return calculations were unchanged.
@@ -28,6 +33,15 @@
 - Added safe Flex request/parse/validation/import diagnostics, dynamic Node User-Agent coverage, official v3 request-shape checks, controlled redirect validation, and schema version 3 persistence for stage and IBKR error code.
 - Mapped the official `EquitySummaryInBase` core fields and corrected XML responses containing commas so a valid XML response cannot be misclassified as CSV. Top-level report dates now use the latest parsed record date.
 - Added a same-day scheduler retry guard and a synthetic parser regression; real Flex response material, account data, and SQLite remain ignored runtime data and are not fixtures or public examples.
+
+## 2026-08-10 - Indicator catalog and local OHLCV signal layer
+
+- Added the version-controlled `config/indicator-catalog.json` as the long-term registry for implemented, manual, reserved, and external link-only indicators. It records aliases, category, acquisition mode, source, frequency, formula version, compliance status, history capability, UI group, and limitations.
+- Added provisional owner-defined rules in `config/market-signal-rules.json`; no RSI, volume, MACD, or Follow-Through Day threshold is treated as a permanent market-stage or position-sizing rule.
+- Added local CSV normalization for full OHLCV inputs (`QQQ`, `SOXX`, `SOXL`, `TQQQ`, and `SPY`) with adjusted-close basis, provenance, as-of dates, duplicate/order/bounds/volume checks, and explicit gap warnings. Runtime input and normalized output remain ignored.
+- Added versioned EMA, Wilder RSI, MACD histogram diagnostics, relative volume, 25-trading-day return, drawdown, SOXX/QQQ relative strength, Follow-Through Day evidence, and top-risk/bottom-candidate signals. Existing MA200, momentum, 52-week, RV20, CFTC, and risk-appetite implementations remain cataloged and reused.
+- Added internal `/api/market-data/catalog` and `/api/market-data/signals` endpoints plus a grouped homepage Market Signal Monitor. External and unavailable indicators are not filled with zero or demo values, and no new network provider is enabled.
+- Added synthetic unit and coordinator/API fixtures; no real market files, credentials, or runtime data were added.
 
 ## 2026-08-10 - 修复未认证资产分析交互循环
 

@@ -8,7 +8,7 @@ const path = require('node:path');
 const test = require('node:test');
 const { FredProvider, parseFredCsv } = require('../server/data-sources/fred-provider');
 const { mergePeSnapshot, parseWorldPERatioPage } = require('../server/data-sources/worldperatio-production');
-const { ANALYSIS_METRIC_IDS, PRODUCTION_METRIC_IDS, ProductionDataCoordinator } = require('../server/production-data/coordinator');
+const { ANALYSIS_METRIC_IDS, LOCAL_SIGNAL_IDS, PRODUCTION_METRIC_IDS, ProductionDataCoordinator } = require('../server/production-data/coordinator');
 const { createHttpServer } = require('../server');
 const { MarketDataService } = require('../server/market-data/service');
 const { MarketDataScheduler } = require('../server/market-data/scheduler');
@@ -41,16 +41,50 @@ test('production coordinator keeps six public metrics plus the isolated SOXX ana
   assert.equal(coordinator.models.get('soxx_price').seriesType, 'nav');
 });
 
+test('market signals reuse existing internal models and expose source-only links without external collection', async t => {
+  const root = await fixtureRoot(); t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const groups = { nasdaq100_pe: 'valuation', sp500_pe: 'valuation', vix: 'fear_positioning', vxn: 'fear_positioning', nasdaq100_index: 'trend_momentum', sp500_index: 'trend_momentum', soxx_price: 'semiconductor' };
+  const catalog = [
+    ...definitions.map(definition => ({ id: definition.id, displayName: definition.name, displayStatus: 'core_ui', uiGroup: groups[definition.id], referenceUrls: [`https://example.invalid/${definition.id}`] })),
+    { id: 'soxx_price', displayName: 'SOXX', displayStatus: 'existing_ui', uiGroup: 'semiconductor', referenceUrls: ['https://example.invalid/soxx'] },
+    { id: 'cnn-fear-greed', displayName: 'CNN Fear & Greed', implementationStatus: 'external_blocked', displayStatus: 'link_only', uiGroup: 'fear_positioning', referenceUrls: ['https://example.invalid/cnn-fear-greed'], blockingReason: 'synthetic source-only fixture' }
+  ];
+  const coordinator = await new ProductionDataCoordinator({ rootDir: root, definitions, catalog, now: () => new Date('2099-01-03T00:00:00Z') }).init();
+  const signals = coordinator.getSignals();
+  assert.equal(signals.mode, 'internal-and-local');
+  assert.equal(signals.input.status, 'unavailable');
+  assert.equal(signals.references.length, 1);
+  assert.equal(signals.references[0].id, 'cnn-fear-greed');
+  assert.equal(signals.references[0].status, 'external_reference_only');
+  assert.equal(signals.references[0].value, null);
+  assert.ok(signals.indicators.length >= 7);
+  assert.ok(signals.indicators.every(item => Number.isFinite(item.value)));
+  assert.deepEqual(signals.groups.valuation.filter(item => item.displayMode === 'existing_reference').map(item => item.id).sort(), ['nasdaq100_pe', 'sp500_pe']);
+  assert.ok(signals.groups.fear_positioning.some(item => item.id === 'vix' && item.displayMode === 'existing_reference'));
+  assert.ok(signals.groups.trend_momentum.some(item => item.id === 'nasdaq100_index' && item.displayMode === 'existing_reference'));
+  assert.ok(signals.groups.semiconductor.some(item => item.id === 'soxx_price' && item.displayMode === 'existing_reference'));
+  assert.equal(signals.indicators.some(item => item.id === 'qqq-rsi'), false);
+});
+
 test('production API provides summary, detail and history without paths or internal stacks', async t => {
   const root = await fixtureRoot(); t.after(() => fs.rm(root, { recursive: true, force: true }));
   const coordinator = await new ProductionDataCoordinator({ rootDir: root, definitions, now: () => new Date('2099-01-03T00:00:00Z') }).init();
-  const service = { getStatus: () => ({ mode: 'production-six-metrics' }), getIndicators: () => PRODUCTION_METRIC_IDS.map(id => coordinator.models.get(id)), getIndicator: id => coordinator.models.get(id) || null, refresh: async () => ({ ok: false }) };
+  const service = {
+    getStatus: () => ({ mode: 'production-six-metrics' }),
+    getIndicators: () => PRODUCTION_METRIC_IDS.map(id => coordinator.models.get(id)),
+    getIndicator: id => coordinator.models.get(id) || null,
+    getIndicatorCatalog: () => [{ id: 'qqq-rsi', displayName: 'QQQ RSI', displayStatus: 'visible_when_local_ohlcv_available' }],
+    getSignals: () => ({ mode: 'internal-and-local', status: 'unavailable', available: false, indicators: [], references: [], groups: {}, input: null }),
+    refresh: async () => ({ ok: false })
+  };
   const server = createHttpServer(service); await new Promise(resolve => server.listen(0, '127.0.0.1', resolve)); t.after(() => new Promise(resolve => server.close(resolve)));
   const base = `http://127.0.0.1:${server.address().port}`;
   const summary = await fetch(`${base}/api/market-data/summary`).then(response => response.json()); assert.equal(summary.indicators.length, 6);
   const detail = await fetch(`${base}/api/market-data/metrics/vix`).then(response => response.json()); assert.equal(detail.id, 'vix');
   const history = await fetch(`${base}/api/market-data/metrics/vix/history`).then(response => response.json()); assert.equal(history.history.length, 2);
   const soxx = await fetch(`${base}/api/market-data/metrics/soxx_price`).then(response => response.json()); assert.equal(soxx.seriesType, 'nav');
+  const catalog = await fetch(`${base}/api/market-data/catalog`).then(response => response.json()); assert.equal(catalog.entries[0].id, 'qqq-rsi');
+  const signals = await fetch(`${base}/api/market-data/signals`).then(response => response.json()); assert.equal(signals.available, false);
   assert.doesNotMatch(JSON.stringify({ summary, detail, history }), new RegExp(root.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   assert.doesNotMatch(JSON.stringify({ summary, detail, history }), /stack|sha256|contentHash/i);
 });
@@ -82,6 +116,7 @@ test('frontend publishes only six current metrics and disables legacy indicator 
   for (const hidden of ['Forward PE', 'QQQ RV20', '自建风险偏好', '机构仓位']) assert.equal(indicators.some(item => item.name.includes(hidden)), false);
   assert.match(app, /function indicatorInfoMeta\(/); assert.match(app, /metric-info-button/); assert.match(app, /数据来源与口径/);
   assert.match(app, /interactive-history-chart/); assert.match(app, /pointermove/); assert.match(app, /indicator-dialog-portal/);
+  assert.match(app, /function signalSourceLink\(/); assert.match(app, /查看来源/); assert.match(app, /external_reference_only/); assert.match(app, /signal-reference-list/);
 });
 
 test('one provider failure marks only its metric stale', async t => {
@@ -98,4 +133,25 @@ test('production scheduler runs six network metrics then only the local SOXX rel
   const startupCalls = [];
   await MarketDataService.prototype.refreshExpiredOnStartup.call({ productionMode: true, config: { timezone: 'Asia/Shanghai' }, now: () => new Date('2099-01-03T00:00:00Z'), refresh: async id => { startupCalls.push(id); } });
   assert.deepEqual(startupCalls, [...PRODUCTION_METRIC_IDS, ...ANALYSIS_METRIC_IDS]);
+});
+
+test('local synthetic OHLCV import produces cataloged signals without external requests', async t => {
+  const root = await fixtureRoot(); t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const rows = [];
+  for (let index = 0; index < 260; index += 1) {
+    const date = new Date(Date.UTC(2098, 0, 2 + index)).toISOString().slice(0, 10);
+    const qqq = 100 + index * .25;
+    const soxx = 200 + index * .35;
+    rows.push(`QQQ,${date},${qqq - .4},${qqq + 1},${qqq - 1},${qqq},${qqq},1000,SYNTHETIC_TEST_FIXTURE,${date}`);
+    rows.push(`SOXX,${date},${soxx - .4},${soxx + 1},${soxx - 1},${soxx},${soxx},1200,SYNTHETIC_TEST_FIXTURE,${date}`);
+  }
+  await fs.mkdir(path.join(root, 'runtime-data', 'imports', 'prices'), { recursive: true });
+  await fs.writeFile(path.join(root, 'runtime-data', 'imports', 'prices', 'synthetic-review-fixture.csv'), ['ticker,date,open,high,low,close,adjustedClose,volume,sourceName,asOf', ...rows].join('\n'));
+  const catalog = LOCAL_SIGNAL_IDS.map(id => ({ id, displayName: id, displayStatus: 'visible_when_local_ohlcv_available', uiGroup: 'trend_momentum', formulaVersion: 'synthetic-test', limitations: [] }));
+  const coordinator = await new ProductionDataCoordinator({ rootDir: root, definitions, catalog, now: () => new Date('2099-01-03T00:00:00Z') }).init();
+  const signals = coordinator.getSignals();
+  assert.equal(signals.available, true);
+  assert.equal(signals.input.status, 'fresh');
+  assert.ok(signals.indicators.some(item => item.id === 'qqq-rsi' && Number.isFinite(item.value)));
+  assert.equal(coordinator.providerStatus('local-csv').status, 'fresh');
 });

@@ -39,6 +39,16 @@ async function handleMarketDataApi(req, res, requestUrl, service, scheduler = nu
     return true;
   }
 
+  if (req.method === 'GET' && requestUrl.pathname === `${prefix}/catalog`) {
+    sendJson(res, 200, { schemaVersion: 1, entries: service.getIndicatorCatalog?.() || [] });
+    return true;
+  }
+
+  if (req.method === 'GET' && requestUrl.pathname === `${prefix}/signals`) {
+    sendJson(res, 200, service.getSignals?.() || { mode: 'internal-and-local', status: 'unavailable', available: false, indicators: [], references: [], groups: {}, input: null, message: 'Signal service is unavailable.' });
+    return true;
+  }
+
   const providerMatch = new RegExp(`^${prefix}/providers/([a-z0-9_-]+)/(status|latest|history|statistics)$`).exec(requestUrl.pathname);
   if (req.method === 'GET' && providerMatch) {
     const providerId = providerMatch[1];

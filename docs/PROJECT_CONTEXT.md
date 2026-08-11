@@ -1,5 +1,13 @@
 # 项目当前上下文
 
+## Indicator catalog and local signal layer (2026-08-10)
+
+- `config/indicator-catalog.json` is the version-controlled registry for all audited indicators. It currently contains 49 entries covering the six core cards, NAAIM, drawdown, manual Forward PE, existing derived indicators, the first local OHLCV-derived batch, reserved self-owned score placeholders, and external entries split between audited `link_only` pages and no-link `external_reference_only` items.
+- `config/market-signal-rules.json` is a non-secret, provisional configuration. RSI period, overbought/oversold levels, volume anomaly rules, MACD periods, return/drawdown windows, and Follow-Through Day rules are explicitly owner-defined and are not automatic stage or position rules.
+- Local prices enter through CSV under ignored `runtime-data/imports/prices/`. The canonical record contains `ticker`, `date`, `open`, `high`, `low`, `close`, `adjustedClose`, `volume`, `source`, and `asOf`; imports preserve gaps as quality warnings and never interpolate them.
+- Supported local OHLCV tickers are QQQ, SOXX, SOXL, TQQQ, and SPY. The production coordinator summarizes existing formal internal models and adds local-derived signal models; without a reliable local import, local-derived values remain unavailable and never substitute zero/demo values.
+- `/api/market-data/catalog` and `/api/market-data/signals` are internal read-only endpoints. The signals response contains existing internal summaries, local-derived values when available, and a separate `references` collection for audited source-only links. The homepage retains its six core cards and fixed market-cycle/option structures, with a grouped Market Signal Monitor below them.
+- No new IBKR, Twelve Data, Alpha Vantage, or other network Provider was enabled. External indicators with a stable audited public page are `link_only` and expose only a read-only source link; proprietary indicators without such a page are `external_reference_only` and have no fetch, cache, or value.
 
 ## Portfolio real-response calibration boundary (2026-08-10)
 
@@ -37,6 +45,7 @@
 - 每日收益日历只对现有 pnlAmount、dailyReturn 和 qualityStatus 做前端展示格式化；共享 Tooltip/Popover 不重算数据、不改变路由/滚动，也不追加 portfolio API 请求。
 - `#/settings` 只读展示当前正式数据源、采集状态、计划任务和有限审计记录；它只请求本站内部状态 API，不触发第三方采集。
 - `#/portfolio-analysis` 是受本机密码保护的只读投资组合分析页；只读取本地 IBKR Flex v3 导入结果，不提供下单、撤单、调仓、自动投资或交易接口。
+- 本轮正式烟测中，48101 由现有隐藏 host 以 production 模式运行并只保留一个项目实例；本次执行环境的 `MarketCycleStrategy-Autostart` 状态检查为 Missing，未注册或修改计划任务，48102 保持独立。
 - 投资组合运行数据固定在 `runtime-data/portfolio-analysis/`，包括 SQLite、WAL/SHM、原始 Flex、导入、备份、审计、状态、日志和本机密码目录；整棵目录被 Git 忽略。
 - `npm.cmd run portfolio:auth:init` 初始化本机 scrypt 密码；`npm.cmd run portfolio:sync` 执行一次受控 Flex 同步。默认同步时间为 `10:30 Asia/Shanghai`，独立于市场数据 `07:30` 调度。
 - 公开仓库审查只使用 `synthetic-review-fixture`，账户标签为掩码 `SIM****0001`；真实账户、凭据、SQLite 和原始报告不得进入 Git。`PORTFOLIO_REVIEW_FIXTURE=synthetic-review-fixture` 仅供隔离视觉审查。

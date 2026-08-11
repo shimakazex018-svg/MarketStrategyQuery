@@ -6,6 +6,15 @@ The real-response path is read-only and must be run only as a bounded manual syn
 
 Synthetic tests cover v3 parameters, dynamic User-Agent, XML/CSV precedence, error-code persistence, official core-field mapping, date-range selection, and same-day scheduler retry prevention. Public fixtures use only `synthetic-review-fixture` data.
 
+## Indicator catalog and local OHLCV tests (2026-08-10)
+
+`npm.cmd run check` covers the catalog schema, provisional rule schema, local CSV validation, and synthetic technical fixtures. `tests/technical-indicators.test.js` covers normal EMA/RSI/MACD/volume/return/drawdown/relative-strength/Follow-Through Day results, sample insufficiency, duplicate dates, missing volume, invalid bounds, calendar gaps, threshold boundaries, and no-zero unavailable states. `tests/production-data.test.js` also verifies a synthetic local import reaches the cataloged signal API without external requests.
+
+Catalog validation requires every `link_only` entry to have at least one HTTPS reference URL and every `external_reference_only` entry to have none. The production signal test verifies that existing PE/index/VIX/SOXX models are summarized by reference, local-derived values remain absent when OHLCV is unavailable, and source-only links carry `value: null` without external collection.
+
+The local input contract is `OHLCV-LOCAL-CSV-v1`; required canonical fields are `ticker`, `date`, `open`, `high`, `low`, `close`, `adjustedClose`, `volume`, `source`, and `asOf`. Fixtures must use synthetic labels and must never read real `runtime-data/`.
+
+Visual Review != Interaction Review. Visual Review checks layout, responsive behavior, screenshots, and privacy with `npm.cmd run visual:current`. Interaction Review checks real browser navigation, mouse, keyboard, touch/tap, route/dialog lifecycle, and request-loop behavior with `npm.cmd run test:interaction`. Run both after navigation, buttons, dialogs, login, tabs, dropdowns, forms, chart, touch, or settings changes.
 
 ## Offline portfolio calibration
 

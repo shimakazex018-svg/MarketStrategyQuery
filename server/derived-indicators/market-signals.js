@@ -1,6 +1,7 @@
 'use strict';
 
 const { normalizePrices } = require('./realized-volatility');
+const { ALGORITHM_VERSIONS, calculateTechnicalIndicators } = require('./technical-indicators');
 
 const ALGORITHM_VERSION = 'RISK-SIGNAL-MAPPINGS-v1-LINEAR';
 
@@ -18,7 +19,7 @@ function returnPercent(prices, lookback) {
   return (prices.at(-1).adjustedClose / prices.at(-(lookback + 1)).adjustedClose - 1) * 100;
 }
 
-function calculateMarketSignals(qqqInput, soxxInput = []) {
+function calculateMarketSignals(qqqInput, soxxInput = [], options = {}) {
   const qqq = normalizePrices(qqqInput);
   const soxx = Array.isArray(soxxInput) && soxxInput.length >= 2 ? normalizePrices(soxxInput) : [];
   const current = qqq.at(-1);
@@ -45,8 +46,10 @@ function calculateMarketSignals(qqqInput, soxxInput = []) {
   const soxx60 = soxx.length ? returnPercent(soxx, 60) : null;
   const relativeStrengthPercent = qqq60 === null || soxx60 === null ? null : soxx60 - qqq60;
   const asOf = current.date;
+  const technical = calculateTechnicalIndicators(qqqInput, soxxInput, options);
   return {
     algorithmVersion: ALGORITHM_VERSION,
+    technicalAlgorithmVersion: ALGORITHM_VERSIONS.signals,
     asOf,
     metrics: { ma200, priceVsMa200Percent, momentum20, momentum120, momentumBlend, high52w, distance52wHighPercent, maxDrawdownPercent, relativeStrengthPercent },
     scores: {
@@ -55,8 +58,9 @@ function calculateMarketSignals(qqqInput, soxxInput = []) {
       'qqq-distance-52w-high': distance52wHighPercent === null ? null : linearScore(distance52wHighPercent, -30, 0),
       'qqq-max-drawdown': maxDrawdownPercent === null ? null : linearScore(maxDrawdownPercent, 0, 40),
       'soxx-relative-qqq': relativeStrengthPercent === null ? null : linearScore(relativeStrengthPercent, -20, 20)
-    }
+    },
+    technical
   };
 }
 
-module.exports = { ALGORITHM_VERSION, calculateMarketSignals, clamp, linearScore, returnPercent };
+module.exports = { ALGORITHM_VERSION, calculateMarketSignals, clamp, linearScore, returnPercent, calculateTechnicalIndicators };

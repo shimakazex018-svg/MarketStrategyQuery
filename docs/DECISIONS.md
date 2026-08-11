@@ -2,6 +2,36 @@
 
 本文件记录跨任务长期有效的选择。市场数据专项细节另见 `MARKET_DATA_DECISIONS.md`。
 
+## DEC-012：Indicator catalog is the implementation registry
+
+### Decision
+
+Use `config/indicator-catalog.json` as the version-controlled source of truth for whether an indicator is implemented, visible, manual, reserved, or blocked; do not create a second implementation just because a name appears in a request or screenshot.
+
+### Impact
+
+Every catalog entry carries provenance, formula/version, compliance, history capability, UI group, and limitations. Runtime values and user imports remain outside Git.
+
+## DEC-013：Local CSV is the first supported OHLCV input
+
+### Decision
+
+Support local normalized CSV input for QQQ, SOXX, SOXL, TQQQ, and SPY before considering any new network market-data Provider. Use adjusted close for derived price calculations and expose gaps/quality warnings instead of interpolating.
+
+### Impact
+
+The coordinator owns a separate local signal model map and the browser uses internal `/api/market-data/*` endpoints. Missing local input is unavailable, never zero or demo data.
+
+## DEC-014：Thresholds remain provisional and owner-defined
+
+### Decision
+
+Keep RSI, volume anomaly, MACD shrink, return/drawdown, and Follow-Through Day rules in `config/market-signal-rules.json` with provisional/owner-defined status. They do not infer market stages or produce position recommendations.
+
+### Impact
+
+Threshold changes are explicit configuration decisions and formula versions remain auditable. Third-party fear, credit, options, inflation-volatility, and AI-capex indicators use `link_only` only when a stable public source page has been audited; otherwise they use `external_reference_only`. Neither status permits fetching, caching, or displaying a value until source and license review.
+
 ## DEC-000：Windows 48101 无感常驻
 
 ### Decision
@@ -373,6 +403,20 @@ Flex Activity Query 能提供账户活动和历史报表，适合低频、只读
 
 ### Impact
 `npm.cmd run check` 包含公开仓库隐私扫描；视觉 manifest 必须声明 `portfolioDataMode: synthetic-review-fixture`、`containsRealAccountData: false` 和 `repositoryVisibility: public`。本地真实连接只能在 ignored runtime-data 中进行。
+
+### Status
+有效
+
+## DEC-027：统一市场信号监控复用既有内部模型
+
+### Decision
+`/api/market-data/signals` may summarize eligible values from the existing production and analysis models, append local OHLCV-derived models when their input is valid, and expose catalogued `link_only` entries only as source references. It must not create a second implementation, duplicate history, or trigger a new external collection path. The six core cards, nine stages, and eight option strategies remain unchanged.
+
+### Reason
+The monitor is a grouped observability surface rather than a second indicator product. Reusing the existing status, provenance, and date fields prevents the production groups from appearing empty while preserving one source of truth for each metric.
+
+### Impact
+Existing internal summaries carry their original status and source metadata with history omitted from the compact monitor response. External source links have `value: null` and an explicit no-fetch/no-cache state; missing local input remains `unavailable` rather than zero or synthetic production data.
 
 ### Status
 有效

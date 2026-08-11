@@ -15,6 +15,7 @@ const allowedStates = new Set(['loading', 'fresh', 'provisional', 'quality_warni
 const reviewState = allowedStates.has(process.env.REVIEW_STATE) ? process.env.REVIEW_STATE : 'fresh';
 const reviewSoxxAvailable = process.env.REVIEW_SOXX !== 'unavailable';
 const definitions = JSON.parse(fs.readFileSync(path.join(rootDir, 'public', 'data', 'indicators.json'), 'utf8'));
+const indicatorCatalog = JSON.parse(fs.readFileSync(path.join(rootDir, 'config', 'indicator-catalog.json'), 'utf8')).entries;
 
 function history(base, amplitude = 3) {
   const points = [];
@@ -176,17 +177,74 @@ function naaimModel() {
   };
 }
 
+const existingSignalGroups = Object.freeze({
+  nasdaq100_pe: 'valuation', sp500_pe: 'valuation', nasdaq100_index: 'trend_momentum', sp500_index: 'trend_momentum',
+  vix: 'fear_positioning', vxn: 'fear_positioning', naaim_exposure: 'fear_positioning', soxx_price: 'semiconductor'
+});
+
+function existingSignalFixtureModels() {
+  return Object.entries(existingSignalGroups).map(([id, group]) => {
+    const entry = indicatorCatalog.find(item => item.id === id);
+    const definition = definitions.find(item => item.id === id) || { id, name: entry?.displayName || id, unit: entry?.unit || '' };
+    const model = id === 'naaim_exposure' ? naaimModel() : id === 'soxx_price' ? soxxModel() : modelFor(definition);
+    const referenceUrls = entry?.referenceUrls || [];
+    return {
+      ...model, id, metricId: id, displayName: entry?.displayName || model.displayName, source: 'synthetic-review-fixture', sourceLabel: 'synthetic-review-fixture', provider: 'synthetic-review-fixture',
+      sourceUrl: referenceUrls[0] || null, referenceUrls, history: [], historyAvailable: false, historyStart: null, historyEnd: null,
+      displayMode: 'existing_reference', referenceGroup: group,
+      statusMessage: 'synthetic-review-fixture existing internal summary; no new collection.',
+      trigger: 'synthetic-review-fixture existing internal summary', evidence: 'synthetic-review-fixture; existing internal model reused', isDemo: false, isStale: false
+    };
+  });
+}
+
+function externalReferenceFixtureModels() {
+  return indicatorCatalog.filter(entry => entry.implementationStatus === 'external_blocked' && entry.displayStatus === 'link_only' && Array.isArray(entry.referenceUrls) && entry.referenceUrls.length > 0).map(entry => ({
+    id: entry.id, metricId: entry.id, displayName: entry.displayName, label: entry.displayName, value: null, unit: '', asOf: null,
+    source: 'synthetic-review-fixture', sourceLabel: 'synthetic-review-fixture', provider: 'synthetic-review-fixture', sourceUrl: entry.referenceUrls[0], referenceUrls: entry.referenceUrls,
+    status: 'external_reference_only', statusMessage: 'synthetic-review-fixture source-only entry; no fetch, cache, or value.', history: [], historyAvailable: false,
+    qualityStatus: 'unavailable', qualityFlags: [], displayMode: 'external_reference', referenceGroup: entry.uiGroup,
+    trigger: 'synthetic-review-fixture; do not fetch', evidence: entry.blockingReason || 'Source link only; no approved data acquisition.', dataNeeds: entry.dataNeeds || [], limitations: entry.limitations || [], isDemo: false, isStale: false
+  }));
+}
+
+function signalFixtureModels() {
+  const definitionsById = new Map(indicatorCatalog.map(entry => [entry.id, entry]));
+  const fixtureValues = {
+    'qqq-vs-ma200': [4.8, '%'], 'qqq-momentum-20': [3.4, '%'], 'qqq-momentum-120': [11.2, '%'], 'qqq-52w-high-distance': [-1.8, '%'],
+    'qqq-52w-max-drawdown': [14.6, '%'], 'soxx-relative-qqq': [2.1, '%'], 'qqq-rv20': [19.3, '%'], 'qqq-rv20-percentile': [63.2, '%ile'],
+    'qqq-ema-5': [501.4, ''], 'qqq-ema-20': [497.8, ''], 'qqq-ema-60': [486.1, ''], 'qqq-ema-200': [455.6, ''], 'qqq-rsi': [67.4, ''],
+    'qqq-macd': [4.2, ''], 'qqq-macd-histogram': [0.72, ''], 'qqq-volume-relative': [1.38, 'x'], 'qqq-return-25': [3.1, '%'], 'qqq-current-drawdown': [-1.8, '%']
+  };
+  const models = Object.entries(fixtureValues).map(([id, [value, unit]], index) => {
+    const entry = definitionsById.get(id) || { id, displayName: id, limitations: [] };
+    const points = history(value, Math.max(.3, Math.abs(value) * .08));
+    return { id, metricId: id, displayName: entry.displayName, value, unit, asOf: points.at(-1).date, source: 'synthetic-review-fixture', sourceLabel: 'synthetic-review-fixture', provider: 'synthetic-review-fixture', status: 'fresh', statusMessage: 'Synthetic review fixture; not real market data.', historyStart: points[0].date, history: points, historyAvailable: true, qualityStatus: 'ok', qualityFlags: [], signalState: null, direction: value >= 0 ? 'positive' : 'negative', trigger: 'synthetic-review-fixture rule', evidence: 'synthetic-review-fixture evidence', limitations: entry.limitations || [], formulaVersion: entry.formulaVersion || null, isDemo: false, isStale: false, requestedRange: '1Y', servedAt: new Date().toISOString(), fixtureIndex: index };
+  });
+  const state = { id: 'follow-through-day', metricId: 'follow-through-day', displayName: definitionsById.get('follow-through-day')?.displayName || 'Follow-Through Day status', value: 1, unit: 'state', asOf: '2026-07-13', source: 'synthetic-review-fixture', sourceLabel: 'synthetic-review-fixture', provider: 'synthetic-review-fixture', status: 'fresh', statusMessage: 'Synthetic review fixture; not real market data.', history: [{ date: '2026-07-13', value: 1 }], historyStart: '2026-07-13', historyAvailable: true, signalState: 'confirmed', trigger: 'synthetic-review-fixture rule', evidence: 'synthetic-review-fixture rally attempt and volume confirmation', limitations: ['Synthetic review fixture only.'], isDemo: false, isStale: false };
+  const topBottom = ['top-risk-rsi', 'top-risk-volume', 'top-risk-macd', 'bottom-candidate-rsi', 'bottom-candidate-volume'].map((id, index) => ({ id, metricId: id, displayName: definitionsById.get(id)?.displayName || id, value: index === 1 ? 1 : 0, unit: 'state', asOf: '2026-07-13', source: 'synthetic-review-fixture', sourceLabel: 'synthetic-review-fixture', provider: 'synthetic-review-fixture', status: 'fresh', statusMessage: 'Synthetic review fixture; not real market data.', history: [], historyAvailable: false, signalState: index === 1 ? 'triggered' : 'clear', trigger: 'synthetic-review-fixture provisional threshold', evidence: 'synthetic-review-fixture evidence', limitations: ['Synthetic review fixture only.'], isDemo: false, isStale: false }));
+  return [...models, state, ...topBottom];
+}
+
 function models(range = '1Y') {
   return definitions.map(definition => ({ ...modelFor(definition), requestedRange: range, servedAt: new Date().toISOString() }));
 }
 
 const service = {
   getIndicators: range => models(range),
-  getIndicator: (id, range) => id === 'naaim_exposure' ? naaimModel() : id === 'soxx_price' ? (reviewSoxxAvailable ? soxxModel() : null) : models(range).find(model => model.id === id) || null,
+  getIndicator: (id, range) => id === 'naaim_exposure' ? naaimModel() : id === 'soxx_price' ? (reviewSoxxAvailable ? soxxModel() : null) : models(range).find(model => model.id === id) || signalFixtureModels().find(model => model.id === id) || null,
   getIndicatorHistory: (id, range) => {
     if (id === 'naaim_exposure') { const model = naaimModel(); return { metricId: id, range, history: model.history, historyStart: model.historyStart, historyEnd: model.historyEnd, status: model.status, provider: 'synthetic-fixture', sourceLabel: model.source, limitations: ['合成夹具，仅用于视觉验收'] }; }
-    const model = id === 'soxx_price' ? (reviewSoxxAvailable ? soxxModel() : null) : models(range).find(item => item.id === id);
+    const model = id === 'soxx_price' ? (reviewSoxxAvailable ? soxxModel() : null) : models(range).find(item => item.id === id) || signalFixtureModels().find(item => item.id === id);
     return model ? { metricId: id, range, history: model.history, historyStart: model.historyStart, historyEnd: model.historyEnd || model.history.at(-1)?.date || null, status: model.status, provider: model.provider || null, sourceLabel: model.sourceLabel || model.source, seriesType: model.seriesType || null, adjustmentStatus: model.adjustmentStatus || null, limitations: model.limitations || [] } : null;
+  },
+  getIndicatorCatalog: () => indicatorCatalog,
+  getSignals: () => {
+    const indicators = [...existingSignalFixtureModels(), ...signalFixtureModels()];
+    const references = externalReferenceFixtureModels();
+    const items = [...indicators, ...references];
+    const groups = Object.fromEntries(['valuation', 'trend_momentum', 'fear_positioning', 'macro_credit', 'semiconductor'].map(group => [group, items.filter(model => model.referenceGroup === group || indicatorCatalog.find(entry => entry.id === model.id)?.uiGroup === group)]));
+    return { mode: 'synthetic-review-fixture', status: 'ready', available: true, indicators, references, groups, input: { status: 'fresh', source: 'synthetic-review-fixture', asOf: '2026-07-13', qualityFlags: [] }, message: 'synthetic-review-fixture; no real market data.' };
   },
   getStatus: () => ({ enabled: false, timezone: 'Asia/Shanghai', reviewFixture: true, indicators: models().map(({ id, status }) => ({ id, status })), servedAt: new Date().toISOString() }),
   getDataAcquisitionStatus: async () => ({

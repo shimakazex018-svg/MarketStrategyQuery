@@ -1,5 +1,11 @@
 # 市场数据架构
 
+## 2026-08-10 本地 OHLCV 与指标目录补充
+
+`config/indicator-catalog.json` is the durable catalog for existing, local-derived, manual, reserved, and external indicators. External entries are `link_only` only when they have a stable audited HTTPS reference; entries without such a page are `external_reference_only`. The first supported price input is a local CSV under ignored `runtime-data/imports/prices/`; it is normalized to full OHLCV plus adjusted close, source, and as-of metadata before any calculation. `ProductionDataCoordinator` keeps derived models separate from the six production card models, reuses existing formal models in the unified signal summary, and exposes summaries plus source-only references through the existing internal API family at `/api/market-data/catalog` and `/api/market-data/signals`.
+
+No new network Provider is enabled. Missing local input is `unavailable`; gaps are quality warnings and are not filled. Formula versions and provisional rules are recorded in `config/market-signal-rules.json` and the catalog.
+
 ## 目标
 
 在不增加第三方运行依赖和数据库的前提下，为六张指标卡提供统一、可离线启动、失败隔离且受请求预算约束的数据层。来源是否启用由审计决策控制，公开端点不等于许可通过。

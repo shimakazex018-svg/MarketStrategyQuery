@@ -6,6 +6,20 @@
 
 The portfolio scheduler treats a same-day failed attempt as consumed, so an upstream or schema failure cannot create a minute-by-minute external request loop. Manual retry remains explicit and read-only.
 
+## Indicator catalog and local OHLCV flow (2026-08-10)
+
+```text
+ignored runtime-data/imports/prices/*.csv
+  -> RuntimeImportStore / prices-import
+  -> normalized OHLCV records + gap/quality diagnostics
+  -> ProductionDataCoordinator.localSignalModels
+  -> /api/market-data/catalog and /api/market-data/signals
+  -> grouped Market Signal Monitor
+```
+
+`config/indicator-catalog.json` is the durable registry for implementation status, display status, acquisition mode, provenance, formula version, compliance, history, UI group, and limitations. `config/market-signal-rules.json` contains only non-secret provisional rules. Local signal models are kept separate from the existing six production models and the SOXX/NAAIM analysis models, so the public six-card API contract remains unchanged. The unified signal response summarizes eligible existing models, adds local-derived models, and exposes audited source-only links separately; it does not reimplement or recollect an existing metric.
+
+The technical module uses adjusted close for price-derived calculations and requires complete OHLCV when a row claims OHLCV support. It reports duplicate/order/bounds/volume/date errors and calendar gaps without imputation. EMA, Wilder RSI, MACD 12/26/9, relative volume, returns, drawdown, SOXX/QQQ relative strength, Follow-Through Day evidence, and top/bottom candidate signals carry explicit formula versions. The browser reads only the internal API; no page path directly calls a Provider.
 
 ## Portfolio performance calibration boundary
 

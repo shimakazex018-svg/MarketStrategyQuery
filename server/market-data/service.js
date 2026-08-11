@@ -4,7 +4,7 @@ const fs = require('fs/promises');
 const path = require('path');
 const { createCboeHistorySource } = require('../data-sources/cboe-history');
 const { SelfCalculatedCoordinator } = require('../self-calculated/coordinator');
-const { ANALYSIS_METRIC_IDS, PRODUCTION_METRIC_IDS, ProductionDataCoordinator } = require('../production-data/coordinator');
+const { ANALYSIS_METRIC_IDS, LOCAL_SIGNAL_IDS, PRODUCTION_METRIC_IDS, ProductionDataCoordinator } = require('../production-data/coordinator');
 const { isProviderEffectivelyEnabled, providerById } = require('./provider-compliance');
 const { availableRanges, filterHistory, validateModel } = require('./schema');
 const { isWeekend } = require('./scheduler');
@@ -116,6 +116,8 @@ class MarketDataService {
     this.cacheErrors = new Map();
     this.coordinator = null;
     this.definitionOverride = definitions;
+    this.indicatorCatalog = [];
+    this.signalRules = {};
     this.productionMode = false;
     this.productionCoordinator = null;
     this.audit = new AcquisitionAudit(config.runtimeRoot || path.join(rootDir, 'runtime-data'), { now });
@@ -152,10 +154,12 @@ class MarketDataService {
     const limiterError = await this.limiter.init();
     if (limiterError) await this.logger.log({ at: isoNow(this.now()), event: 'request-state-error', errorType: limiterError.type });
     this.indicators = this.definitionOverride || JSON.parse(await fs.readFile(path.join(this.rootDir, 'public', 'data', 'indicators.json'), 'utf8'));
+    this.indicatorCatalog = await fs.readFile(path.join(this.rootDir, 'config', 'indicator-catalog.json'), 'utf8').then(JSON.parse).then(value => value.entries || []).catch(() => []);
+    this.signalRules = await fs.readFile(path.join(this.rootDir, 'config', 'market-signal-rules.json'), 'utf8').then(JSON.parse).catch(() => ({}));
 
     if (this.indicators.length === PRODUCTION_METRIC_IDS.length && PRODUCTION_METRIC_IDS.every(id => this.indicators.some(item => item.id === id))) {
       this.productionMode = true;
-      this.productionCoordinator = new ProductionDataCoordinator({ rootDir: this.rootDir, definitions: this.indicators, fetchImpl: this.fetchImpl, now: this.now, timezone: this.config.timezone });
+      this.productionCoordinator = new ProductionDataCoordinator({ rootDir: this.rootDir, definitions: this.indicators, catalog: this.indicatorCatalog, signalRules: this.signalRules, fetchImpl: this.fetchImpl, now: this.now, timezone: this.config.timezone });
       await this.productionCoordinator.init();
       this.models = this.productionCoordinator.models;
       if (startupRefresh) await this.refreshExpiredOnStartup();
@@ -229,7 +233,7 @@ class MarketDataService {
   }
 
   isApproved(id) {
-    if (this.productionMode) return PRODUCTION_METRIC_IDS.includes(id) || ANALYSIS_METRIC_IDS.includes(id);
+    if (this.productionMode) return PRODUCTION_METRIC_IDS.includes(id) || ANALYSIS_METRIC_IDS.includes(id) || LOCAL_SIGNAL_IDS.includes(id);
     const decision = ONLINE_DECISIONS[id];
     const provider = decision ? providerById(this.config.providerRegistry, decision.provider) : null;
     return Boolean(decision
@@ -272,12 +276,12 @@ class MarketDataService {
       const startedAt = isoNow(this.now());
       const result = await this.productionCoordinator.refresh(id);
       const indicator = this.getIndicator(id);
-      const providerId = id === 'soxx_price' ? 'ishares' : id === 'naaim_exposure' ? 'naaim' : id.endsWith('_pe') ? 'worldperatio' : 'fred';
-      const trigger = ['soxx_price', 'naaim_exposure'].includes(id) ? 'local_reload' : kind === 'startup' ? 'startup_catchup' : 'scheduled';
+      const providerId = LOCAL_SIGNAL_IDS.includes(id) ? 'local-csv' : id === 'soxx_price' ? 'ishares' : id === 'naaim_exposure' ? 'naaim' : id.endsWith('_pe') ? 'worldperatio' : 'fred';
+      const trigger = LOCAL_SIGNAL_IDS.includes(id) || ['soxx_price', 'naaim_exposure'].includes(id) ? 'local_reload' : kind === 'startup' ? 'startup_catchup' : 'scheduled';
       await this.audit.append({
         providerId, metricId: id, trigger, startedAt, completedAt: isoNow(this.now()),
         result: result.ok ? (result.reason === 'already-successful-today' ? 'cached' : 'success') : 'failed',
-        externalRequestCount: ['soxx_price', 'naaim_exposure'].includes(id) ? 0 : result.reason === 'already-successful-today' ? 0 : 1,
+        externalRequestCount: LOCAL_SIGNAL_IDS.includes(id) || ['soxx_price', 'naaim_exposure'].includes(id) ? 0 : result.reason === 'already-successful-today' ? 0 : 1,
         cacheAction: result.ok ? (result.reason === 'already-successful-today' ? 'unchanged' : 'updated') : indicator?.status === 'stale' ? 'stale_fallback' : 'none',
         sourceDataDate: indicator?.sourceDataDate || indicator?.asOf || null,
         errorCategory: result.ok ? null : result.reason || 'source_unavailable'
@@ -416,7 +420,7 @@ class MarketDataService {
   }
 
   getIndicator(id, range = '1Y') {
-    const model = this.models.get(id);
+    const model = this.models.get(id) || this.productionCoordinator?.getLocalSignalModel(id);
     if (!model) return null;
     const history = filterHistory(model.history || [], range, model.asOf, 240);
     const robustHistory = Array.isArray(model.robustHistory)
@@ -426,7 +430,7 @@ class MarketDataService {
   }
 
   getIndicatorHistory(id, range = '1Y') {
-    const model = this.models.get(id);
+    const model = this.models.get(id) || this.productionCoordinator?.getLocalSignalModel(id);
     if (!model) return null;
     if (range !== 'ALL') {
       const ranged = this.getIndicator(id, range);
@@ -459,6 +463,16 @@ class MarketDataService {
     return this.indicators.map(indicator => this.getIndicator(indicator.id, range));
   }
 
+  getIndicatorCatalog() {
+    return this.indicatorCatalog.map(entry => ({ ...entry }));
+  }
+
+  getSignals() {
+    if (this.productionMode) return this.productionCoordinator.getSignals();
+    const indicators = this.indicatorCatalog.filter(entry => entry.displayStatus === 'visible_when_local_ohlcv_available' && this.models.get(entry.id)).map(entry => this.getIndicator(entry.id)).filter(Boolean);
+    return { mode: 'internal-and-local', status: indicators.length ? 'ready' : 'unavailable', available: indicators.length > 0, indicators, references: [], groups: {}, input: null, message: indicators.length ? 'Values are derived from local normalized OHLCV input.' : 'No reliable internal or local OHLCV-derived signal is available; no zero or demo value is used.' };
+  }
+
   getStatus() {
     return {
       enabled: this.config.enabled,
@@ -489,13 +503,16 @@ class MarketDataService {
     const diagnostics = {
       fred: this.productionCoordinator?.providerStatus('fred') || null,
       worldperatio: this.productionCoordinator?.providerStatus('worldperatio') || null,
-      ishares: this.productionCoordinator?.providerStatus('ishares-soxx') || null, naaim: this.productionCoordinator?.providerStatus('naaim') || null
+      ishares: this.productionCoordinator?.providerStatus('ishares-soxx') || null,
+      naaim: this.productionCoordinator?.providerStatus('naaim') || null,
+      'local-csv': this.productionCoordinator?.providerStatus('local-csv') || null
     };
     const nextScheduledAt = scheduler?.nextScheduledAt?.() || null;
     const providerDefinitions = [
       { providerId: 'fred', displayName: 'FRED', domain: 'fred.stlouisfed.org', sourceType: 'official_csv', networkAccessEnabled: true, updateMode: 'scheduled_daily', ids: ['vix', 'vxn', 'nasdaq100_index', 'sp500_index'], note: '数据通过FRED取得，原始来源以各系列标注为准。' },
       { providerId: 'worldperatio', displayName: 'WorldPEratio', domain: 'worldperatio.com', sourceType: 'public_webpage', networkAccessEnabled: true, updateMode: 'scheduled_daily', ids: ['nasdaq100_pe', 'sp500_pe'], note: '第三方公开参考数据，不代表指数编制机构官方估值。' },
       { providerId: 'ishares', displayName: 'iShares / BlackRock', domain: 'ishares.com', sourceType: 'official_workbook_local_import', networkAccessEnabled: false, updateMode: 'manual_import', ids: ['soxx_price'], note: 'SOXX数据来自官方工作簿的本地人工导入，网站不会自动访问iShares。' },
+      { providerId: 'local-csv', displayName: 'Local OHLCV CSV', domain: 'runtime-data/imports/prices', sourceType: 'local_csv', networkAccessEnabled: false, updateMode: 'manual_import', ids: LOCAL_SIGNAL_IDS, note: '本地标准化OHLCV CSV及本站自计算派生指标；不启用新的网络Provider。' },
       { providerId: 'naaim', displayName: 'NAAIM', domain: 'naaim.org', sourceType: 'official_workbook', networkAccessEnabled: true, updateMode: 'scheduled_weekly', frequency: 'weekly', manualImportEnabled: true, ids: ['naaim_exposure'], note: '每周仅从NAAIM官方页面发现明确提供的Excel链接；保留人工导入，不访问MacroMicro。' }
     ];
     const metricMeta = {
@@ -511,12 +528,17 @@ class MarketDataService {
     const datasets = providerDefinitions.flatMap(provider => provider.ids.map(id => {
       const model = this.models.get(id) || {};
       const diagnostic = diagnostics[provider.providerId]?.metrics?.[id] || {};
-      const meta = metricMeta[id];
+      const meta = metricMeta[id] || {
+        sourceDataset: 'runtime-data/imports/prices/*.csv',
+        sourcePageLabel: 'Local normalized OHLCV CSV',
+        accessMethod: 'local_csv',
+        limitations: this.indicatorCatalog.find(entry => entry.id === id)?.limitations || []
+      };
       return {
         metricId: id, label: model.displayName || model.label || id, providerId: provider.providerId,
         sourceDataset: meta.sourceDataset, sourcePageLabel: meta.sourcePageLabel, sourceUrl: model.sourceUrl || null,
         accessMethod: meta.accessMethod, updateMode: provider.updateMode, frequency: provider.frequency || model.frequency || 'daily', isRealtime: false,
-        networkFetchEnabled: provider.networkAccessEnabled, status: provider.providerId === 'ishares' && model.status === 'fresh' ? 'manual' : (model.status || 'unavailable'),
+        networkFetchEnabled: provider.networkAccessEnabled, status: ['ishares', 'local-csv'].includes(provider.providerId) && ['fresh', 'quality_warning', 'provisional'].includes(model.status) ? 'manual' : (model.status || 'unavailable'),
         latestValue: Number.isFinite(Number(model.value)) ? Number(model.value) : null, unit: model.unit || null,
         sourceDataDate: model.sourceDataDate || model.asOf || null, fetchedAt: model.fetchedAt || model.updatedAt || null,
         lastAttemptAt: model.lastAttemptAt || diagnostic.lastAttemptAt || (provider.providerId === 'naaim' ? diagnostics.naaim?.lastAttemptAt || null : provider.providerId === 'ishares' ? diagnostics.ishares?.lastLoadedAt || null : null),
@@ -528,7 +550,7 @@ class MarketDataService {
     const providers = providerDefinitions.map(provider => {
       const entries = datasets.filter(item => item.providerId === provider.providerId);
       const diagnostic = diagnostics[provider.providerId];
-      const state = entries.some(item => item.status === 'error') ? 'error' : entries.some(item => item.status === 'stale') ? 'stale' : provider.providerId === 'ishares' ? 'manual' : entries.some(item => item.status === 'unavailable') ? 'unavailable' : 'fresh';
+      const state = entries.some(item => item.status === 'error') ? 'error' : entries.some(item => item.status === 'stale') ? 'stale' : ['ishares', 'local-csv'].includes(provider.providerId) && entries.some(item => item.status === 'manual') ? 'manual' : entries.some(item => item.status === 'unavailable') ? 'unavailable' : 'fresh';
       return { ...provider, isRealtime: false, schedule: { enabled: ['scheduled_daily', 'scheduled_weekly'].includes(provider.updateMode), timezone: this.config.timezone, time: '07:30', firstCheck: provider.providerId === 'naaim' ? 'Fri 07:30' : null, retryCheck: provider.providerId === 'naaim' ? 'Sat 07:30' : null }, status: state,
         lastAttemptAt: entries.map(item => item.lastAttemptAt).filter(Boolean).sort().at(-1) || null, lastSuccessAt: entries.map(item => item.lastSuccessAt).filter(Boolean).sort().at(-1) || null,
         nextScheduledAt: provider.updateMode === 'scheduled_daily' ? nextScheduledAt : provider.providerId === 'naaim' ? scheduler?.nextNaaimScheduledAt?.() || null : null, attemptsToday: Math.max(0, ...entries.map(item => Number(diagnostic?.metrics?.[item.metricId]?.attempts) || 0)),

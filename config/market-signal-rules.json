@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "updatedAt": "2026-08-10",
+  "status": "provisional",
+  "ownership": "owner-defined",
+  "reviewRequired": true,
+  "notes": "Thresholds are explicit provisional configuration. They are not permanent market-stage or position-sizing rules.",
+  "supportedTickers": ["QQQ", "SOXX", "SOXL", "TQQQ", "SPY"],
+  "rsi": {
+    "period": 14,
+    "overbought": 90,
+    "oversold": 22,
+    "thresholdStatus": "provisional",
+    "thresholdOwner": "owner-defined"
+  },
+  "macd": {
+    "fastPeriod": 12,
+    "slowPeriod": 26,
+    "signalPeriod": 9,
+    "minimumShrinkingStreak": 3,
+    "thresholdStatus": "provisional",
+    "thresholdOwner": "owner-defined"
+  },
+  "volume": {
+    "lookback": 20,
+    "anomalyMultiplier": 2,
+    "percentileThreshold": 90,
+    "minimumPercentileHistory": 20,
+    "thresholdStatus": "provisional",
+    "thresholdOwner": "owner-defined"
+  },
+  "returns": {
+    "lookback": 25
+  },
+  "drawdown": {
+    "lookbackTradingDays": 252
+  },
+  "followThroughDay": {
+    "rallyLowLookback": 10,
+    "candidateStartTradingDay": 4,
+    "candidateEndTradingDay": 7,
+    "minimumGainPercent": 1.25,
+    "volumeMultiplier": 1.1,
+    "thresholdStatus": "provisional",
+    "thresholdOwner": "owner-defined"
+  }
+}

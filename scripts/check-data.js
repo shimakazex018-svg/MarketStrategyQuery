@@ -33,6 +33,8 @@ const stages = readJson('public/data/stages.json');
 const options = readJson('public/data/options.json');
 const indicators = readJson('public/data/indicators.json');
 const cycleShape = readJson('public/data/cycle-shape.json');
+const indicatorCatalog = readJson('config/indicator-catalog.json');
+const signalRules = readJson('config/market-signal-rules.json');
 const appSource = fs.readFileSync(path.join(ROOT, 'public/app.js'), 'utf8');
 const providerRegistry = loadProviderRegistry(ROOT);
 
@@ -124,4 +126,41 @@ providerRegistry.providers.forEach(provider => {
   assert(provider.enabled === selected, `${provider.providerId}启用状态与合规选择不一致`);
 });
 
-console.log('Data check passed: 9 complete stages, 8 complete options, 6 indicators, 7 ranges, and all references are valid.');
+assert(indicatorCatalog.schemaVersion === 1, 'indicator catalog schemaVersion must be 1');
+assert(Array.isArray(indicatorCatalog.entries) && indicatorCatalog.entries.length >= 40, 'indicator catalog must contain the audited indicator set');
+const catalogIds = new Set();
+const catalogCategories = new Set(['valuation', 'trend_momentum', 'fear_positioning', 'macro_credit', 'semiconductor']);
+const catalogDisplayStatuses = new Set(['core_ui', 'existing_ui', 'catalog_only_without_input', 'visible_when_local_ohlcv_available', 'catalog_only_when_self_calculated_inputs_available', 'not_displayed', 'link_only', 'external_reference_only']);
+const catalogRequired = ['id', 'displayName', 'aliases', 'category', 'implementationStatus', 'displayStatus', 'acquisitionMode', 'rawInputs', 'provider', 'source', 'frequency', 'formulaVersion', 'licenseComplianceStatus', 'historyCapability', 'uiGroup', 'limitations'];
+indicatorCatalog.entries.forEach(entry => {
+  catalogRequired.forEach(field => assert(Object.hasOwn(entry, field), `indicator catalog entry ${entry.id || 'unknown'} is missing ${field}`));
+  assert(!catalogIds.has(entry.id), `indicator catalog contains duplicate id ${entry.id}`);
+  catalogIds.add(entry.id);
+  assert(/^[a-z0-9_-]+$/.test(entry.id), `indicator catalog id is invalid: ${entry.id}`);
+  assertText(entry.displayName, `${entry.id}.displayName`);
+  assertTextArray(entry.aliases, `${entry.id}.aliases`);
+  assert(catalogCategories.has(entry.category) && catalogCategories.has(entry.uiGroup), `${entry.id} has an invalid category or uiGroup`);
+  assertTextArray(entry.rawInputs, `${entry.id}.rawInputs`);
+  assertText(entry.provider, `${entry.id}.provider`);
+  assertText(entry.source, `${entry.id}.source`);
+  assertText(entry.frequency, `${entry.id}.frequency`);
+  assert(catalogDisplayStatuses.has(entry.displayStatus), `${entry.id} has an invalid displayStatus`);
+  assert(entry.formulaVersion === null || typeof entry.formulaVersion === 'string', `${entry.id}.formulaVersion must be text or null`);
+  assertText(entry.licenseComplianceStatus, `${entry.id}.licenseComplianceStatus`);
+  assertText(entry.historyCapability, `${entry.id}.historyCapability`);
+  assertTextArray(entry.limitations, `${entry.id}.limitations`);
+  assert(Array.isArray(entry.referenceUrls), `${entry.id}.referenceUrls must be an array`);
+  assert(entry.referenceUrls.every(url => typeof url === 'string' && /^https:\/\//.test(url)), `${entry.id}.referenceUrls must contain https URLs`);
+  if (entry.displayStatus === 'link_only') {
+    assert(entry.implementationStatus === 'external_blocked', `${entry.id} link_only entries must be blocked external references`);
+    assert(entry.referenceUrls.length > 0, `${entry.id} link_only entries must have at least one reference URL`);
+  }
+  if (entry.displayStatus === 'external_reference_only') {
+    assert(entry.implementationStatus === 'external_blocked', `${entry.id} external_reference_only entries must be blocked external references`);
+    assert(entry.referenceUrls.length === 0, `${entry.id} external_reference_only entries cannot claim a clickable URL`);
+  }
+});
+['nasdaq100_pe', 'sp500_pe', 'vix', 'vxn', 'nasdaq100_index', 'sp500_index', 'naaim_exposure', 'drawdown-analysis', 'qqq-vs-ma200', 'qqq-momentum-20', 'qqq-momentum-120', 'qqq-52w-high-distance', 'qqq-52w-max-drawdown', 'soxx-relative-qqq', 'qqq-rv20', 'qqq-rv20-percentile', 'nasdaq-cot-positioning', 'risk-appetite', 'qqq-ema-5', 'qqq-ema-20', 'qqq-ema-60', 'qqq-ema-200', 'qqq-rsi', 'qqq-macd', 'qqq-macd-histogram', 'qqq-volume-relative', 'qqq-return-25', 'follow-through-day', 'top-risk-rsi', 'top-risk-volume', 'top-risk-macd', 'bottom-candidate-rsi', 'bottom-candidate-volume'].forEach(id => assert(catalogIds.has(id), `indicator catalog is missing audited id ${id}`));
+assert(signalRules.schemaVersion === 1 && signalRules.status === 'provisional' && signalRules.ownership === 'owner-defined', 'market signal rules must remain explicitly provisional and owner-defined');
+assert(signalRules.rsi.period === 14 && signalRules.macd.fastPeriod === 12 && signalRules.macd.slowPeriod === 26 && signalRules.macd.signalPeriod === 9, 'technical indicator periods must be explicit');
+console.log(`Data check passed: 9 complete stages, 8 complete options, 6 core indicators, ${indicatorCatalog.entries.length} catalog entries, 7 ranges, and all references are valid.`);

@@ -2,6 +2,14 @@
 
 本文件只记录任务状态，不记录详细实现过程。排除项不等同于缺陷。
 
+## 2026-08-10 Indicator system checkpoint
+
+- [x] Audit existing homepage, NAAIM, drawdown, and derived-indicator assets into `config/indicator-catalog.json` without creating duplicate implementations.
+- [x] Add local CSV OHLCV normalization and the first versioned EMA/RSI/MACD/volume/return/drawdown/relative-strength/Follow-Through Day/signal calculations.
+- [x] Add internal catalog/signal APIs and a grouped Market Signal Monitor while preserving the six core cards, nine stages, and eight option strategies.
+- [x] Reconcile external display semantics and reuse existing internal metric summaries in the grouped signal monitor without adding a provider or duplicate implementation.
+- [ ] Decide whether provisional RSI, volume, MACD, and Follow-Through Day thresholds should be changed; current rules remain `owner-defined` and `provisional`.
+- [ ] Provide an approved local OHLCV file if real signal values are required; do not commit the file or enable a new network Provider.
 
 ## 2026-08-10 Portfolio performance calibration checkpoint
 
