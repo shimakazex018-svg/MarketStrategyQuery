@@ -1,5 +1,9 @@
 # 最新交接
 
+## 2026-08-11 Portfolio calendar Tooltip dismissal
+
+- Desktop Tooltip uses explicit pointer/keyboard/touch input modes. Pointer leave, calendar leave, and window blur hide the transient Tooltip immediately; mouse-induced focus cannot reopen it, while Tab focus still shows the keyboard cell-anchor Tooltip. Touch pinned Popover is unchanged.
+
 ## 2026-08-10 Portfolio calendar pointer-follow tooltip
 
 - Desktop Tooltip uses pointer client coordinates with one shared `pointer-events: none` DOM node, rAF position updates, 12px viewport margins, and right/bottom collision handling. Keyboard and touch continue to use cell-anchor positioning; no portfolio data path changed.

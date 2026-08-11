@@ -155,6 +155,9 @@ async function testDesktopCalendar(page, requestCounts) {
       date: document.querySelector('[data-calendar-popover-date]')?.textContent || '',
       amount: document.querySelector('[data-calendar-popover-amount]')?.textContent || '',
       returnText: document.querySelector('[data-calendar-popover-return]')?.textContent || '',
+      mode: popover?.dataset.mode || '',
+      activeCell: document.activeElement?.matches?.('[data-portfolio-calendar-cell]') ? document.activeElement.dataset.calendarDate || '' : null,
+      expandedCell: document.querySelector('[data-portfolio-calendar-cell][aria-expanded="true"]')?.dataset.calendarDate || null,
       popoverCount: document.querySelectorAll('[data-portfolio-calendar-popover]').length
     };
   });
@@ -198,6 +201,13 @@ async function testDesktopCalendar(page, requestCounts) {
   await page.mouse.move(5, 5);
   await waitForPopover(false, 'hide first tooltip');
   assert.equal(await calendarPopoverVisible(page), false);
+  assert.equal(await cell.getAttribute('aria-expanded'), 'false');
+  await page.waitForTimeout(120);
+  assert.equal(await calendarPopoverVisible(page), false);
+  await cell.focus();
+  assert.equal(await page.evaluate(() => document.activeElement?.matches('[data-portfolio-calendar-cell]')), true);
+  await page.waitForTimeout(120);
+  assert.equal(await calendarPopoverVisible(page), false);
   const secondState = await moveToCell(secondCell, 0.75, 0.55);
   assertTooltipBounds(secondState, 'second');
   assert.notEqual(secondState.date, firstState.date);
@@ -205,12 +215,25 @@ async function testDesktopCalendar(page, requestCounts) {
   assert.equal(secondState.popoverCount, 1);
   await page.mouse.move(5, 5);
   await waitForPopover(false, 'hide second tooltip');
+  assert.equal(await secondCell.getAttribute('aria-expanded'), 'false');
+  await page.waitForTimeout(120);
+  assert.equal(await calendarPopoverVisible(page), false);
+  await moveToCell(cell, 0.5, 0.5, 'window blur');
+  await page.evaluate(() => window.dispatchEvent(new Event('blur')));
+  await waitForPopover(false, 'hide on window blur');
+  await page.waitForTimeout(120);
+  assert.equal(await calendarPopoverVisible(page), false);
   await cell.focus();
-  assert.equal(await calendarPopoverVisible(page), true);
+  assert.equal(await calendarPopoverVisible(page), false);
+  await page.keyboard.press('Tab');
+  await waitForPopover(true, 'show keyboard tooltip');
   const keyboardState = await readTooltipState();
   assert.equal(keyboardState.popoverCount, 1);
+  assert.equal(keyboardState.mode, 'keyboard');
+  assert.ok(keyboardState.activeCell);
+  assert.equal(keyboardState.activeCell, keyboardState.expandedCell);
   await page.keyboard.press('Escape');
-  assert.equal(await calendarPopoverVisible(page), false);
+  await waitForPopover(false, 'hide keyboard tooltip');
   const runEdgeProbe = async (clientX, clientY, label) => {
     await page.evaluate(({ x, y }) => {
       const cell = document.querySelector('[data-portfolio-calendar-cell]');

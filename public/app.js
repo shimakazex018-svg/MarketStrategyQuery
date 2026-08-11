@@ -1751,9 +1751,11 @@ function bindPortfolioCalendarEvents() {
   const popoverOriginNext = popover.nextSibling;
   document.body.appendChild(popover);
   const closeButton = popover.querySelector('[data-portfolio-calendar-close]');
+  const calendarRegion = popoverOrigin;
   let activeCell = null;
   let interactionMode = '';
   let lastPointerType = '';
+  let lastInteraction = '';
   let pointerFrame = 0;
   let pointerClientX = null;
   let pointerClientY = null;
@@ -1851,6 +1853,9 @@ function bindPortfolioCalendarEvents() {
     if (activeCell && activeCell !== cell) setExpanded(activeCell, false);
     activeCell = cell;
     interactionMode = mode;
+    if (mode === 'tooltip') lastInteraction = 'pointer';
+    if (mode === 'keyboard') lastInteraction = 'keyboard';
+    if (mode === 'popover') lastInteraction = 'touch';
     pointerClientX = clientX;
     pointerClientY = clientY;
     setExpanded(cell, true);
@@ -1863,11 +1868,22 @@ function bindPortfolioCalendarEvents() {
     reposition();
   };
   cells.forEach(cell => {
-    listen(cell, 'pointerdown', event => { lastPointerType = event.pointerType || ''; });
-    listen(cell, 'pointerenter', event => { if (event.pointerType !== 'touch') show(cell, 'tooltip', event.clientX, event.clientY); });
-    listen(cell, 'pointermove', event => { if (event.pointerType !== 'touch') queuePointerPosition(event); });
-    listen(cell, 'pointerleave', event => { if (event.pointerType !== 'touch') hide(); });
-    listen(cell, 'focus', () => { if (lastPointerType !== 'touch') show(cell, 'keyboard'); });
+    listen(cell, 'pointerdown', event => {
+      lastPointerType = event.pointerType || '';
+      lastInteraction = event.pointerType === 'touch' ? 'touch' : 'pointer';
+    });
+    listen(cell, 'pointerenter', event => {
+      if (event.pointerType === 'touch') return;
+      lastInteraction = 'pointer';
+      show(cell, 'tooltip', event.clientX, event.clientY);
+    });
+    listen(cell, 'pointermove', event => {
+      if (event.pointerType === 'touch') return;
+      lastInteraction = 'pointer';
+      queuePointerPosition(event);
+    });
+    listen(cell, 'pointerleave', event => { if (event.pointerType !== 'touch' && interactionMode === 'tooltip') hide(); });
+    listen(cell, 'focus', () => { if (lastInteraction === 'keyboard') show(cell, 'keyboard'); });
     listen(cell, 'blur', () => { if (interactionMode === 'keyboard') hide(); });
     listen(cell, 'click', event => {
       const isTouch = lastPointerType === 'touch';
@@ -1878,18 +1894,21 @@ function bindPortfolioCalendarEvents() {
       else show(cell, 'popover');
     });
   });
+  listen(calendarRegion, 'pointerleave', event => { if (event.pointerType !== 'touch' && interactionMode === 'tooltip') hide(); });
   listen(closeButton, 'click', event => { event.preventDefault(); hide(); });
   listen(document, 'pointerdown', event => {
     if (!activeCell || activeCell.contains(event.target) || popover.contains(event.target)) return;
     hide();
   });
   listen(document, 'keydown', event => {
+    if (event.key === 'Tab') lastInteraction = 'keyboard';
     if (event.key !== 'Escape' || !activeCell) return;
     event.preventDefault();
     hide();
   });
   listen(window, 'resize', () => { fitAmounts(); reposition(); });
   listen(window, 'scroll', onScroll, { passive: true });
+  listen(window, 'blur', () => { if (interactionMode === 'tooltip') hide(); });
   fitAmounts();
   portfolioCalendarCleanup = () => {
     hide();

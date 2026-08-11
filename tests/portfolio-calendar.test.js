@@ -56,6 +56,11 @@ test('calendar UI uses one shared popover and presentation-only formatting', asy
   assert.match(app, /clientX/);
   assert.match(app, /clientY/);
   assert.match(app, /requestAnimationFrame/);
+  assert.match(app, /lastInteraction/);
+  assert.match(app, /event\.key === 'Tab'/);
+  assert.match(app, /window, 'blur'/);
+  assert.match(app, /cancelAnimationFrame/);
+  assert.match(app, /interactionMode === 'tooltip'/);
   assert.match(css, /\.portfolio-calendar-popover/);
   assert.match(css, /pointer-events: none/);
   assert.match(css, /font-variant-numeric: tabular-nums/);

@@ -1,5 +1,9 @@
 # 变更日志
 
+## 2026-08-11 - Dismiss portfolio calendar Tooltip on pointer leave
+
+- Desktop daily-return Tooltip now records pointer versus keyboard input, hides immediately on cell/calendar leave or window blur, and cancels pending pointer-position frames. Touch pinned Popover and keyboard cell-anchor behavior remain unchanged; no portfolio data, API, Flex, SQLite, or return calculations changed.
+
 ## 2026-08-10 - Portfolio calendar pointer-follow tooltip
 
 - Desktop daily-return Tooltip now follows the real pointer with requestAnimationFrame-throttled fixed positioning and viewport collision clamping. Keyboard focus and iPad/iPhone tap remain cell-anchored; portfolio data, API, Flex, SQLite, and return calculations were unchanged.
