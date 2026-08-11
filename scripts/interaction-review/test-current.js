@@ -127,6 +127,7 @@ async function calendarPopoverVisible(page) {
 async function testDesktopCalendar(page, requestCounts) {
   const cell = page.locator('[data-portfolio-calendar-cell]').first();
   const secondCell = page.locator('[data-portfolio-calendar-cell]').nth(1);
+  const noDataCell = page.locator('.portfolio-calendar-cell.unknown').first();
   await cell.scrollIntoViewIfNeeded();
   const before = await page.evaluate(() => ({ hash: window.location.hash, scrollY: Math.round(window.scrollY) }));
   const requestSnapshot = mapObject(requestCounts);
@@ -204,6 +205,14 @@ async function testDesktopCalendar(page, requestCounts) {
   assert.equal(await cell.getAttribute('aria-expanded'), 'false');
   await page.waitForTimeout(120);
   assert.equal(await calendarPopoverVisible(page), false);
+  assert.equal(await noDataCell.count(), 1);
+  await noDataCell.scrollIntoViewIfNeeded();
+  const noDataBox = await noDataCell.boundingBox();
+  assert.ok(noDataBox);
+  await page.mouse.move(noDataBox.x + noDataBox.width * 0.5, noDataBox.y + noDataBox.height * 0.5);
+  await waitForPopover(false, 'hide on no-data cell');
+  await page.waitForTimeout(120);
+  assert.equal(await calendarPopoverVisible(page), false);
   await cell.focus();
   assert.equal(await page.evaluate(() => document.activeElement?.matches('[data-portfolio-calendar-cell]')), true);
   await page.waitForTimeout(120);
@@ -264,7 +273,7 @@ async function testDesktopCalendar(page, requestCounts) {
   }));
   assert.deepEqual(after, { ...before, overflow: false });
   assert.deepEqual(mapObject(requestCounts), requestSnapshot);
-  return { hover: true, pointerFollow: true, crossCell: true, viewportCollision: true, mouseLeave: true, keyboardFocus: true, keyboardEscape: true, requestDelta: 0, overflow: false };
+  return { hover: true, pointerFollow: true, crossCell: true, viewportCollision: true, mouseLeave: true, noDataCellClose: true, keyboardFocus: true, keyboardEscape: true, requestDelta: 0, overflow: false };
 }
 
 async function testKeyboardAndCriticalPath(page) {
